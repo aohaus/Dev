@@ -134,12 +134,12 @@ const SX          = 155;   // slingshot x
 const SY          = GROUND_Y;
 const FORK_H      = 95;
 const FORK_Y      = SY - FORK_H;
-const MAX_PULL    = 85;
-const POWER       = 0.175;
+const MAX_PULL    = 90;
+const POWER       = 0.19;
 const BOOST_SPD   = 7;
 const BIRD_R      = 23;
 const GIANT_R     = 38;
-const SPEED_MULT  = 1.5;
+const SPEED_MULT  = 1.4;
 const RAT_R       = 17;
 const SETTLE_WAIT = 90;
 
@@ -162,6 +162,8 @@ let boostCooldown = 0;
 let birdType     = 'normal'; // 'normal' | 'giant' | 'speed'
 let luckyTimer   = 0;
 let luckyText    = '';
+let ratsKilled   = 0;
+let totalRatsAtStart = 0;
 let bird         = null;
 let blocks       = [];
 let rats         = [];
@@ -291,6 +293,7 @@ class Rat {
     this.vy -= 5 + Math.random() * 3;
     this.angV = (Math.random() - 0.5) * 0.35;
     score += 500;
+    ratsKilled++;
     updateHUD();
     addParticles(this.x, this.y, '#FFB830', 14, 4);
     addParticles(this.x, this.y, '#FF6030', 8, 3);
@@ -329,7 +332,7 @@ function addParticles(x, y, col, count, sz) {
 function updateHUD() {
   const cfg = LEVEL_CONFIGS[currentLevel];
   document.getElementById('score-display').textContent = `${cfg.name} | スコア: ${score}`;
-  document.getElementById('target-display').textContent = `⭐⭐⭐ = ${cfg.stars[2]}pt`;
+  document.getElementById('target-display').textContent = `🐀 ${ratsKilled}/${totalRatsAtStart}匹`;
   const rem = Math.max(0, birdsLeft);
   document.getElementById('birds-display').textContent = '🦉'.repeat(rem);
 }
@@ -349,11 +352,13 @@ function makeRat(x, y) {
 
 function setupLevel(idx) {
   blocks = []; rats = [];
+  ratsKilled = 0;
   const cfg = LEVEL_CONFIGS[idx];
   totalBirds = cfg.birds;
   birdsLeft  = totalBirds;
   if (idx === 0) _buildLevel1();
   else           _buildLevel2();
+  totalRatsAtStart = rats.length;
 }
 
 function _buildLevel1() {
@@ -495,6 +500,17 @@ function checkCollisions() {
     bird.vx -= c.nx * speed * birdBounce;
     bird.vy -= c.ny * speed * birdBounce;
     bird.flash = 6;
+  });
+}
+
+function checkBlockRatCollisions() {
+  blocks.forEach(blk => {
+    if (!blk.alive || blk.grounded || blk.vy < 1.5) return;
+    rats.forEach(rat => {
+      if (!rat.alive || rat.dying) return;
+      const c = circleRect(rat.x, rat.y, rat.r, blk.x, blk.y, blk.w, blk.h);
+      if (c) rat.die();
+    });
   });
 }
 
@@ -1164,21 +1180,27 @@ function showResult(result) {
   ov.classList.remove('hidden');
 
   if (result === 'WIN') {
-    // Add unused-bird bonus (birdsLeft still includes the bird that just fired)
     const unused = Math.max(0, birdsLeft - 1);
     if (unused > 0) { score += unused * BIRD_BONUS; updateHUD(); }
 
     const cfg   = LEVEL_CONFIGS[currentLevel];
     const stars = score >= cfg.stars[2] ? 3 : score >= cfg.stars[1] ? 2 : 1;
     const starStr = '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
-    title.textContent = '🎉 ミッション完了！';
+    title.textContent = '🎉 全員やっつけた！';
     sub.textContent   = `${starStr}  ${score} pt`;
     nextBtn.style.display = (currentLevel + 1 < LEVEL_CONFIGS.length) ? 'inline-block' : 'none';
   } else {
-    const cfg = LEVEL_CONFIGS[currentLevel];
     title.textContent = '😢 やられた…';
-    sub.textContent   = `スコア: ${score} pt（⭐目標: ${cfg.stars[0]}pt〜）`;
-    nextBtn.style.display = 'none';
+    const hasNext = currentLevel + 1 < LEVEL_CONFIGS.length;
+    // Allow advancing if player killed enough rats (all but 1, or ≥ 4)
+    const canAdvance = hasNext && (ratsKilled >= totalRatsAtStart - 1 || ratsKilled >= 4);
+    if (canAdvance) {
+      sub.textContent = `${ratsKilled}/${totalRatsAtStart}匹倒した！次のレベルへ進める！`;
+      nextBtn.style.display = 'inline-block';
+    } else {
+      sub.textContent = `${ratsKilled}/${totalRatsAtStart}匹倒した  スコア: ${score}pt`;
+      nextBtn.style.display = 'none';
+    }
   }
 }
 
@@ -1300,6 +1322,17 @@ function update() {
   if (bird) bird.update();
 
   checkCollisions();
+  checkBlockRatCollisions();
+
+  // Win check fires even mid-flight (e.g. block crushes last rat)
+  if ((state === 'FLYING' || state === 'SETTLING') && totalRatsAtStart > 0) {
+    const livingRats = rats.filter(r => r.alive && !r.dying);
+    if (livingRats.length === 0) {
+      state = 'WAITING';
+      setTimeout(() => showResult('WIN'), 800);
+      return;
+    }
+  }
 
   if (bird && !bird.alive && state === 'FLYING') {
     state = 'SETTLING';
