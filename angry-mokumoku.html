@@ -13,6 +13,8 @@ body {
   min-height: 100vh;
   font-family: 'Helvetica Neue', Arial, sans-serif;
   user-select: none;
+  overflow: hidden;
+  touch-action: none;
 }
 #wrapper {
   position: relative;
@@ -20,8 +22,10 @@ body {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  width: min(900px, 100vw);
+  max-width: 100%;
 }
-canvas { display: block; cursor: crosshair; }
+canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 #hud {
   position: absolute; top: 0; left: 0; right: 0;
   padding: 10px 16px;
@@ -66,6 +70,19 @@ canvas { display: block; cursor: crosshair; }
   color: rgba(255,255,255,0.85);
   font-size: 13px; padding: 5px 14px; border-radius: 20px;
   pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  white-space: nowrap;
+}
+#rotate-hint {
+  display: none;
+  position: fixed; inset: 0; z-index: 999;
+  background: #1a1228;
+  flex-direction: column; align-items: center; justify-content: center;
+  color: white; font-size: 18px; gap: 16px;
+}
+#rotate-hint span { font-size: 56px; animation: spin 1.5s ease-in-out infinite alternate; }
+@keyframes spin { from { transform: rotate(-30deg); } to { transform: rotate(30deg); } }
+@media (max-width: 600px) and (orientation: portrait) {
+  #rotate-hint { display: flex; }
 }
 </style>
 </head>
@@ -81,7 +98,11 @@ canvas { display: block; cursor: crosshair; }
     <p id="ov-sub"></p>
     <button id="ov-btn">もう一度！</button>
   </div>
-  <div id="boost-hint">クリックでブースト！</div>
+    <div id="boost-hint">クリックでブースト！</div>
+</div>
+<div id="rotate-hint">
+  <span>📱</span>
+  <p>横向きにしてプレイ！</p>
 </div>
 
 <script>
