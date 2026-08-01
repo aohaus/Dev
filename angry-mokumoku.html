@@ -99,7 +99,7 @@ canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 <body>
 <div id="wrapper">
   <canvas id="c"></canvas>
-  <div id="hud">
+  <div id="hud" style="visibility:hidden">
     <div id="score-display">Lv.1 | スコア: 0</div>
     <div id="target-display">⭐⭐⭐ = 1800pt</div>
     <div id="birds-display">🦉🦉🦉</div>
@@ -160,8 +160,48 @@ const LEVEL_CONFIGS = [
 ];
 const BIRD_BONUS = 200; // pts per unused bird at win
 
+// ─── TIME / SAVE / PLAYERS ────────────────────────────────────
+function getTimeOfDay() {
+  const h = new Date().getHours();
+  if (h >= 6  && h < 12) return 'morning';
+  if (h >= 12 && h < 18) return 'day';
+  if (h >= 18 && h < 22) return 'evening';
+  return 'night';
+}
+function saveProgress() { localStorage.setItem('amoku-level', (currentLevel + 1).toString()); }
+function getSavedLevel() {
+  const v = localStorage.getItem('amoku-level');
+  return v !== null ? parseInt(v) : -1;
+}
+function initPlayerTracking() {
+  if (typeof BroadcastChannel === 'undefined') return;
+  const ch = new BroadcastChannel('amoku-players');
+  const myId = Date.now().toString(36);
+  const peers = new Set();
+  ch.onmessage = e => {
+    if (e.data.type === 'hello') {
+      peers.add(e.data.id);
+      ch.postMessage({ type: 'ack', id: myId });
+    } else if (e.data.type === 'ack') {
+      peers.add(e.data.id);
+    } else if (e.data.type === 'bye') {
+      peers.delete(e.data.id);
+    }
+    onlinePlayers = peers.size + 1;
+  };
+  ch.postMessage({ type: 'hello', id: myId });
+  window.addEventListener('beforeunload', () => ch.postMessage({ type: 'bye', id: myId }));
+  setInterval(() => ch.postMessage({ type: 'hello', id: myId }), 8000);
+}
+function applyBrightness(hex, f) {
+  const r = Math.round(parseInt(hex.slice(1,3),16)*f);
+  const g = Math.round(parseInt(hex.slice(3,5),16)*f);
+  const b = Math.round(parseInt(hex.slice(5,7),16)*f);
+  return `rgb(${r},${g},${b})`;
+}
+
 // ─── STATE ────────────────────────────────────────────────────
-let state        = 'AIMING'; // AIMING | FLYING | SETTLING | WAITING | WIN | LOSE
+let state        = 'TITLE'; // TITLE | AIMING | FLYING | SETTLING | WAITING | WIN | LOSE
 let score        = 0;
 let currentLevel = 0;
 let totalBirds   = LEVEL_CONFIGS[0].birds;
@@ -177,6 +217,9 @@ let totalRatsAtStart = 0;
 let bird         = null;
 let blocks       = [];
 let rats         = [];
+let titleMenuSel = 0;
+let titleFrame   = 0;
+let onlinePlayers = 1;
 let particles    = [];
 let mouse        = { x: 0, y: 0, down: false };
 let dragging     = false;
@@ -771,11 +814,11 @@ function checkCollisions() {
       blk.alive = false;
       score += 50; updateHUD();
       addParticles(blk.x, blk.y, blockColor(blk.type), 10, 4);
-      // Knock ALL nearby rats when a block collapses (large radius)
+      // Knock nearby rats when a block collapses
       rats.forEach(rat => {
         if (rat.dying) return;
         const dx = rat.x - blk.x, dy = rat.y - blk.y;
-        if (Math.sqrt(dx*dx + dy*dy) < 220) {
+        if (Math.sqrt(dx*dx + dy*dy) < 110) {
           rat.vy -= 5 + Math.random() * 3;
           rat.vx += (Math.random() - 0.5) * 8;
           rat.grounded = false;
@@ -813,61 +856,175 @@ function blockColor(type) {
 }
 
 function drawBackground() {
-  // Sky gradient
+  const tod   = getTimeOfDay();
+  const group = Math.min(Math.floor(currentLevel / 2), 4);
+
+  // ── Sky ──
+  const SKY = {
+    morning: ['#F07030','#FFB870','#FFE0B0'],
+    day:     ['#6EC6F0','#A8D8F0','#D0ECFF'],
+    evening: ['#0D0325','#9A2A10','#FF7020'],
+    night:   ['#020508','#060D1A','#0E1830'],
+  }[tod];
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  sky.addColorStop(0, '#6EC6F0');
-  sky.addColorStop(0.6, '#A8D8F0');
-  sky.addColorStop(1, '#D0ECFF');
+  sky.addColorStop(0, SKY[0]); sky.addColorStop(0.5, SKY[1]); sky.addColorStop(1, SKY[2]);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, GROUND_Y);
 
-  // Sun
-  ctx.save();
-  ctx.shadowColor = '#FFE033';
-  ctx.shadowBlur = 30;
-  ctx.fillStyle = '#FFE033';
-  ctx.beginPath();
-  ctx.arc(820, 70, 38, 0, Math.PI*2);
-  ctx.fill();
-  ctx.restore();
+  if (tod === 'night') _drawStars();
+  _drawCelestialBody(tod);
 
-  // Fluffy clouds
-  drawCloud(120, 80, 0.9);
-  drawCloud(340, 55, 1.1);
-  drawCloud(620, 90, 0.75);
+  if (tod !== 'night') {
+    ctx.save();
+    ctx.globalAlpha = tod === 'evening' ? 0.5 : 0.88;
+    drawCloud(120, 80, 0.9); drawCloud(340, 55, 1.1); drawCloud(620, 90, 0.75);
+    ctx.restore();
+  }
 
-  // ── Petronas Towers (background silhouette) ──
-  drawPetronas(450, GROUND_Y - 10);
+  // ── City layers ──
+  drawPetronas(450, GROUND_Y - 10, tod);
+  if (group >= 1) _drawMenaraKL(280, GROUND_Y, tod);
+  _drawLevelBuildings(group, tod);
+  drawShophouses(0, GROUND_Y, 4, tod);
 
-  // ── KL City buildings (mid-distance) ──
-  drawCityBuildings();
-
-  // ── Shophouses (foreground left) ──
-  drawShophouses(0, GROUND_Y, 4);
-
-  // Ground
+  // ── Ground ──
+  const GC = {
+    morning: ['#9A7A38','#8A6A28','#6A4A18'],
+    day:     ['#8B6B2A','#7A5C22','#5A3E18'],
+    evening: ['#5A3818','#4A2810','#341808'],
+    night:   ['#1E1208','#180A04','#100600'],
+  }[tod];
   const grd = ctx.createLinearGradient(0, GROUND_Y, 0, H);
-  grd.addColorStop(0, '#8B6B2A');
-  grd.addColorStop(0.2, '#7A5C22');
-  grd.addColorStop(1, '#5A3E18');
+  grd.addColorStop(0, GC[0]); grd.addColorStop(0.2, GC[1]); grd.addColorStop(1, GC[2]);
   ctx.fillStyle = grd;
   ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
 
-  // Grass strip
-  ctx.fillStyle = '#5AAA30';
-  ctx.beginPath();
-  ctx.roundRect(0, GROUND_Y - 6, W, 14, 4);
-  ctx.fill();
+  const GRASS = { morning:'#6AB040', day:'#5AAA30', evening:'#3A7020', night:'#1A4810' }[tod];
+  ctx.fillStyle = GRASS;
+  ctx.beginPath(); ctx.roundRect(0, GROUND_Y - 6, W, 14, 4); ctx.fill();
 
-  // Ground detail — paving tiles
-  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.strokeStyle = `rgba(0,0,0,${tod === 'night' ? 0.35 : 0.12})`;
   ctx.lineWidth = 1;
   for (let x = 0; x < W; x += 50) {
-    ctx.beginPath();
-    ctx.moveTo(x, GROUND_Y + 8);
-    ctx.lineTo(x, H);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, GROUND_Y + 8); ctx.lineTo(x, H); ctx.stroke();
   }
+
+  if (tod === 'evening') {
+    const fog = ctx.createLinearGradient(0, GROUND_Y - 90, 0, GROUND_Y);
+    fog.addColorStop(0, 'rgba(255,60,0,0)');
+    fog.addColorStop(1, 'rgba(255,80,10,0.14)');
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, GROUND_Y - 90, W, 90);
+  }
+}
+
+function _drawStars() {
+  const pts = [[50,20,1.2],[120,40,0.9],[200,15,1.1],[280,50,0.8],[360,25,1.3],
+    [440,45,0.7],[520,18,1.4],[600,38,1.0],[680,22,1.2],[760,48,0.8],[840,30,1.1],
+    [880,12,0.9],[30,65,0.7],[150,75,1.0],[310,60,1.2],[470,70,0.8],[630,55,1.3],
+    [790,68,0.9],[100,100,0.6],[400,90,1.1],[700,95,0.7],[870,80,1.0],[60,130,0.8],
+    [250,120,0.9],[560,110,1.2],[730,125,0.7]];
+  ctx.fillStyle = 'white';
+  pts.forEach(([sx, sy, sr]) => {
+    ctx.globalAlpha = (0.5 + 0.5 * Math.sin(Date.now()*0.001*sr + sx)) * 0.9;
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function _drawCelestialBody(tod) {
+  ctx.save();
+  if (tod === 'day') {
+    ctx.shadowColor = '#FFE033'; ctx.shadowBlur = 30;
+    ctx.fillStyle = '#FFE033';
+    ctx.beginPath(); ctx.arc(820, 70, 38, 0, Math.PI*2); ctx.fill();
+  } else if (tod === 'morning') {
+    ctx.shadowColor = '#FF9020'; ctx.shadowBlur = 45;
+    ctx.fillStyle = '#FFAA30';
+    ctx.beginPath(); ctx.arc(820, 165, 42, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 0.14;
+    ctx.fillStyle = '#FF8800';
+    ctx.beginPath(); ctx.arc(820, 165, 68, 0, Math.PI*2); ctx.fill();
+  } else if (tod === 'evening') {
+    ctx.shadowColor = '#FF3000'; ctx.shadowBlur = 55;
+    ctx.fillStyle = '#FF4020';
+    ctx.beginPath(); ctx.arc(75, 195, 46, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 0.16;
+    ctx.fillStyle = '#FF6040';
+    ctx.beginPath(); ctx.arc(75, 195, 80, 0, Math.PI*2); ctx.fill();
+  } else {
+    ctx.shadowColor = '#D0E8FF'; ctx.shadowBlur = 22;
+    ctx.fillStyle = '#E8F4FF';
+    ctx.beginPath(); ctx.arc(750, 65, 32, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#0E1830'; ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(763, 55, 28, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function _drawMenaraKL(cx, gy, tod) {
+  const col = tod === 'night' ? 'rgba(70,85,110,0.8)' :
+              tod === 'evening' ? 'rgba(150,110,90,0.7)' : 'rgba(155,170,190,0.65)';
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(cx-9,gy); ctx.lineTo(cx-5,gy-195);
+  ctx.lineTo(cx-2,gy-218); ctx.lineTo(cx+2,gy-218);
+  ctx.lineTo(cx+5,gy-195); ctx.lineTo(cx+9,gy);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, gy-232, 24, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.moveTo(cx, gy-252); ctx.lineTo(cx, gy-315); ctx.stroke();
+  if (tod === 'night' || tod === 'evening') {
+    ctx.save(); ctx.shadowColor = '#FF2010'; ctx.shadowBlur = 14;
+    ctx.fillStyle = '#FF2010';
+    ctx.beginPath(); ctx.arc(cx, gy-315, 3, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function _drawLevelBuildings(group, tod) {
+  const SETS = [
+    [[20,55,120],[80,40,90],[340,45,150],[390,35,100],[600,50,130],[660,40,85],[820,60,110]],
+    [[15,60,165],[80,45,210],[130,35,145],[350,55,230],[410,40,185],[600,65,255],[670,50,205],[830,55,185]],
+    [[10,50,145],[65,60,175],[330,50,205],[385,45,165],[590,70,225],[665,55,185],[725,45,155],[800,75,205]],
+    [[10,70,185],[85,50,235],[320,60,265],[385,45,195],[580,75,275],[660,55,215],[720,65,255],[795,80,235]],
+    [[5,55,205],[65,70,265],[140,45,225],[310,60,295],[375,50,255],[430,40,215],[550,75,315],[630,60,275],[695,50,245],[755,65,295],[828,70,265]],
+  ];
+  const BASE_COLS = [
+    ['#B8C8D8','#C0D0C0','#C8C0B0','#B0C0B8','#C0B8C8','#C8C8B0','#B8C0C8'],
+    ['#A8C0D0','#9ABDD5','#B0C8D8','#A0B8D0','#90A8C0','#A8BCCC','#98B0C4','#A4B8CC'],
+    ['#C0A8B8','#A8C0A8','#C8B8A0','#A8B0C8','#B8A8C8','#C8B8A8','#A8C0C8','#B0B8D0'],
+    ['#808898','#909898','#808898','#788090','#8890A0','#7A8898','#8089A0','#7A8090'],
+    ['#8090B0','#9095B0','#8892A8','#8890B0','#9098B8','#8090A8','#8898B5','#8090A8','#9098B0','#8890B0','#8898A8'],
+  ];
+  const bright = tod === 'night' ? 0.5 : tod === 'evening' ? 0.75 : 1.0;
+  const bldgs = SETS[group], cols = BASE_COLS[group];
+
+  bldgs.forEach(([bx, bw, bh], i) => {
+    ctx.fillStyle = applyBrightness(cols[i % cols.length], bright);
+    ctx.fillRect(bx, GROUND_Y - bh, bw, bh);
+
+    if (tod === 'night') {
+      for (let row = 1; row * 14 < bh - 10; row++) {
+        for (let c = 0; c * 12 < bw - 6; c++) {
+          const lit = Math.sin(bx*0.31 + row*1.73 + c*2.37) > 0.15;
+          ctx.fillStyle = lit ? 'rgba(255,215,80,0.65)' : 'rgba(15,25,50,0.55)';
+          ctx.fillRect(bx + 5 + c*12, GROUND_Y - bh + row*14, 7, 8);
+        }
+      }
+    } else {
+      const winCol = tod === 'evening' ? 'rgba(255,160,60,0.3)' :
+                     tod === 'morning' ? 'rgba(255,200,100,0.22)' : 'rgba(200,230,255,0.35)';
+      ctx.fillStyle = winCol;
+      for (let row = 1; row * 14 < bh - 10; row++) {
+        for (let c = 0; c * 12 < bw - 6; c++) {
+          ctx.fillRect(bx + 5 + c*12, GROUND_Y - bh + row*14, 7, 8);
+        }
+      }
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.14)';
+    ctx.fillRect(bx, GROUND_Y - bh, bw, 6);
+  });
 }
 
 function drawCloud(x, y, scale) {
@@ -884,10 +1041,12 @@ function drawCloud(x, y, scale) {
   ctx.restore();
 }
 
-function drawPetronas(cx, gy) {
+function drawPetronas(cx, gy, tod) {
   const tw = 52, th = 210, gap = 36;
   const lx = cx - gap/2 - tw, rx = cx + gap/2;
-  const col = 'rgba(180,195,215,0.55)';
+  const col = tod === 'night'   ? 'rgba(70,90,130,0.7)' :
+              tod === 'evening' ? 'rgba(150,100,80,0.65)' :
+              tod === 'morning' ? 'rgba(200,180,160,0.6)' : 'rgba(180,195,215,0.55)';
 
   [lx, rx].forEach(tx => {
     // Main shaft
@@ -916,71 +1075,44 @@ function drawPetronas(cx, gy) {
   ctx.fillStyle = col;
   ctx.fillRect(lx + tw*0.85, gy - th*0.41, gap + tw*0.28, th*0.042);
 
-  // Windows (subtle)
-  ctx.fillStyle = 'rgba(210,230,255,0.25)';
+  // Windows
+  const wCol = tod === 'night' ? 'rgba(255,215,80,0.45)' : 'rgba(210,230,255,0.25)';
+  ctx.fillStyle = wCol;
   [lx, rx].forEach(tx => {
     for (let row = 1; row < 14; row++) {
-      for (let col = 0; col < 3; col++) {
-        ctx.fillRect(tx + tw*0.18 + col*(tw*0.22), gy - row*(th/14.5), tw*0.14, th*0.05);
+      for (let c = 0; c < 3; c++) {
+        ctx.fillRect(tx + tw*0.18 + c*(tw*0.22), gy - row*(th/14.5), tw*0.14, th*0.05);
       }
     }
   });
 }
 
-function drawCityBuildings() {
-  const bldgs = [
-    { x: 20,  w: 55, h: 120, col: '#B8C8D8' },
-    { x: 80,  w: 40, h: 90,  col: '#C0D0C0' },
-    { x: 340, w: 45, h: 150, col: '#C8C0B0' },
-    { x: 390, w: 35, h: 100, col: '#B0C0B8' },
-    { x: 600, w: 50, h: 130, col: '#C0B8C8' },
-    { x: 660, w: 40, h: 85,  col: '#C8C8B0' },
-    { x: 820, w: 60, h: 110, col: '#B8C0C8' },
-  ];
-  bldgs.forEach(b => {
-    ctx.fillStyle = b.col;
-    ctx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
-    // Window grid
-    ctx.fillStyle = 'rgba(200,230,255,0.35)';
-    for (let row = 1; row * 14 < b.h - 10; row++) {
-      for (let c = 0; c * 12 < b.w - 6; c++) {
-        ctx.fillRect(b.x + 5 + c*12, GROUND_Y - b.h + row*14, 7, 8);
-      }
-    }
-    // Roof accent
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    ctx.fillRect(b.x, GROUND_Y - b.h, b.w, 6);
-  });
-}
-
-function drawShophouses(startX, gy, count) {
-  const colors = ['#E8A060', '#70C8A0', '#E8D060', '#C080C8', '#60A8D8'];
+function drawShophouses(startX, gy, count, tod) {
+  const DAY_COLS   = ['#E8A060','#70C8A0','#E8D060','#C080C8','#60A8D8'];
+  const NIGHT_COLS = ['#7A5030','#286040','#7A6828','#602858','#185068'];
+  const EVE_COLS   = ['#C07840','#508060','#C0A040','#904090','#3878A0'];
+  const colors = tod === 'night' ? NIGHT_COLS : tod === 'evening' ? EVE_COLS : DAY_COLS;
   const ws = [85, 70, 90, 75, 80];
   let x = startX;
   for (let i = 0; i < count; i++) {
     const w = ws[i % ws.length];
     const h = 140 + (i % 2) * 20;
     const col = colors[i % colors.length];
-    // Body
     ctx.fillStyle = col;
     ctx.fillRect(x, gy - h, w, h);
-    // Darker stripe at top
     ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.fillRect(x, gy - h, w, 20);
     // Windows
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    const winCol = tod === 'night' ? 'rgba(255,215,80,0.7)' :
+                   tod === 'evening' ? 'rgba(255,160,80,0.5)' : 'rgba(255,255,255,0.5)';
+    ctx.fillStyle = winCol;
     for (let row = 0; row < 2; row++) {
       ctx.fillRect(x + 12, gy - h + 28 + row * 36, 18, 24);
       ctx.fillRect(x + w - 30, gy - h + 28 + row * 36, 18, 24);
     }
-    // 5-foot way arch
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.beginPath();
-    ctx.arc(x + w/2, gy - 22, w*0.38, Math.PI, 0);
-    ctx.closePath(); ctx.fill();
-    // Divider
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x + w/2, gy - 22, w*0.38, Math.PI, 0); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x + w, gy - h); ctx.lineTo(x + w, gy); ctx.stroke();
     x += w;
   }
@@ -1514,6 +1646,7 @@ function showResult(result) {
   if (result === 'WIN') {
     const unused = Math.max(0, birdsLeft - 1);
     if (unused > 0) { score += unused * BIRD_BONUS; updateHUD(); }
+    saveProgress();
 
     const cfg   = LEVEL_CONFIGS[currentLevel];
     const stars = score >= cfg.stars[2] ? 3 : score >= cfg.stars[1] ? 2 : 1;
@@ -1570,8 +1703,32 @@ function getPos(e) {
   };
 }
 
+function startFromTitle() {
+  const savedLevel = getSavedLevel();
+  const lvl = (titleMenuSel === 1 && savedLevel >= 0 && savedLevel < LEVEL_CONFIGS.length)
+    ? savedLevel : 0;
+  currentLevel = lvl;
+  score = 0; particles = [];
+  document.getElementById('hud').style.visibility = 'visible';
+  setupLevel(currentLevel);
+  resetBird();
+  updateHUD();
+  state = 'AIMING';
+}
+
 function onDown(e) {
   e.preventDefault();
+  if (state === 'TITLE') {
+    const p = getPos(e);
+    const menuY = 345;
+    if (p.y >= menuY - 24 && p.y < menuY + 30) { titleMenuSel = 0; startFromTitle(); return; }
+    if (p.y >= menuY + 22) {
+      const savedLevel = getSavedLevel();
+      if (savedLevel >= 0 && savedLevel < LEVEL_CONFIGS.length) { titleMenuSel = 1; }
+      startFromTitle(); return;
+    }
+    return;
+  }
   if (state !== 'AIMING') return;
   const p = getPos(e);
   const dx = p.x - SX, dy = p.y - FORK_Y;
@@ -1617,10 +1774,8 @@ function onClick(e) {
 
 function onTouchStart(e) {
   e.preventDefault();
-  if (state === 'FLYING') {
-    applyBoost();
-    return;
-  }
+  if (state === 'TITLE') { onDown(e); return; }
+  if (state === 'FLYING') { applyBoost(); return; }
   onDown(e);
 }
 
@@ -1635,10 +1790,23 @@ canvas.addEventListener('touchend',   onUp,          { passive: false });
 document.getElementById('ov-btn').addEventListener('click', restartGame);
 document.getElementById('ov-next-btn').addEventListener('click', nextLevel);
 
+document.addEventListener('keydown', e => {
+  if (state === 'TITLE') {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const savedLevel = getSavedLevel();
+      if (savedLevel >= 0 && savedLevel < LEVEL_CONFIGS.length) {
+        titleMenuSel = titleMenuSel === 0 ? 1 : 0;
+      }
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      startFromTitle();
+    }
+  }
+});
+
 // ─── MAIN LOOP ────────────────────────────────────────────────
 
 function update() {
-  if (state === 'WIN' || state === 'LOSE') return;
+  if (state === 'TITLE' || state === 'WIN' || state === 'LOSE') return;
 
   // Always animate particles/dying objects even while waiting
   particles.forEach(p => p.update());
@@ -1712,8 +1880,102 @@ function drawLuckyAnnouncement() {
   ctx.restore();
 }
 
+function drawTitleScreen() {
+  titleFrame++;
+  // Game Boy-style dark BG
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#030D08'); bg.addColorStop(1, '#081810');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // Scanlines
+  for (let y = 0; y < H; y += 4) {
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, y, W, 2);
+  }
+  // Border
+  ctx.strokeStyle = '#2A7A30'; ctx.lineWidth = 3;
+  ctx.strokeRect(12, 12, W-24, H-24);
+  ctx.strokeStyle = '#1A5020'; ctx.lineWidth = 1;
+  ctx.strokeRect(17, 17, W-34, H-34);
+
+  // Title
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#66FF44'; ctx.shadowBlur = 24;
+  ctx.fillStyle = '#88FF66';
+  ctx.font = 'bold 50px "Courier New", monospace';
+  ctx.fillText('ANGRY MOKUMOKU', W/2, 85);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#3A9040';
+  ctx.font = '16px "Courier New", monospace';
+  ctx.fillText('★  K L  C I T Y  E D I T I O N  ★', W/2, 112);
+  ctx.restore();
+
+  // Owl character
+  const bob = Math.sin(titleFrame * 0.05) * 6;
+  const tilt = Math.sin(titleFrame * 0.028) * 0.07;
+  drawMokumoku(W/2, 210 + bob, 58, tilt, 'neutral');
+
+  // Stars around owl
+  const sparkT = (titleFrame * 0.04) % (Math.PI * 2);
+  [[W/2-85,185],[ W/2+90,175],[W/2-70,250],[W/2+75,255]].forEach(([sx,sy],i)=>{
+    const s = 0.5 + 0.5*Math.sin(sparkT + i*1.5);
+    ctx.globalAlpha = s * 0.8;
+    ctx.fillStyle = '#CCFF66';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('✦', sx, sy);
+  });
+  ctx.globalAlpha = 1;
+
+  // Menu
+  const savedLevel = getSavedLevel();
+  const hasSave    = savedLevel >= 0 && savedLevel < LEVEL_CONFIGS.length;
+  const menuY = 345;
+  const items = [
+    { text: 'はじめから',                   enabled: true  },
+    { text: hasSave ? `つづきから  (Lv.${savedLevel+1})` : 'つづきから  (データなし)', enabled: hasSave },
+  ];
+  ctx.font = 'bold 20px "Courier New", monospace';
+  items.forEach((item, i) => {
+    const sel = titleMenuSel === i;
+    const y   = menuY + i * 46;
+    ctx.textAlign = 'center';
+    if (!item.enabled) {
+      ctx.fillStyle = '#1A4520'; ctx.shadowBlur = 0;
+    } else if (sel) {
+      ctx.fillStyle = '#CCFF66';
+      ctx.shadowColor = '#88FF44'; ctx.shadowBlur = 12;
+    } else {
+      ctx.fillStyle = '#44AA44'; ctx.shadowBlur = 0;
+    }
+    const arrow = sel ? '▶ ' : '  ';
+    ctx.fillText(arrow + item.text, W/2, y);
+  });
+  ctx.shadowBlur = 0;
+
+  // Player count
+  if (onlinePlayers > 1) {
+    ctx.fillStyle = '#2A6A2A'; ctx.font = '13px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`👥 オンライン: ${onlinePlayers}人`, W/2, H-36);
+  }
+  // Footer
+  ctx.fillStyle = '#1E4A20'; ctx.font = '12px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('CLICK OR TAP TO SELECT  •  ARROW KEYS TO MOVE', W/2, H-20);
+}
+
+function drawPlayerCount() {
+  if (onlinePlayers <= 1) return;
+  ctx.save();
+  ctx.textAlign = 'right'; ctx.font = '13px Arial';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillText(`👥 ${onlinePlayers}`, W - 14, H - 14);
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
+  if (state === 'TITLE') { drawTitleScreen(); return; }
   drawBackground();
   drawBlocks();
   drawRats();
@@ -1723,6 +1985,7 @@ function draw() {
   drawBird();
   if (state === 'AIMING') drawAimUI();
   drawBoostPrompt();
+  drawPlayerCount();
   drawLuckyAnnouncement();
 }
 
@@ -1735,9 +1998,10 @@ function loop() {
 // ─── INIT ─────────────────────────────────────────────────────
 
 function init() {
-  setupLevel(0);
-  resetBird();
-  updateHUD();
+  state = 'TITLE';
+  titleMenuSel = 0;
+  titleFrame = 0;
+  initPlayerTracking();
   loop();
 }
 
