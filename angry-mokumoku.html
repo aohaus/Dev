@@ -134,7 +134,7 @@ const GRAV        = 0.42;
 const GROUND_Y    = 435;
 const SX          = 155;   // slingshot x
 const SY          = GROUND_Y;
-const FORK_H      = 95;
+const FORK_H      = 143;
 const FORK_Y      = SY - FORK_H;
 const MAX_PULL    = 90;
 const POWER       = 0.19;
@@ -228,6 +228,11 @@ let gameStartTime  = 0;
 let totalPlayTime  = 0;
 let allClearParticles = [];
 let particles    = [];
+let shakeX = 0, shakeY = 0;
+let comboCount  = 0;
+let comboTimer  = 0;
+let comboText   = '';
+let lastKillTime = 0;
 let mouse        = { x: 0, y: 0, down: false };
 let dragging     = false;
 let pullX = 0, pullY = 0;
@@ -284,7 +289,7 @@ class Block {
     this.angle = 0;
     this.angV = 0;
     this.alive = true;
-    this.hp = type === 'bamboo' ? 1.5 : type === 'wood' ? 3 : 5;
+    this.hp = type === 'bamboo' ? 1.5 : type === 'wood' ? 3 : type === 'tnt' ? 4 : 5;
     this.flash = 0;
     this.grounded = true;
   }
@@ -343,12 +348,16 @@ class Rat {
       return;
     }
     if (this.patrol && this.grounded) {
+      this.angle *= 0.88; if (Math.abs(this.angle) < 0.02) this.angle = 0;
       this.x += this.patrolDir * 0.7;
       if (Math.abs(this.x - this.patrolHome) > this.patrolRange) this.patrolDir *= -1;
       this.x = clamp(this.x, this.r + 2, W - this.r - 2);
       return;
     }
-    if (this.grounded && this.vy === 0 && Math.abs(this.vx) < 0.1) return;
+    if (this.grounded && this.vy === 0 && Math.abs(this.vx) < 0.1) {
+      this.angle *= 0.88; if (Math.abs(this.angle) < 0.02) this.angle = 0;
+      return;
+    }
     const wasAirborne = !this.grounded;
     this.grounded = false;
     this.vy += GRAV;
@@ -380,11 +389,26 @@ class Rat {
     this.vx += (Math.random() - 0.5) * 5;
     this.vy -= 5 + Math.random() * 3;
     this.angV = (Math.random() - 0.5) * 0.35;
-    score += this.pts;
+    // Combo multiplier
+    const now = Date.now();
+    if (lastKillTime > 0 && now - lastKillTime < 2000) {
+      comboCount++;
+    } else {
+      comboCount = 0;
+    }
+    lastKillTime = now;
+    const mult = 1 + comboCount * 0.5;
+    const earned = Math.round(this.pts * mult);
+    score += earned;
     ratsKilled++;
+    if (comboCount > 0) {
+      comboText  = `${comboCount + 1}コンボ！  ×${mult.toFixed(1)}`;
+      comboTimer = 100;
+    }
     updateHUD();
     addParticles(this.x, this.y, '#FFB830', 14, 4);
     addParticles(this.x, this.y, '#FF6030', 8, 3);
+    addShake(comboCount > 1 ? 10 : 5);
   }
 }
 
@@ -417,6 +441,11 @@ function addParticles(x, y, col, count, sz) {
   }
 }
 
+function addShake(intensity) {
+  shakeX = (Math.random() - 0.5) * intensity * 2;
+  shakeY = (Math.random() - 0.5) * intensity * 2;
+}
+
 function updateHUD() {
   const cfg = LEVEL_CONFIGS[currentLevel];
   document.getElementById('score-display').textContent = `${cfg.name} | スコア: ${score}`;
@@ -442,6 +471,7 @@ function makeRat(x, y, type, patrol) {
 function setupLevel(idx) {
   blocks = []; rats = [];
   ratsKilled = 0;
+  comboCount = 0; comboTimer = 0; comboText = ''; lastKillTime = 0;
   const cfg = LEVEL_CONFIGS[idx];
   totalBirds = cfg.birds;
   birdsLeft  = totalBirds;
@@ -575,6 +605,8 @@ function _buildLevel5() {
   makeBlock(845, GROUND_Y-83, 52, 13, 'wood');
   makeRat(833, GROUND_Y-83-6-13, 'ninja', true);
   makeRat(858, GROUND_Y-83-6-13, 'ninja');
+  // TNT between the two fortresses
+  makeBlock(640, GROUND_Y-20, 34, 40, 'tnt');
 }
 
 function _buildLevel6() {
@@ -609,6 +641,8 @@ function _buildLevel6() {
   makeBlock(514, GROUND_Y-35, 13, 70, 'bamboo');
   makeBlock(502, GROUND_Y-70, 38, 13, 'wood');
   makeRat(502, GROUND_Y-70-6-13, 'ninja', true);
+  // TNT between center and right boss clusters
+  makeBlock(755, GROUND_Y-20, 34, 40, 'tnt');
 }
 
 function _buildLevel7() {
@@ -641,6 +675,8 @@ function _buildLevel7() {
   makeBlock(850, GROUND_Y-55, 13, 110, 'bamboo');
   makeBlock(850, GROUND_Y-57, 42, 13, 'wood');
   makeRat(850, GROUND_Y-57-6-10, 'baby');
+  // TNT ground level center
+  makeBlock(635, GROUND_Y-20, 34, 40, 'tnt');
 }
 
 function _buildLevel8() {
@@ -676,6 +712,8 @@ function _buildLevel8() {
   makeBlock(872, GROUND_Y-40, 13, 80, 'bamboo');
   makeBlock(872, GROUND_Y-42, 36, 13, 'wood');
   makeRat(872, GROUND_Y-42-6-10, 'baby');
+  // TNT flanking left fortress
+  makeBlock(560, GROUND_Y-20, 34, 40, 'tnt');
 }
 
 function _buildLevel9() {
@@ -710,6 +748,8 @@ function _buildLevel9() {
   makeBlock(840, GROUND_Y-50, 13, 100, 'bamboo');
   makeBlock(840, GROUND_Y-52, 40, 13, 'wood');
   makeRat(840, GROUND_Y-52-6-10, 'baby');
+  // TNT between the two center towers
+  makeBlock(660, GROUND_Y-20, 34, 40, 'tnt');
 }
 
 function _buildLevel10() {
@@ -762,6 +802,9 @@ function _buildLevel10() {
   makeBlock(867, GROUND_Y-140, 52, 13, 'wood');
   makeBlock(867, GROUND_Y-196, 46, 60, 'crate');
   makeRat(867, GROUND_Y-196-30-22, 'boss');
+  // Two TNTs for epic finale
+  makeBlock(555, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(675, GROUND_Y-20, 34, 40, 'tnt');
 }
 
 function resetBird() {
@@ -815,6 +858,39 @@ function circleCirle(ax, ay, ar, bx, by, br) {
   return { nx: dx/d, ny: dy/d, d };
 }
 
+function explodeTNT(x, y) {
+  addParticles(x, y, '#FF5500', 22, 7);
+  addParticles(x, y, '#FFD000', 16, 5);
+  addParticles(x, y, '#FF0000', 10, 4);
+  addShake(16);
+  score += 100; updateHUD();
+  const BLAST = 155;
+  rats.forEach(rat => {
+    if (!rat.alive || rat.dying) return;
+    const dx = rat.x - x, dy = rat.y - y;
+    if (Math.sqrt(dx*dx + dy*dy) < BLAST) rat.die();
+  });
+  blocks.forEach(blk => {
+    if (!blk.alive) return;
+    const dx = blk.x - x, dy = blk.y - y;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (d >= BLAST) return;
+    blk.hp -= 3.5 * (1 - d / BLAST);
+    if (blk.hp <= 0) {
+      blk.alive = false;
+      score += 50; updateHUD();
+      addParticles(blk.x, blk.y, blockColor(blk.type), 8, 3);
+      if (blk.type === 'tnt') setTimeout(() => explodeTNT(blk.x, blk.y), 160);
+    } else {
+      const f = (1 - d / BLAST) * 7;
+      blk.vx += (dx / (d||1)) * f;
+      blk.vy += (dy / (d||1)) * f;
+      blk.angV += (Math.random() - 0.5) * 0.2;
+      blk.grounded = false;
+    }
+  });
+}
+
 function checkCollisions() {
   if (!bird || !bird.launched || !bird.alive) return;
   const speed = Math.sqrt(bird.vx*bird.vx + bird.vy*bird.vy);
@@ -840,18 +916,23 @@ function checkCollisions() {
 
     if (blk.hp <= 0) {
       blk.alive = false;
-      score += 50; updateHUD();
-      addParticles(blk.x, blk.y, blockColor(blk.type), 10, 4);
-      // Knock nearby rats when a block collapses
-      rats.forEach(rat => {
-        if (rat.dying) return;
-        const dx = rat.x - blk.x, dy = rat.y - blk.y;
-        if (Math.sqrt(dx*dx + dy*dy) < 110) {
-          rat.vy -= 5 + Math.random() * 3;
-          rat.vx += (Math.random() - 0.5) * 8;
-          rat.grounded = false;
-        }
-      });
+      if (blk.type === 'tnt') {
+        explodeTNT(blk.x, blk.y);
+        addShake(12);
+      } else {
+        score += 50; updateHUD();
+        addParticles(blk.x, blk.y, blockColor(blk.type), 10, 4);
+        addShake(4);
+        rats.forEach(rat => {
+          if (rat.dying) return;
+          const dx = rat.x - blk.x, dy = rat.y - blk.y;
+          if (Math.sqrt(dx*dx + dy*dy) < 110) {
+            rat.vy -= 5 + Math.random() * 3;
+            rat.vx += (Math.random() - 0.5) * 8;
+            rat.grounded = false;
+          }
+        });
+      }
     } else {
       blk.vx += c.nx * speed * 0.4;
       blk.vy += c.ny * speed * 0.4;
@@ -880,7 +961,7 @@ function checkBlockRatCollisions() {
 // ─── DRAW HELPERS ─────────────────────────────────────────────
 
 function blockColor(type) {
-  return type === 'bamboo' ? '#7DB84A' : type === 'wood' ? '#A0652A' : '#C8A030';
+  return type === 'bamboo' ? '#7DB84A' : type === 'wood' ? '#A0652A' : type === 'tnt' ? '#CC2010' : '#C8A030';
 }
 
 function drawBackground() {
@@ -1197,6 +1278,29 @@ function drawBlocks() {
       ctx.strokeStyle = 'rgba(0,0,0,0.3)';
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.roundRect(-hw, -hh, b.w, b.h, 3); ctx.stroke();
+    } else if (b.type === 'tnt') {
+      // TNT box
+      ctx.fillStyle = b.flash > 0 ? '#FFFFFF' : '#C81808';
+      ctx.fillRect(-hw, -hh, b.w, b.h);
+      ctx.strokeStyle = '#7A0800'; ctx.lineWidth = 2.5;
+      ctx.strokeRect(-hw, -hh, b.w, b.h);
+      // Cross stripes
+      ctx.strokeStyle = '#FF6040'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-hw, -hh); ctx.lineTo(hw, hh); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hw, -hh); ctx.lineTo(-hw, hh); ctx.stroke();
+      // Label
+      ctx.fillStyle = '#FFE020';
+      ctx.font = `bold ${Math.max(10, Math.floor(b.h * 0.44))}px Arial`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('TNT', 0, 0);
+      ctx.textBaseline = 'alphabetic';
+      // Fuse spark when damaged
+      const tntDmg = 1 - b.hp / 4;
+      if (tntDmg > 0.15) {
+        const spk = Math.sin(Date.now() * 0.02) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255,${Math.floor(180*spk)},0,${0.6+spk*0.4})`;
+        ctx.beginPath(); ctx.arc(0, -hh - 5, 3 + tntDmg * 5, 0, Math.PI*2); ctx.fill();
+      }
     } else {
       // Crate
       ctx.fillStyle = b.flash > 0 ? '#FFE8A0' : '#C8A830';
@@ -1727,7 +1831,8 @@ function showResult(result) {
 }
 
 function restartGame() {
-  score = levelStartScore; // revert to score at start of this level
+  score = Math.floor(score / 2); // halve score as penalty
+  levelStartScore = score;       // new baseline after penalty
   totalDeaths++;
   particles = [];
   state = 'AIMING';
@@ -2142,10 +2247,33 @@ function drawPlayerCount() {
   ctx.restore();
 }
 
+function drawComboAnnouncement() {
+  if (comboTimer <= 0 || !comboText) return;
+  comboTimer--;
+  const alpha = comboTimer > 60 ? 1 : comboTimer / 60;
+  const scale = comboTimer > 80 ? 1 + (100 - comboTimer) * 0.018 : 1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(W / 2, H / 2 + 30);
+  ctx.scale(scale, scale);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 30px Arial';
+  ctx.shadowColor = '#FF6600'; ctx.shadowBlur = 20;
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText(comboText, 0, 0);
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
   if (state === 'TITLE') { drawTitleScreen(); return; }
   if (state === 'ALLCLEAR') { drawAllClearScreen(); return; }
+  // Screen shake
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+  shakeX *= 0.72; shakeY *= 0.72;
+  if (Math.abs(shakeX) < 0.1) shakeX = 0;
+  if (Math.abs(shakeY) < 0.1) shakeY = 0;
   drawBackground();
   drawBlocks();
   drawRats();
@@ -2157,6 +2285,8 @@ function draw() {
   drawBoostPrompt();
   drawPlayerCount();
   drawLuckyAnnouncement();
+  drawComboAnnouncement();
+  ctx.restore(); // end shake translate
 }
 
 function loop() {
