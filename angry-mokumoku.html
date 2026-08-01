@@ -2,8 +2,18 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>Angry Mokumoku - Asia & Beyond Edition</title>
+
+<!-- Home-screen / PWA setup -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1228">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="モクモク">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -268,16 +278,35 @@ class Bird {
     this.trail = [];
     this.flash = 0;
     this.sinePhase = 0;
+    this.dirX = 0; this.dirY = 0; this.perpX = 0; this.perpY = 0;
+    this.speed = 0; this.baseX = 0; this.baseY = 0; this.travel = 0;
   }
   update() {
     if (!this.launched) return;
+
+    if (this.type === 'super') {
+      // No gravity arc — flies straight in the aimed direction, waving side to side.
+      this.travel += this.speed;
+      this.sinePhase += 0.16;
+      const wave = Math.sin(this.sinePhase) * 34;
+      this.x = this.baseX + this.dirX * this.travel + this.perpX * wave;
+      this.y = this.baseY + this.dirY * this.travel + this.perpY * wave;
+      this.angle = Math.atan2(this.dirY, this.dirX);
+      this.flash = Math.max(0, this.flash - 1);
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > 22) this.trail.shift();
+      if (this.y + this.r >= GROUND_Y) {
+        this.y = GROUND_Y - this.r;
+        addParticles(this.x, this.y + this.r, '#C8A060', 5, 2);
+        this.alive = false;
+      }
+      if (this.x > W + 120 || this.x < -120 || this.y < -150) this.alive = false;
+      return;
+    }
+
     this.vy += GRAV;
     this.x += this.vx;
     this.y += this.vy;
-    if (this.type === 'super') {
-      this.sinePhase += 0.18;
-      this.y += Math.sin(this.sinePhase) * 3.5;
-    }
     this.angle = Math.atan2(this.vy, this.vx);
     this.flash = Math.max(0, this.flash - 1);
 
@@ -352,6 +381,10 @@ class Rat {
     this.patrolDir = 1;
     this.patrolHome = x;
     this.patrolRange = 18;
+    this.vPatrol = false;
+    this.vPatrolHome = y;
+    this.vPatrolRange = 0;
+    this.vPhase = Math.random() * Math.PI * 2;
   }
   update() {
     this.eyeAnim += 0.06;
@@ -362,6 +395,12 @@ class Rat {
       this.y += this.vy;
       this.angle += this.angV;
       if (this.deathT > 55 || this.y > H + 60) this.alive = false;
+      return;
+    }
+    if (this.vPatrol) {
+      this.vPhase += 0.045;
+      this.y = this.vPatrolHome + Math.sin(this.vPhase) * this.vPatrolRange;
+      this.angle *= 0.88; if (Math.abs(this.angle) < 0.02) this.angle = 0;
       return;
     }
     if (this.patrol && this.grounded) {
@@ -479,10 +518,44 @@ function makeBlock(x, y, w, h, type) {
   const b = new Block(x, y, w, h, type);
   blocks.push(b); return b;
 }
-function makeRat(x, y, type, patrol) {
+function makeRat(x, y, type, patrol, vRange) {
   const r = new Rat(x, y, type || 'chef');
   if (patrol) { r.patrol = true; r.patrolHome = x; }
+  if (vRange) { r.vPatrol = true; r.vPatrolHome = y; r.vPatrolRange = vRange; }
   rats.push(r); return r;
+}
+
+// Scales every block/rat's height-above-ground uniformly (about the ground
+// line) so the tallest tower's top never goes off the top of the canvas —
+// stacked pieces stay glued together since they all scale by the same factor.
+function _clampLevelToScreen() {
+  const SAFE_TOP = 18;
+  let maxAbove = 0;
+  blocks.forEach(b => {
+    maxAbove = Math.max(maxAbove, (GROUND_Y - b.y) + b.h / 2);
+  });
+  rats.forEach(r => {
+    const margin = r.type === 'boss' ? r.r * 2.2 : r.type === 'chef' ? r.r * 2.0 : r.r * 1.5;
+    const baseY = r.vPatrol ? r.vPatrolHome : r.y;
+    maxAbove = Math.max(maxAbove, (GROUND_Y - baseY) + margin + (r.vPatrol ? r.vPatrolRange : 0));
+  });
+  const available = GROUND_Y - SAFE_TOP;
+  if (maxAbove <= available) return;
+  const F = available / maxAbove;
+  blocks.forEach(b => {
+    const dist = GROUND_Y - b.y;
+    b.y = GROUND_Y - dist * F;
+    b.h *= F;
+  });
+  rats.forEach(r => {
+    const dist = GROUND_Y - r.y;
+    r.y = GROUND_Y - dist * F;
+    if (r.vPatrol) {
+      const vDist = GROUND_Y - r.vPatrolHome;
+      r.vPatrolHome = GROUND_Y - vDist * F;
+      r.vPatrolRange *= F;
+    }
+  });
 }
 
 function setupLevel(idx) {
@@ -496,6 +569,7 @@ function setupLevel(idx) {
    _buildLevel6,_buildLevel7,_buildLevel8,_buildLevel9,_buildLevel10,
    _buildLevel11,_buildLevel12,_buildLevel13,_buildLevel14,_buildLevel15,
    _buildLevel16,_buildLevel17,_buildLevel18,_buildLevel19,_buildLevel20][idx]();
+  _clampLevelToScreen();
   totalRatsAtStart = rats.length;
 }
 
@@ -624,8 +698,8 @@ function _buildLevel5() {
   makeBlock(845, GROUND_Y-83, 52, 13, 'wood');
   makeRat(833, GROUND_Y-83-6-13, 'ninja', true);
   makeRat(858, GROUND_Y-83-6-13, 'ninja');
-  // TNT between the two fortresses
-  makeBlock(640, GROUND_Y-20, 34, 40, 'tnt');
+  // TNT on boss1's shelf — chains into boss1 & spills toward boss2
+  makeBlock(650, GROUND_Y-248, 34, 40, 'tnt');
 }
 
 function _buildLevel6() {
@@ -660,8 +734,8 @@ function _buildLevel6() {
   makeBlock(514, GROUND_Y-35, 13, 70, 'bamboo');
   makeBlock(502, GROUND_Y-70, 38, 13, 'wood');
   makeRat(502, GROUND_Y-70-6-13, 'ninja', true);
-  // TNT between center and right boss clusters
-  makeBlock(755, GROUND_Y-20, 34, 40, 'tnt');
+  // TNT on boss2's shelf, edge toward boss3
+  makeBlock(709, GROUND_Y-308, 34, 40, 'tnt');
 }
 
 function _buildLevel7() {
@@ -694,8 +768,8 @@ function _buildLevel7() {
   makeBlock(850, GROUND_Y-55, 13, 110, 'bamboo');
   makeBlock(850, GROUND_Y-57, 42, 13, 'wood');
   makeRat(850, GROUND_Y-57-6-10, 'baby');
-  // TNT ground level center
-  makeBlock(635, GROUND_Y-20, 34, 40, 'tnt');
+  // TNT on boss1 tower's shelf
+  makeBlock(639, GROUND_Y-248, 34, 40, 'tnt');
 }
 
 function _buildLevel8() {
@@ -731,8 +805,8 @@ function _buildLevel8() {
   makeBlock(872, GROUND_Y-40, 13, 80, 'bamboo');
   makeBlock(872, GROUND_Y-42, 36, 13, 'wood');
   makeRat(872, GROUND_Y-42-6-10, 'baby');
-  // TNT flanking left fortress
-  makeBlock(560, GROUND_Y-20, 34, 40, 'tnt');
+  // TNT on left fortress shelf, edge toward center spire
+  makeBlock(529, GROUND_Y-268, 34, 40, 'tnt');
 }
 
 function _buildLevel9() {
@@ -767,8 +841,8 @@ function _buildLevel9() {
   makeBlock(840, GROUND_Y-50, 13, 100, 'bamboo');
   makeBlock(840, GROUND_Y-52, 40, 13, 'wood');
   makeRat(840, GROUND_Y-52-6-10, 'baby');
-  // TNT between the two center towers
-  makeBlock(660, GROUND_Y-20, 34, 40, 'tnt');
+  // TNT on center-left tower shelf, edge toward center-right
+  makeBlock(634, GROUND_Y-268, 34, 40, 'tnt');
 }
 
 function _buildLevel10() {
@@ -821,9 +895,9 @@ function _buildLevel10() {
   makeBlock(867, GROUND_Y-140, 52, 13, 'wood');
   makeBlock(867, GROUND_Y-196, 46, 60, 'crate');
   makeRat(867, GROUND_Y-196-30-22, 'boss');
-  // Two TNTs for epic finale
-  makeBlock(555, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(675, GROUND_Y-20, 34, 40, 'tnt');
+  // Two TNTs for epic finale — on left fortress & center spire shelves
+  makeBlock(649, GROUND_Y-288, 34, 40, 'tnt');
+  makeBlock(769, GROUND_Y-328, 34, 40, 'tnt');
 }
 
 function _buildLevel11() {
@@ -850,7 +924,7 @@ function _buildLevel11() {
   makeBlock(785, GROUND_Y-162, 62, 13, 'wood');
   makeRat(785, GROUND_Y-162-6-13, 'ninja', true);
 
-  makeBlock(565, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(519, GROUND_Y-228, 34, 40, 'tnt');
 }
 
 function _buildLevel12() {
@@ -878,7 +952,7 @@ function _buildLevel12() {
   makeRat(735, GROUND_Y-422-28-22, 'boss');
   makeRat(735, GROUND_Y-282-6-17, 'suit');
 
-  makeBlock(598, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(619, GROUND_Y-268, 34, 40, 'tnt');
 }
 
 function _buildLevel13() {
@@ -910,8 +984,8 @@ function _buildLevel13() {
   makeBlock(830, GROUND_Y-280, 54, 62, 'crate');
   makeRat(830, GROUND_Y-280-31-22, 'boss');
 
-  makeBlock(490, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(630, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(531, GROUND_Y-268, 34, 40, 'tnt');
+  makeBlock(661, GROUND_Y-308, 34, 40, 'tnt');
 }
 
 function _buildLevel14() {
@@ -945,8 +1019,8 @@ function _buildLevel14() {
   makeBlock(842, GROUND_Y-308, 60, 68, 'crate');
   makeRat(842, GROUND_Y-308-34-22, 'boss');
 
-  makeBlock(482, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(635, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(521, GROUND_Y-288, 34, 40, 'tnt');
+  makeBlock(665, GROUND_Y-316, 34, 40, 'tnt');
 }
 
 function _buildLevel15() {
@@ -969,7 +1043,7 @@ function _buildLevel15() {
   makeBlock(687, GROUND_Y-302, 108, 13, 'wood');
   makeBlock(687, GROUND_Y-368, 70, 70, 'crate');
   makeBlock(687, GROUND_Y-450, 60, 60, 'wood');
-  makeRat(687, GROUND_Y-450-30-22, 'boss');
+  makeRat(687, GROUND_Y-450-30-22, 'boss', false, 30);
 
   makeBlock(800, GROUND_Y-135, 13, 270, 'bamboo');
   makeBlock(875, GROUND_Y-135, 13, 270, 'bamboo');
@@ -982,10 +1056,10 @@ function _buildLevel15() {
   makeBlock(855, GROUND_Y-55, 13, 110, 'bamboo');
   makeBlock(882, GROUND_Y-55, 13, 110, 'bamboo');
   makeBlock(868, GROUND_Y-112, 56, 13, 'wood');
-  makeRat(868, GROUND_Y-112-6-22, 'boss');
+  makeRat(868, GROUND_Y-112-6-22, 'boss', false, 22);
 
-  makeBlock(500, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(652, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(563, GROUND_Y-288, 34, 40, 'tnt');
+  makeBlock(724, GROUND_Y-328, 34, 40, 'tnt');
 }
 
 function _buildLevel16() {
@@ -1002,14 +1076,14 @@ function _buildLevel16() {
   makeBlock(555, GROUND_Y-426, 56, 58, 'crate');
   makeRat(555, GROUND_Y-426-29-22, 'boss', true);
   makeBlock(522, GROUND_Y-218, 52, 13, 'wood');
-  makeRat(522, GROUND_Y-218-6-17, 'suit');
+  makeRat(522, GROUND_Y-218-6-17, 'suit', false, 26);
 
   makeBlock(660, GROUND_Y-160, 13, 320, 'bamboo');
   makeBlock(760, GROUND_Y-160, 13, 320, 'bamboo');
   makeBlock(710, GROUND_Y-322, 112, 13, 'wood');
   makeBlock(710, GROUND_Y-392, 74, 74, 'crate');
   makeBlock(710, GROUND_Y-478, 62, 64, 'wood');
-  makeRat(710, GROUND_Y-478-32-22, 'boss');
+  makeRat(710, GROUND_Y-478-32-22, 'boss', false, 30);
   makeRat(710, GROUND_Y-322-6-17, 'suit', true);
 
   makeBlock(820, GROUND_Y-140, 13, 280, 'bamboo');
@@ -1023,9 +1097,9 @@ function _buildLevel16() {
   makeBlock(862, GROUND_Y-57, 44, 13, 'wood');
   makeRat(862, GROUND_Y-57-6-22, 'boss');
 
-  makeBlock(468, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(610, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(738, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(521, GROUND_Y-308, 34, 40, 'tnt');
+  makeBlock(671, GROUND_Y-348, 34, 40, 'tnt');
+  makeBlock(831, GROUND_Y-308, 34, 40, 'tnt');
 }
 
 function _buildLevel17() {
@@ -1043,14 +1117,14 @@ function _buildLevel17() {
   makeBlock(550, GROUND_Y-406, 54, 58, 'crate');
   makeRat(550, GROUND_Y-406-29-22, 'boss', true);
   makeBlock(516, GROUND_Y-200, 52, 13, 'wood');
-  makeRat(516, GROUND_Y-200-6-17, 'suit');
+  makeRat(516, GROUND_Y-200-6-17, 'suit', false, 24);
 
   makeBlock(655, GROUND_Y-155, 13, 310, 'bamboo');
   makeBlock(750, GROUND_Y-155, 13, 310, 'bamboo');
   makeBlock(702, GROUND_Y-312, 108, 13, 'wood');
   makeBlock(702, GROUND_Y-382, 72, 74, 'crate');
   makeBlock(702, GROUND_Y-468, 62, 64, 'wood');
-  makeRat(702, GROUND_Y-468-32-22, 'boss');
+  makeRat(702, GROUND_Y-468-32-22, 'boss', false, 32);
   makeRat(702, GROUND_Y-312-6-17, 'suit', true);
 
   makeBlock(812, GROUND_Y-145, 13, 290, 'bamboo');
@@ -1064,9 +1138,9 @@ function _buildLevel17() {
   makeBlock(860, GROUND_Y-62, 46, 13, 'wood');
   makeRat(860, GROUND_Y-62-6-22, 'boss');
 
-  makeBlock(456, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(612, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(746, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(519, GROUND_Y-288, 34, 40, 'tnt');
+  makeBlock(665, GROUND_Y-338, 34, 40, 'tnt');
+  makeBlock(823, GROUND_Y-318, 34, 40, 'tnt');
 }
 
 function _buildLevel18() {
@@ -1082,14 +1156,14 @@ function _buildLevel18() {
   makeBlock(534, GROUND_Y-430, 56, 60, 'crate');
   makeRat(534, GROUND_Y-430-30-22, 'boss', true);
   makeBlock(498, GROUND_Y-218, 54, 13, 'wood');
-  makeRat(498, GROUND_Y-218-6-17, 'suit');
+  makeRat(498, GROUND_Y-218-6-17, 'suit', false, 26);
 
   makeBlock(645, GROUND_Y-160, 13, 320, 'bamboo');
   makeBlock(745, GROUND_Y-160, 13, 320, 'bamboo');
   makeBlock(695, GROUND_Y-322, 112, 13, 'wood');
   makeBlock(695, GROUND_Y-396, 74, 78, 'crate');
   makeBlock(695, GROUND_Y-486, 64, 68, 'wood');
-  makeRat(695, GROUND_Y-486-34-22, 'boss');
+  makeRat(695, GROUND_Y-486-34-22, 'boss', false, 32);
   makeRat(695, GROUND_Y-322-6-17, 'suit', true);
 
   makeBlock(808, GROUND_Y-150, 13, 300, 'bamboo');
@@ -1097,7 +1171,7 @@ function _buildLevel18() {
   makeBlock(843, GROUND_Y-302, 82, 13, 'wood');
   makeBlock(843, GROUND_Y-374, 64, 76, 'crate');
   makeBlock(843, GROUND_Y-462, 54, 66, 'crate');
-  makeRat(843, GROUND_Y-462-33-22, 'boss');
+  makeRat(843, GROUND_Y-462-33-22, 'boss', false, 28);
 
   makeBlock(855, GROUND_Y-65, 13, 130, 'bamboo');
   makeBlock(882, GROUND_Y-65, 13, 130, 'bamboo');
@@ -1109,9 +1183,9 @@ function _buildLevel18() {
   makeBlock(860, GROUND_Y-57, 44, 13, 'wood');
   makeRat(860, GROUND_Y-57-6-22, 'boss');
 
-  makeBlock(444, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(600, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(744, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(501, GROUND_Y-308, 34, 40, 'tnt');
+  makeBlock(656, GROUND_Y-348, 34, 40, 'tnt');
+  makeBlock(819, GROUND_Y-328, 34, 40, 'tnt');
 }
 
 function _buildLevel19() {
@@ -1128,7 +1202,7 @@ function _buildLevel19() {
   makeBlock(539, GROUND_Y-434, 56, 62, 'crate');
   makeRat(539, GROUND_Y-434-31-22, 'boss', true);
   makeBlock(504, GROUND_Y-218, 54, 13, 'wood');
-  makeRat(504, GROUND_Y-218-6-17, 'suit');
+  makeRat(504, GROUND_Y-218-6-17, 'suit', false, 24);
   makeBlock(539, GROUND_Y-170, 52, 13, 'wood');
   makeRat(539, GROUND_Y-170-6-17, 'suit', true);
 
@@ -1137,7 +1211,7 @@ function _buildLevel19() {
   makeBlock(699, GROUND_Y-332, 114, 13, 'wood');
   makeBlock(699, GROUND_Y-408, 76, 80, 'crate');
   makeBlock(699, GROUND_Y-500, 66, 70, 'wood');
-  makeRat(699, GROUND_Y-500-35-22, 'boss');
+  makeRat(699, GROUND_Y-500-35-22, 'boss', false, 34);
   makeRat(699, GROUND_Y-332-6-17, 'suit', true);
 
   makeBlock(815, GROUND_Y-155, 13, 310, 'bamboo');
@@ -1145,7 +1219,7 @@ function _buildLevel19() {
   makeBlock(848, GROUND_Y-312, 80, 13, 'wood');
   makeBlock(848, GROUND_Y-386, 64, 78, 'crate');
   makeBlock(848, GROUND_Y-476, 54, 68, 'crate');
-  makeRat(848, GROUND_Y-476-34-22, 'boss');
+  makeRat(848, GROUND_Y-476-34-22, 'boss', false, 30);
 
   makeBlock(860, GROUND_Y-70, 13, 140, 'bamboo');
   makeBlock(887, GROUND_Y-70, 13, 140, 'bamboo');
@@ -1157,9 +1231,9 @@ function _buildLevel19() {
   makeBlock(860, GROUND_Y-62, 46, 13, 'wood');
   makeRat(860, GROUND_Y-62-6-22, 'boss');
 
-  makeBlock(440, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(606, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(748, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(506, GROUND_Y-308, 34, 40, 'tnt');
+  makeBlock(659, GROUND_Y-358, 34, 40, 'tnt');
+  makeBlock(825, GROUND_Y-338, 34, 40, 'tnt');
 }
 
 function _buildLevel20() {
@@ -1206,10 +1280,10 @@ function _buildLevel20() {
   makeBlock(862, GROUND_Y-67, 48, 13, 'wood');
   makeRat(862, GROUND_Y-67-6-22, 'boss');
 
-  makeBlock(430, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(555, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(680, GROUND_Y-20, 34, 40, 'tnt');
-  makeBlock(760, GROUND_Y-20, 34, 40, 'tnt');
+  makeBlock(501, GROUND_Y-308, 34, 40, 'tnt');
+  makeBlock(567, GROUND_Y-308, 34, 40, 'tnt');
+  makeBlock(651, GROUND_Y-358, 34, 40, 'tnt');
+  makeBlock(801, GROUND_Y-348, 34, 40, 'tnt');
 }
 
 function resetBird() {
@@ -2599,6 +2673,7 @@ function drawBird() {
 
 function drawTrajectoryArc() {
   if (!dragging) return;
+  if (birdType === 'super') return; // super mokumoku doesn't fly a parabola — no preview
   const speedMult = birdType === 'speed' ? SPEED_MULT : 1;
   const r = birdType === 'giant' ? GIANT_R : BIRD_R;
   const vx = -pullX * POWER * speedMult;
@@ -2687,14 +2762,23 @@ function launch() {
   settleTimer = 0;
   boostCooldown = 30; // prevent accidental boost on launch touchend
 
-  document.getElementById('boost-hint').style.opacity = '1';
-  setTimeout(() => {
-    document.getElementById('boost-hint').style.opacity = '0';
-  }, 2000);
+  if (birdType === 'super') {
+    const spd = Math.sqrt(vx * vx + vy * vy) || 0.001;
+    bird.dirX = vx / spd; bird.dirY = vy / spd;
+    bird.perpX = -bird.dirY; bird.perpY = bird.dirX;
+    bird.speed = spd * 1.15;
+    bird.baseX = bird.x; bird.baseY = bird.y;
+    bird.travel = 0;
+  } else {
+    document.getElementById('boost-hint').style.opacity = '1';
+    setTimeout(() => {
+      document.getElementById('boost-hint').style.opacity = '0';
+    }, 2000);
+  }
 }
 
 function applyBoost() {
-  if (!bird || !bird.launched || boostUsed || boostCooldown > 0) return;
+  if (!bird || !bird.launched || boostUsed || boostCooldown > 0 || birdType === 'super') return;
   const sp = Math.sqrt(bird.vx*bird.vx + bird.vy*bird.vy);
   if (sp < 0.1) return;
   const nx = bird.vx / sp, ny = bird.vy / sp;
@@ -2971,7 +3055,7 @@ function update() {
 }
 
 function drawBoostPrompt() {
-  if (state !== 'FLYING' || boostUsed || !bird || boostCooldown > 0) return;
+  if (state !== 'FLYING' || boostUsed || !bird || boostCooldown > 0 || birdType === 'super') return;
   const a = 0.65 + 0.35 * Math.sin(Date.now() * 0.006);
   ctx.save();
   ctx.globalAlpha = a;
@@ -3003,6 +3087,15 @@ function drawLuckyAnnouncement() {
   ctx.restore();
 }
 
+function _dataURLToBlob(dataURL) {
+  const [header, base64] = dataURL.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const binary = atob(base64);
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
 function shareResult() {
   const rating = computeRating(score, totalPlayTime, totalDeaths);
   const mins = Math.floor(totalPlayTime / 60);
@@ -3015,13 +3108,33 @@ function shareResult() {
     `⏱ プレイ時間: ${mins}分${secs}秒\n` +
     `💀 やられた回数: ${totalDeaths}回\n` +
     `https://aohaus.github.io/Dev/angry-mokumoku.html`;
+
+  // Snapshot the current (all-clear) canvas frame as a shareable PNG.
+  // toDataURL is synchronous so this stays inside the click's user-gesture
+  // scope, which iOS Safari requires for navigator.share to work.
+  let blob = null;
+  try { blob = _dataURLToBlob(canvas.toDataURL('image/png')); } catch (e) {}
+
+  if (blob) {
+    const file = new File([blob], 'angry-mokumoku-clear.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ title: 'Angry Mokumoku 全クリア！', text, files: [file] }).catch(() => {});
+      return;
+    }
+  }
   if (navigator.share) {
     navigator.share({ title: 'Angry Mokumoku 全クリア！', text }).catch(() => {});
-  } else if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).then(() => {
-      shareCopied = true; shareCopiedTimer = 90;
-    }).catch(() => {});
+    return;
   }
+  if (navigator.clipboard) { navigator.clipboard.writeText(text).catch(() => {}); }
+  if (blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'angry-mokumoku-clear.png';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  shareCopied = true; shareCopiedTimer = 90;
 }
 
 function computeRating(totalScore, timeSeconds, deaths) {
@@ -3137,7 +3250,7 @@ function drawAllClearScreen() {
     ctx.fillStyle = '#00FFAA';
     ctx.font = 'bold 16px Arial';
     ctx.shadowColor = '#00CC88'; ctx.shadowBlur = 10;
-    ctx.fillText('✅ クリップボードにコピーしました！', W/2, sby + 30);
+    ctx.fillText('✅ テキストをコピー・画像を保存しました！', W/2, sby + 30);
     ctx.textBaseline = 'alphabetic';
     ctx.restore();
   }
