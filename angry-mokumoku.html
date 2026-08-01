@@ -144,9 +144,19 @@ const RAT_R       = 17;
 const SETTLE_WAIT = 90;
 
 // ─── LEVELS ───────────────────────────────────────────────────
+// Stars calibrated: max = sum(rat.pts) + blocks*50 + potential_unused*200
+// thresholds ≈ 35% / 65% / 88% of max
 const LEVEL_CONFIGS = [
-  { birds: 3, stars: [600, 1200, 1800],  name: 'Lv.1' },
-  { birds: 4, stars: [1000, 2000, 3000], name: 'Lv.2' },
+  { birds: 3, stars: [ 800, 1500, 2000], name: 'Lv.1'  }, // max≈2300
+  { birds: 4, stars: [1000, 1900, 2500], name: 'Lv.2'  }, // max≈2850
+  { birds: 4, stars: [1100, 2100, 2800], name: 'Lv.3'  }, // max≈3150
+  { birds: 5, stars: [1300, 2500, 3400], name: 'Lv.4'  }, // max≈3850
+  { birds: 5, stars: [1500, 2900, 3900], name: 'Lv.5'  }, // max≈4400
+  { birds: 5, stars: [1600, 3000, 4000], name: 'Lv.6'  }, // max≈4550
+  { birds: 6, stars: [1700, 3300, 4400], name: 'Lv.7'  }, // max≈5000
+  { birds: 6, stars: [1900, 3700, 4900], name: 'Lv.8'  }, // max≈5600
+  { birds: 6, stars: [1800, 3500, 4600], name: 'Lv.9'  }, // max≈5250
+  { birds: 6, stars: [2200, 4300, 5700], name: 'Lv.10' }, // max≈6500
 ];
 const BIRD_BONUS = 200; // pts per unused bird at win
 
@@ -245,9 +255,14 @@ class Block {
 }
 
 class Rat {
-  constructor(x, y) {
+  constructor(x, y, type) {
     this.x = x; this.y = y;
-    this.r = RAT_R;
+    this.type = type || 'chef';
+    if (this.type === 'boss')       { this.r = 22; this.pts = 800; }
+    else if (this.type === 'ninja') { this.r = 13; this.pts = 350; }
+    else if (this.type === 'suit')  { this.r = 17; this.pts = 600; }
+    else if (this.type === 'baby')  { this.r = 10; this.pts = 200; }
+    else                            { this.r = 17; this.pts = 500; } // chef
     this.vx = 0; this.vy = 0;
     this.angle = 0;
     this.angV = 0;
@@ -299,7 +314,7 @@ class Rat {
     this.vx += (Math.random() - 0.5) * 5;
     this.vy -= 5 + Math.random() * 3;
     this.angV = (Math.random() - 0.5) * 0.35;
-    score += 500;
+    score += this.pts;
     ratsKilled++;
     updateHUD();
     addParticles(this.x, this.y, '#FFB830', 14, 4);
@@ -352,8 +367,8 @@ function makeBlock(x, y, w, h, type) {
   const b = new Block(x, y, w, h, type);
   blocks.push(b); return b;
 }
-function makeRat(x, y) {
-  const r = new Rat(x, y);
+function makeRat(x, y, type) {
+  const r = new Rat(x, y, type || 'chef');
   rats.push(r); return r;
 }
 
@@ -363,8 +378,8 @@ function setupLevel(idx) {
   const cfg = LEVEL_CONFIGS[idx];
   totalBirds = cfg.birds;
   birdsLeft  = totalBirds;
-  if (idx === 0) _buildLevel1();
-  else           _buildLevel2();
+  [_buildLevel1,_buildLevel2,_buildLevel3,_buildLevel4,_buildLevel5,
+   _buildLevel6,_buildLevel7,_buildLevel8,_buildLevel9,_buildLevel10][idx]();
   totalRatsAtStart = rats.length;
 }
 
@@ -375,18 +390,18 @@ function _buildLevel1() {
   makeBlock(560, GROUND_Y - 172, 112, 13, 'wood');
   makeBlock(537, GROUND_Y - 204,  38, 38, 'crate');
   makeBlock(583, GROUND_Y - 204,  38, 38, 'crate');
-  makeRat(537, GROUND_Y - 204 - 38/2 - RAT_R + 2);
+  makeRat(537, GROUND_Y - 204 - 38/2 - RAT_R + 2, 'chef');
   // Tower (right)
   makeBlock(700, GROUND_Y - 70,  13, 140, 'bamboo');
   makeBlock(760, GROUND_Y - 70,  13, 140, 'bamboo');
   makeBlock(730, GROUND_Y - 142, 74,  13, 'wood');
   makeBlock(730, GROUND_Y - 175, 42,  38, 'crate');
   makeBlock(730, GROUND_Y - 213, 42,  32, 'wood');
-  makeRat(730, GROUND_Y - 213 - 32/2 - RAT_R + 2);
+  makeRat(730, GROUND_Y - 213 - 32/2 - RAT_R + 2, 'chef');
   // Lone perch
   makeBlock(840, GROUND_Y - 100, 13, 200, 'bamboo');
   makeBlock(840, GROUND_Y - 102, 50,  13, 'wood');
-  makeRat(840, GROUND_Y - 102 - 13/2 - RAT_R + 2);
+  makeRat(840, GROUND_Y - 102 - 13/2 - RAT_R + 2, 'chef');
 }
 
 function _buildLevel2() {
@@ -395,23 +410,291 @@ function _buildLevel2() {
   makeBlock(570, GROUND_Y - 90, 13, 180, 'bamboo');
   makeBlock(530, GROUND_Y - 182, 94, 13, 'wood');
   makeBlock(530, GROUND_Y - 218, 54, 42, 'crate');
-  makeRat(530, GROUND_Y - 218 - 21 - RAT_R + 2);         // rat 1
+  makeRat(530, GROUND_Y - 218 - 21 - RAT_R + 2, 'chef');  // rat 1
   makeBlock(530, GROUND_Y - 272, 54, 36, 'wood');
-  makeRat(530, GROUND_Y - 272 - 18 - RAT_R + 2);         // rat 2
+  makeRat(530, GROUND_Y - 272 - 18 - RAT_R + 2, 'chef'); // rat 2
 
   // Tall solo tower (center) — 1 rat high up
   makeBlock(690, GROUND_Y - 130, 13, 260, 'bamboo');
   makeBlock(750, GROUND_Y - 130, 13, 260, 'bamboo');
   makeBlock(720, GROUND_Y - 262, 74,  13, 'wood');
   makeBlock(720, GROUND_Y - 300, 46,  44, 'crate');
-  makeRat(720, GROUND_Y - 300 - 22 - RAT_R + 2);         // rat 3
+  makeRat(720, GROUND_Y - 300 - 22 - RAT_R + 2, 'chef');  // rat 3
 
   // Bamboo wall + perch (far right) — 1 rat
   makeBlock(820, GROUND_Y - 80, 13, 160, 'bamboo');
   makeBlock(835, GROUND_Y - 80, 13, 160, 'bamboo');
   makeBlock(850, GROUND_Y - 80, 13, 160, 'bamboo');
   makeBlock(855, GROUND_Y - 94, 55,  13, 'wood');
-  makeRat(835, GROUND_Y - 94 - 6 - RAT_R + 2);           // rat 4
+  makeRat(835, GROUND_Y - 94 - 6 - RAT_R + 2, 'chef');    // rat 4
+}
+
+function _buildLevel3() {
+  // Ninja on low shelf (left)
+  makeBlock(480, GROUND_Y-55, 13, 110, 'bamboo');
+  makeBlock(530, GROUND_Y-55, 13, 110, 'bamboo');
+  makeBlock(505, GROUND_Y-112, 62, 13, 'wood');
+  makeRat(505, GROUND_Y-112-6-13, 'ninja');
+
+  // Boss on double crate (center)
+  makeBlock(650, GROUND_Y-100, 13, 200, 'bamboo');
+  makeBlock(720, GROUND_Y-100, 13, 200, 'bamboo');
+  makeBlock(685, GROUND_Y-202, 82, 13, 'wood');
+  makeBlock(685, GROUND_Y-248, 58, 48, 'crate');
+  makeBlock(685, GROUND_Y-308, 50, 44, 'crate');
+  makeRat(685, GROUND_Y-308-22-22, 'boss');
+
+  // Two chef on right shelf
+  makeBlock(810, GROUND_Y-80, 13, 160, 'bamboo');
+  makeBlock(860, GROUND_Y-80, 13, 160, 'bamboo');
+  makeBlock(835, GROUND_Y-162, 64, 13, 'wood');
+  makeRat(815, GROUND_Y-162-6-17, 'chef');
+  makeRat(855, GROUND_Y-162-6-17, 'chef');
+}
+
+function _buildLevel4() {
+  // Suit rat on wood tower (left)
+  makeBlock(480, GROUND_Y-90, 13, 180, 'bamboo');
+  makeBlock(550, GROUND_Y-90, 13, 180, 'bamboo');
+  makeBlock(515, GROUND_Y-182, 80, 13, 'wood');
+  makeBlock(515, GROUND_Y-228, 56, 50, 'crate');
+  makeRat(515, GROUND_Y-228-25-17, 'suit');
+
+  // Boss on tall center spire
+  makeBlock(660, GROUND_Y-130, 13, 260, 'bamboo');
+  makeBlock(730, GROUND_Y-130, 13, 260, 'bamboo');
+  makeBlock(695, GROUND_Y-262, 80, 13, 'wood');
+  makeBlock(695, GROUND_Y-308, 52, 50, 'crate');
+  makeBlock(695, GROUND_Y-370, 44, 40, 'wood');
+  makeRat(695, GROUND_Y-370-20-22, 'boss');
+
+  // Ninja + chef behind bamboo wall (right)
+  makeBlock(810, GROUND_Y-80, 13, 160, 'bamboo');
+  makeBlock(825, GROUND_Y-80, 13, 160, 'bamboo');
+  makeBlock(840, GROUND_Y-80, 13, 160, 'bamboo');
+  makeBlock(840, GROUND_Y-95, 48, 13, 'wood');
+  makeRat(825, GROUND_Y-95-6-13, 'ninja');
+  makeBlock(855, GROUND_Y-50, 13, 100, 'bamboo');
+  makeBlock(855, GROUND_Y-52, 40, 13, 'wood');
+  makeRat(855, GROUND_Y-52-6-17, 'chef');
+}
+
+function _buildLevel5() {
+  // Baby on tiny perch (far left, easy)
+  makeBlock(450, GROUND_Y-60, 13, 120, 'bamboo');
+  makeBlock(450, GROUND_Y-60, 42, 13, 'wood');
+  makeRat(450, GROUND_Y-60-6-10, 'baby');
+
+  // Boss on fortress (center-left)
+  makeBlock(570, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(650, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(610, GROUND_Y-222, 92, 13, 'wood');
+  makeBlock(610, GROUND_Y-270, 60, 52, 'crate');
+  makeBlock(610, GROUND_Y-334, 52, 42, 'crate');
+  makeRat(610, GROUND_Y-334-21-22, 'boss');
+
+  // Boss on fortress (center-right)
+  makeBlock(700, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(780, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(740, GROUND_Y-222, 92, 13, 'wood');
+  makeBlock(740, GROUND_Y-270, 60, 52, 'crate');
+  makeBlock(740, GROUND_Y-334, 52, 42, 'crate');
+  makeRat(740, GROUND_Y-334-21-22, 'boss');
+
+  // Two ninjas on bamboo wall (right)
+  makeBlock(820, GROUND_Y-70, 13, 140, 'bamboo');
+  makeBlock(838, GROUND_Y-70, 13, 140, 'bamboo');
+  makeBlock(856, GROUND_Y-70, 13, 140, 'bamboo');
+  makeBlock(845, GROUND_Y-83, 52, 13, 'wood');
+  makeRat(833, GROUND_Y-83-6-13, 'ninja');
+  makeRat(858, GROUND_Y-83-6-13, 'ninja');
+}
+
+function _buildLevel6() {
+  // Triple boss layout — wide spread
+  // Boss 1 (left low tower)
+  makeBlock(470, GROUND_Y-90, 13, 180, 'bamboo');
+  makeBlock(540, GROUND_Y-90, 13, 180, 'bamboo');
+  makeBlock(505, GROUND_Y-182, 82, 13, 'wood');
+  makeBlock(505, GROUND_Y-232, 58, 54, 'crate');
+  makeRat(505, GROUND_Y-232-27-22, 'boss');
+
+  // Boss 2 (center mega tower)
+  makeBlock(640, GROUND_Y-140, 13, 280, 'bamboo');
+  makeBlock(720, GROUND_Y-140, 13, 280, 'bamboo');
+  makeBlock(680, GROUND_Y-282, 92, 13, 'wood');
+  makeBlock(680, GROUND_Y-334, 62, 56, 'crate');
+  makeBlock(680, GROUND_Y-402, 54, 46, 'wood');
+  makeRat(680, GROUND_Y-402-23-22, 'boss');
+
+  // Boss 3 + ninja (right)
+  makeBlock(800, GROUND_Y-100, 13, 200, 'bamboo');
+  makeBlock(860, GROUND_Y-100, 13, 200, 'bamboo');
+  makeBlock(830, GROUND_Y-202, 72, 13, 'wood');
+  makeBlock(830, GROUND_Y-254, 54, 56, 'crate');
+  makeRat(830, GROUND_Y-254-28-22, 'boss');
+  // Ninja hiding behind right bamboo
+  makeBlock(875, GROUND_Y-60, 13, 120, 'bamboo');
+  makeBlock(875, GROUND_Y-62, 38, 13, 'wood');
+  makeRat(875, GROUND_Y-62-6-13, 'ninja');
+  // Second ninja on bamboo shelf
+  makeBlock(490, GROUND_Y-35, 13, 70, 'bamboo');
+  makeBlock(514, GROUND_Y-35, 13, 70, 'bamboo');
+  makeBlock(502, GROUND_Y-70, 38, 13, 'wood');
+  makeRat(502, GROUND_Y-70-6-13, 'ninja');
+}
+
+function _buildLevel7() {
+  // Ninja duo (left ground level)
+  makeBlock(460, GROUND_Y-45, 13, 90, 'bamboo');
+  makeBlock(500, GROUND_Y-45, 13, 90, 'bamboo');
+  makeBlock(480, GROUND_Y-91, 52, 13, 'wood');
+  makeRat(466, GROUND_Y-91-6-13, 'ninja');
+  makeRat(494, GROUND_Y-91-6-13, 'ninja');
+
+  // Boss + suit (center-left)
+  makeBlock(570, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(650, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(610, GROUND_Y-222, 92, 13, 'wood');
+  makeBlock(610, GROUND_Y-270, 60, 52, 'crate');
+  makeRat(610, GROUND_Y-270-26-22, 'boss');
+  makeBlock(610, GROUND_Y-170, 52, 13, 'wood');
+  makeRat(610, GROUND_Y-170-6-17, 'suit');
+
+  // Boss + suit (center-right)
+  makeBlock(700, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(780, GROUND_Y-110, 13, 220, 'bamboo');
+  makeBlock(740, GROUND_Y-222, 92, 13, 'wood');
+  makeBlock(740, GROUND_Y-270, 60, 52, 'crate');
+  makeRat(740, GROUND_Y-270-26-22, 'boss');
+  makeBlock(740, GROUND_Y-165, 52, 13, 'wood');
+  makeRat(740, GROUND_Y-165-6-17, 'suit');
+
+  // Baby (far right easy target)
+  makeBlock(850, GROUND_Y-55, 13, 110, 'bamboo');
+  makeBlock(850, GROUND_Y-57, 42, 13, 'wood');
+  makeRat(850, GROUND_Y-57-6-10, 'baby');
+}
+
+function _buildLevel8() {
+  // Left fortress: boss on double-decker
+  makeBlock(460, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(540, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(500, GROUND_Y-242, 92, 13, 'wood');
+  makeBlock(500, GROUND_Y-296, 64, 58, 'crate');
+  makeBlock(500, GROUND_Y-366, 54, 48, 'crate');
+  makeRat(500, GROUND_Y-366-24-22, 'boss');
+  makeBlock(500, GROUND_Y-188, 56, 13, 'wood');
+  makeRat(500, GROUND_Y-188-6-17, 'suit');
+
+  // Center: boss on mega spire
+  makeBlock(630, GROUND_Y-150, 13, 300, 'bamboo');
+  makeBlock(720, GROUND_Y-150, 13, 300, 'bamboo');
+  makeBlock(675, GROUND_Y-302, 102, 13, 'wood');
+  makeBlock(675, GROUND_Y-360, 66, 62, 'crate');
+  makeBlock(675, GROUND_Y-434, 56, 52, 'wood');
+  makeRat(675, GROUND_Y-434-26-22, 'boss');
+  makeBlock(645, GROUND_Y-240, 52, 13, 'wood');
+  makeRat(645, GROUND_Y-240-6-17, 'suit');
+
+  // Right: boss + suit + baby
+  makeBlock(790, GROUND_Y-100, 13, 200, 'bamboo');
+  makeBlock(860, GROUND_Y-100, 13, 200, 'bamboo');
+  makeBlock(825, GROUND_Y-202, 82, 13, 'wood');
+  makeBlock(825, GROUND_Y-260, 58, 62, 'crate');
+  makeRat(825, GROUND_Y-260-31-22, 'boss');
+  makeBlock(810, GROUND_Y-55, 13, 110, 'bamboo');
+  makeBlock(810, GROUND_Y-57, 40, 13, 'wood');
+  makeRat(810, GROUND_Y-57-6-17, 'suit');
+  makeBlock(872, GROUND_Y-40, 13, 80, 'bamboo');
+  makeBlock(872, GROUND_Y-42, 36, 13, 'wood');
+  makeRat(872, GROUND_Y-42-6-10, 'baby');
+}
+
+function _buildLevel9() {
+  // Ninja trio on low platforms (left sweep challenge)
+  makeBlock(450, GROUND_Y-45, 13, 90, 'bamboo');
+  makeBlock(490, GROUND_Y-45, 13, 90, 'bamboo');
+  makeBlock(470, GROUND_Y-91, 54, 13, 'wood');
+  makeRat(460, GROUND_Y-91-6-13, 'ninja');
+  makeRat(480, GROUND_Y-91-6-13, 'ninja');
+
+  // Boss + suit (center-left tower)
+  makeBlock(565, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(645, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(605, GROUND_Y-242, 92, 13, 'wood');
+  makeBlock(605, GROUND_Y-298, 60, 60, 'crate');
+  makeBlock(605, GROUND_Y-370, 52, 48, 'wood');
+  makeRat(605, GROUND_Y-370-24-22, 'boss');
+  makeBlock(575, GROUND_Y-185, 48, 13, 'wood');
+  makeRat(575, GROUND_Y-185-6-17, 'suit');
+
+  // Boss + suit (center-right tower)
+  makeBlock(695, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(775, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(735, GROUND_Y-242, 92, 13, 'wood');
+  makeBlock(735, GROUND_Y-298, 60, 60, 'crate');
+  makeBlock(735, GROUND_Y-370, 52, 48, 'wood');
+  makeRat(735, GROUND_Y-370-24-22, 'boss');
+  makeBlock(755, GROUND_Y-185, 48, 13, 'wood');
+  makeRat(755, GROUND_Y-185-6-17, 'suit');
+
+  // Baby (far right, bonus)
+  makeBlock(840, GROUND_Y-50, 13, 100, 'bamboo');
+  makeBlock(840, GROUND_Y-52, 40, 13, 'wood');
+  makeRat(840, GROUND_Y-52-6-10, 'baby');
+}
+
+function _buildLevel10() {
+  // Epic final level — 4 boss + 2 suit + 1 ninja + 1 baby
+
+  // Baby (closest, easy warm-up)
+  makeBlock(440, GROUND_Y-40, 13, 80, 'bamboo');
+  makeBlock(440, GROUND_Y-42, 38, 13, 'wood');
+  makeRat(440, GROUND_Y-42-6-10, 'baby');
+
+  // Ninja on low bamboo cluster
+  makeBlock(490, GROUND_Y-60, 13, 120, 'bamboo');
+  makeBlock(510, GROUND_Y-60, 13, 120, 'bamboo');
+  makeBlock(530, GROUND_Y-60, 13, 120, 'bamboo');
+  makeBlock(525, GROUND_Y-74, 60, 13, 'wood');
+  makeRat(510, GROUND_Y-74-6-13, 'ninja');
+
+  // Boss 1 on left fortress
+  makeBlock(580, GROUND_Y-130, 13, 260, 'bamboo');
+  makeBlock(660, GROUND_Y-130, 13, 260, 'bamboo');
+  makeBlock(620, GROUND_Y-262, 92, 13, 'wood');
+  makeBlock(620, GROUND_Y-318, 64, 60, 'crate');
+  makeBlock(620, GROUND_Y-390, 56, 50, 'crate');
+  makeRat(620, GROUND_Y-390-25-22, 'boss');
+  // Suit on mid-shelf of same tower
+  makeBlock(590, GROUND_Y-200, 50, 13, 'wood');
+  makeRat(590, GROUND_Y-200-6-17, 'suit');
+
+  // Boss 2 on center spire
+  makeBlock(700, GROUND_Y-150, 13, 300, 'bamboo');
+  makeBlock(780, GROUND_Y-150, 13, 300, 'bamboo');
+  makeBlock(740, GROUND_Y-302, 92, 13, 'wood');
+  makeBlock(740, GROUND_Y-358, 66, 60, 'crate');
+  makeBlock(740, GROUND_Y-430, 56, 50, 'wood');
+  makeRat(740, GROUND_Y-430-25-22, 'boss');
+
+  // Boss 3 + suit (right tower)
+  makeBlock(800, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(870, GROUND_Y-120, 13, 240, 'bamboo');
+  makeBlock(835, GROUND_Y-242, 82, 13, 'wood');
+  makeBlock(835, GROUND_Y-298, 60, 60, 'crate');
+  makeBlock(835, GROUND_Y-370, 52, 48, 'crate');
+  makeRat(835, GROUND_Y-370-24-22, 'boss');
+  makeBlock(815, GROUND_Y-180, 50, 13, 'wood');
+  makeRat(815, GROUND_Y-180-6-17, 'suit');
+
+  // Boss 4 on far-right perch (hardest to reach)
+  makeBlock(855, GROUND_Y-70, 13, 140, 'bamboo');
+  makeBlock(880, GROUND_Y-70, 13, 140, 'bamboo');
+  makeBlock(867, GROUND_Y-140, 52, 13, 'wood');
+  makeBlock(867, GROUND_Y-196, 46, 60, 'crate');
+  makeRat(867, GROUND_Y-196-30-22, 'boss');
 }
 
 function resetBird() {
@@ -426,7 +709,7 @@ function resetBird() {
     birdType = 'giant';
     luckyText = '🌟 ジャイアントモクモク！';
     luckyTimer = 90;
-  } else if (roll < 0.27) {
+  } else if (roll < 0.35) {
     birdType = 'speed';
     luckyText = '⚡ スピードモクモク！';
     luckyTimer = 90;
@@ -784,6 +1067,34 @@ function drawBlocks() {
   });
 }
 
+function _drawRatBase(r, bodyCol, earInnerCol) {
+  ctx.fillStyle = bodyCol;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = bodyCol === '#787878' ? '#A09090' : '#C0A0A0';
+  ctx.beginPath(); ctx.ellipse(r*0.55, r*0.08, r*0.42, r*0.28, 0, 0, Math.PI*2); ctx.fill();
+  [[-r*0.25, -r*0.88], [r*0.38, -r*0.88]].forEach(([ex, ey]) => {
+    ctx.fillStyle = bodyCol;
+    ctx.beginPath(); ctx.ellipse(ex, ey, r*0.22, r*0.28, ex > 0 ? 0.25 : -0.25, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = earInnerCol;
+    ctx.beginPath(); ctx.ellipse(ex, ey, r*0.12, r*0.16, ex > 0 ? 0.25 : -0.25, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(-r*0.05, -r*0.15, r*0.11, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r*0.5, -r*0.05, r*0.09, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'white';
+  ctx.beginPath(); ctx.arc(-r*0.01, -r*0.2, r*0.04, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#FF8888';
+  ctx.beginPath(); ctx.arc(r*0.9, r*0.08, r*0.08, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(200,200,200,0.7)'; ctx.lineWidth = 0.8;
+  [[-0.3,0.1],[0.1,-0.05],[-0.1,0.3]].forEach(([a,b]) => {
+    ctx.beginPath(); ctx.moveTo(r*0.5,r*0.08); ctx.lineTo(r*1.5+a*r,r*0.08+b*r); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(r*0.5,r*0.08); ctx.lineTo(-r*0.2+a*r*0.3,r*0.08+b*r); ctx.stroke();
+  });
+  ctx.strokeStyle = '#909090'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(-r,r*0.15);
+  ctx.bezierCurveTo(-r*1.6,-r*0.4,-r*2.1,r*0.7,-r*1.9,r*1.3); ctx.stroke();
+}
+
 function drawRats() {
   rats.forEach(rat => {
     if (!rat.alive) return;
@@ -791,58 +1102,70 @@ function drawRats() {
     ctx.translate(rat.x, rat.y);
     ctx.rotate(rat.angle);
     ctx.globalAlpha = rat.dying ? Math.max(0, 1 - rat.deathT / 30) : 1;
-
     const r = rat.r;
-    // Body
-    ctx.fillStyle = '#787878';
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
 
-    // Snout (pointing right by default)
-    ctx.fillStyle = '#A09090';
-    ctx.beginPath(); ctx.ellipse(r*0.55, r*0.08, r*0.42, r*0.28, 0, 0, Math.PI*2); ctx.fill();
+    if (rat.type === 'boss') {
+      _drawRatBase(r, '#7A4A20', '#D08060');
+      // Gold crown
+      ctx.fillStyle = '#FFD700';
+      ctx.beginPath(); ctx.moveTo(-r*0.5,-r*0.9); ctx.lineTo(-r*0.5,-r*1.5);
+      ctx.lineTo(-r*0.2,-r*1.2); ctx.lineTo(0,-r*1.6); ctx.lineTo(r*0.2,-r*1.2);
+      ctx.lineTo(r*0.5,-r*1.5); ctx.lineTo(r*0.5,-r*0.9); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='#C8A000'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle='#FF4444';
+      ctx.beginPath(); ctx.arc(0,-r*1.6,r*0.1,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-r*0.5,-r*1.5,r*0.08,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r*0.5,-r*1.5,r*0.08,0,Math.PI*2); ctx.fill();
 
-    // Ears
-    [[-r*0.25, -r*0.88], [r*0.38, -r*0.88]].forEach(([ex, ey]) => {
-      ctx.fillStyle = '#787878';
-      ctx.beginPath(); ctx.ellipse(ex, ey, r*0.22, r*0.28, ex > 0 ? 0.25 : -0.25, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#D08080';
-      ctx.beginPath(); ctx.ellipse(ex, ey, r*0.12, r*0.16, ex > 0 ? 0.25 : -0.25, 0, Math.PI*2); ctx.fill();
-    });
+    } else if (rat.type === 'ninja') {
+      _drawRatBase(r, '#2A2A2A', '#550000');
+      // Red headband
+      ctx.fillStyle = '#CC0000';
+      ctx.beginPath(); ctx.ellipse(0,-r*0.55,r*0.7,r*0.18,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#FF3333';
+      ctx.beginPath(); ctx.arc(0,-r*0.55,r*0.1,0,Math.PI*2); ctx.fill();
+      // White eyes (ninja mask)
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.ellipse(-r*0.2,-r*0.15,r*0.2,r*0.12,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(r*0.4,-r*0.05,r*0.16,r*0.1,0,0,Math.PI*2); ctx.fill();
 
-    // Eyes
-    ctx.fillStyle = '#111';
-    ctx.beginPath(); ctx.arc(-r*0.05, -r*0.15, r*0.11, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(r*0.5, -r*0.05, r*0.09, 0, Math.PI*2); ctx.fill();
-    // Shine
-    ctx.fillStyle = 'white';
-    ctx.beginPath(); ctx.arc(-r*0.01, -r*0.2, r*0.04, 0, Math.PI*2); ctx.fill();
+    } else if (rat.type === 'suit') {
+      _drawRatBase(r, '#606060', '#D08080');
+      // Business tie
+      ctx.fillStyle = '#2244CC';
+      ctx.beginPath(); ctx.moveTo(-r*0.12,r*0.25); ctx.lineTo(r*0.12,r*0.25);
+      ctx.lineTo(r*0.08,r*0.75); ctx.lineTo(0,r*0.9); ctx.lineTo(-r*0.08,r*0.75);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#1133AA';
+      ctx.beginPath(); ctx.moveTo(-r*0.1,r*0.25); ctx.lineTo(r*0.1,r*0.25);
+      ctx.lineTo(r*0.06,r*0.45); ctx.lineTo(-r*0.06,r*0.45); ctx.closePath(); ctx.fill();
+      // Tiny collar
+      ctx.fillStyle = 'white'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(-r*0.18,r*0.2); ctx.lineTo(0,r*0.32); ctx.lineTo(r*0.18,r*0.2); ctx.stroke();
 
-    // Nose
-    ctx.fillStyle = '#FF8888';
-    ctx.beginPath(); ctx.arc(r*0.9, r*0.08, r*0.08, 0, Math.PI*2); ctx.fill();
+    } else if (rat.type === 'baby') {
+      _drawRatBase(r, '#FFB0C8', '#FF8888');
+      // Tiny cute features — bigger relative eyes
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(-r*0.1,-r*0.1,r*0.18,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r*0.45,-r*0.05,r*0.14,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='white';
+      ctx.beginPath(); ctx.arc(-r*0.05,-r*0.17,r*0.07,0,Math.PI*2); ctx.fill();
+      // Little bow
+      ctx.fillStyle = '#FF4488';
+      ctx.beginPath(); ctx.ellipse(-r*0.3,-r*1.05,r*0.25,r*0.12,-0.4,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(r*0.3,-r*1.05,r*0.25,r*0.12,0.4,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#FF2266'; ctx.beginPath(); ctx.arc(0,-r*1.05,r*0.1,0,Math.PI*2); ctx.fill();
 
-    // Whiskers
-    ctx.strokeStyle = 'rgba(200,200,200,0.7)';
-    ctx.lineWidth = 0.8;
-    [[-0.3, 0.1], [0.1, -0.05], [-0.1, 0.3]].forEach(([a, b]) => {
-      ctx.beginPath(); ctx.moveTo(r*0.5, r*0.08); ctx.lineTo(r*1.5 + a*r, r*0.08 + b*r); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(r*0.5, r*0.08); ctx.lineTo(-r*0.2 + a*r*0.3, r*0.08 + b*r); ctx.stroke();
-    });
-
-    // Tail
-    ctx.strokeStyle = '#909090';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(-r, r*0.15);
-    ctx.bezierCurveTo(-r*1.6, -r*0.4, -r*2.1, r*0.7, -r*1.9, r*1.3);
-    ctx.stroke();
-
-    // Chef hat (the food stealer!)
-    ctx.fillStyle = 'white';
-    ctx.fillRect(-r*0.35, -r*1.35, r*0.7, r*0.35);
-    ctx.beginPath(); ctx.ellipse(0, -r*1.55, r*0.28, r*0.28, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#DDD'; ctx.lineWidth = 1;
-    ctx.strokeRect(-r*0.35, -r*1.35, r*0.7, r*0.35);
+    } else {
+      // chef (default)
+      _drawRatBase(r, '#787878', '#D08080');
+      ctx.fillStyle = 'white';
+      ctx.fillRect(-r*0.35, -r*1.35, r*0.7, r*0.35);
+      ctx.beginPath(); ctx.ellipse(0,-r*1.55,r*0.28,r*0.28,0,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle='#DDD'; ctx.lineWidth=1;
+      ctx.strokeRect(-r*0.35,-r*1.35,r*0.7,r*0.35);
+    }
 
     ctx.restore();
     ctx.globalAlpha = 1;
