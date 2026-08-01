@@ -124,8 +124,10 @@ canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
 const W = 900, H = 500;
-canvas.width  = W;
-canvas.height = H;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width  = W * DPR;
+canvas.height = H * DPR;
+ctx.scale(DPR, DPR);
 
 // ─── CONFIG ───────────────────────────────────────────────────
 const GRAV        = 0.42;
@@ -201,7 +203,7 @@ function applyBrightness(hex, f) {
 }
 
 // ─── STATE ────────────────────────────────────────────────────
-let state        = 'TITLE'; // TITLE | AIMING | FLYING | SETTLING | WAITING | WIN | LOSE
+let state        = 'TITLE'; // TITLE | AIMING | FLYING | SETTLING | WAITING | WIN | LOSE | ALLCLEAR
 let score        = 0;
 let currentLevel = 0;
 let totalBirds   = LEVEL_CONFIGS[0].birds;
@@ -209,7 +211,7 @@ let birdsLeft    = totalBirds;
 let settleTimer  = 0;
 let boostUsed    = false;
 let boostCooldown = 0;
-let birdType     = 'normal'; // 'normal' | 'giant' | 'speed'
+let birdType     = 'normal'; // 'normal' | 'giant' | 'speed' | 'super'
 let luckyTimer   = 0;
 let luckyText    = '';
 let ratsKilled   = 0;
@@ -220,6 +222,11 @@ let rats         = [];
 let titleMenuSel = 0;
 let titleFrame   = 0;
 let onlinePlayers = 1;
+let totalDeaths   = 0;
+let levelStartScore = 0;
+let gameStartTime  = 0;
+let totalPlayTime  = 0;
+let allClearParticles = [];
 let particles    = [];
 let mouse        = { x: 0, y: 0, down: false };
 let dragging     = false;
@@ -238,12 +245,17 @@ class Bird {
     this.launched = false;
     this.trail = [];
     this.flash = 0;
+    this.sinePhase = 0;
   }
   update() {
     if (!this.launched) return;
     this.vy += GRAV;
     this.x += this.vx;
     this.y += this.vy;
+    if (this.type === 'super') {
+      this.sinePhase += 0.18;
+      this.y += Math.sin(this.sinePhase) * 3.5;
+    }
     this.angle = Math.atan2(this.vy, this.vx);
     this.flash = Math.max(0, this.flash - 1);
 
@@ -314,6 +326,10 @@ class Rat {
     this.deathT = 0;
     this.grounded = true;
     this.eyeAnim = Math.random() * Math.PI * 2;
+    this.patrol = false;
+    this.patrolDir = 1;
+    this.patrolHome = x;
+    this.patrolRange = 18;
   }
   update() {
     this.eyeAnim += 0.06;
@@ -324,6 +340,12 @@ class Rat {
       this.y += this.vy;
       this.angle += this.angV;
       if (this.deathT > 55 || this.y > H + 60) this.alive = false;
+      return;
+    }
+    if (this.patrol && this.grounded) {
+      this.x += this.patrolDir * 0.7;
+      if (Math.abs(this.x - this.patrolHome) > this.patrolRange) this.patrolDir *= -1;
+      this.x = clamp(this.x, this.r + 2, W - this.r - 2);
       return;
     }
     if (this.grounded && this.vy === 0 && Math.abs(this.vx) < 0.1) return;
@@ -349,6 +371,7 @@ class Rat {
         return;
       }
     }
+    this.x = clamp(this.x, this.r + 2, W - this.r - 2);
     if (this.y > H + 60) { this.alive = false; }
   }
   die() {
@@ -410,8 +433,9 @@ function makeBlock(x, y, w, h, type) {
   const b = new Block(x, y, w, h, type);
   blocks.push(b); return b;
 }
-function makeRat(x, y, type) {
+function makeRat(x, y, type, patrol) {
   const r = new Rat(x, y, type || 'chef');
+  if (patrol) { r.patrol = true; r.patrolHome = x; }
   rats.push(r); return r;
 }
 
@@ -433,7 +457,7 @@ function _buildLevel1() {
   makeBlock(560, GROUND_Y - 172, 112, 13, 'wood');
   makeBlock(537, GROUND_Y - 204,  38, 38, 'crate');
   makeBlock(583, GROUND_Y - 204,  38, 38, 'crate');
-  makeRat(537, GROUND_Y - 204 - 38/2 - RAT_R + 2, 'chef');
+  makeRat(537, GROUND_Y - 204 - 38/2 - RAT_R + 2, 'chef', true);
   // Tower (right)
   makeBlock(700, GROUND_Y - 70,  13, 140, 'bamboo');
   makeBlock(760, GROUND_Y - 70,  13, 140, 'bamboo');
@@ -453,7 +477,7 @@ function _buildLevel2() {
   makeBlock(570, GROUND_Y - 90, 13, 180, 'bamboo');
   makeBlock(530, GROUND_Y - 182, 94, 13, 'wood');
   makeBlock(530, GROUND_Y - 218, 54, 42, 'crate');
-  makeRat(530, GROUND_Y - 218 - 21 - RAT_R + 2, 'chef');  // rat 1
+  makeRat(530, GROUND_Y - 218 - 21 - RAT_R + 2, 'chef', true);  // rat 1 (patrols)
   makeBlock(530, GROUND_Y - 272, 54, 36, 'wood');
   makeRat(530, GROUND_Y - 272 - 18 - RAT_R + 2, 'chef'); // rat 2
 
@@ -491,7 +515,7 @@ function _buildLevel3() {
   makeBlock(810, GROUND_Y-80, 13, 160, 'bamboo');
   makeBlock(860, GROUND_Y-80, 13, 160, 'bamboo');
   makeBlock(835, GROUND_Y-162, 64, 13, 'wood');
-  makeRat(815, GROUND_Y-162-6-17, 'chef');
+  makeRat(815, GROUND_Y-162-6-17, 'chef', true);
   makeRat(855, GROUND_Y-162-6-17, 'chef');
 }
 
@@ -516,7 +540,7 @@ function _buildLevel4() {
   makeBlock(825, GROUND_Y-80, 13, 160, 'bamboo');
   makeBlock(840, GROUND_Y-80, 13, 160, 'bamboo');
   makeBlock(840, GROUND_Y-95, 48, 13, 'wood');
-  makeRat(825, GROUND_Y-95-6-13, 'ninja');
+  makeRat(825, GROUND_Y-95-6-13, 'ninja', true);
   makeBlock(855, GROUND_Y-50, 13, 100, 'bamboo');
   makeBlock(855, GROUND_Y-52, 40, 13, 'wood');
   makeRat(855, GROUND_Y-52-6-17, 'chef');
@@ -549,7 +573,7 @@ function _buildLevel5() {
   makeBlock(838, GROUND_Y-70, 13, 140, 'bamboo');
   makeBlock(856, GROUND_Y-70, 13, 140, 'bamboo');
   makeBlock(845, GROUND_Y-83, 52, 13, 'wood');
-  makeRat(833, GROUND_Y-83-6-13, 'ninja');
+  makeRat(833, GROUND_Y-83-6-13, 'ninja', true);
   makeRat(858, GROUND_Y-83-6-13, 'ninja');
 }
 
@@ -584,7 +608,7 @@ function _buildLevel6() {
   makeBlock(490, GROUND_Y-35, 13, 70, 'bamboo');
   makeBlock(514, GROUND_Y-35, 13, 70, 'bamboo');
   makeBlock(502, GROUND_Y-70, 38, 13, 'wood');
-  makeRat(502, GROUND_Y-70-6-13, 'ninja');
+  makeRat(502, GROUND_Y-70-6-13, 'ninja', true);
 }
 
 function _buildLevel7() {
@@ -592,7 +616,7 @@ function _buildLevel7() {
   makeBlock(460, GROUND_Y-45, 13, 90, 'bamboo');
   makeBlock(500, GROUND_Y-45, 13, 90, 'bamboo');
   makeBlock(480, GROUND_Y-91, 52, 13, 'wood');
-  makeRat(466, GROUND_Y-91-6-13, 'ninja');
+  makeRat(466, GROUND_Y-91-6-13, 'ninja', true);
   makeRat(494, GROUND_Y-91-6-13, 'ninja');
 
   // Boss + suit (center-left)
@@ -638,7 +662,7 @@ function _buildLevel8() {
   makeBlock(675, GROUND_Y-434, 56, 52, 'wood');
   makeRat(675, GROUND_Y-434-26-22, 'boss');
   makeBlock(645, GROUND_Y-240, 52, 13, 'wood');
-  makeRat(645, GROUND_Y-240-6-17, 'suit');
+  makeRat(645, GROUND_Y-240-6-17, 'suit', true);
 
   // Right: boss + suit + baby
   makeBlock(790, GROUND_Y-100, 13, 200, 'bamboo');
@@ -659,7 +683,7 @@ function _buildLevel9() {
   makeBlock(450, GROUND_Y-45, 13, 90, 'bamboo');
   makeBlock(490, GROUND_Y-45, 13, 90, 'bamboo');
   makeBlock(470, GROUND_Y-91, 54, 13, 'wood');
-  makeRat(460, GROUND_Y-91-6-13, 'ninja');
+  makeRat(460, GROUND_Y-91-6-13, 'ninja', true);
   makeRat(480, GROUND_Y-91-6-13, 'ninja');
 
   // Boss + suit (center-left tower)
@@ -701,7 +725,7 @@ function _buildLevel10() {
   makeBlock(510, GROUND_Y-60, 13, 120, 'bamboo');
   makeBlock(530, GROUND_Y-60, 13, 120, 'bamboo');
   makeBlock(525, GROUND_Y-74, 60, 13, 'wood');
-  makeRat(510, GROUND_Y-74-6-13, 'ninja');
+  makeRat(510, GROUND_Y-74-6-13, 'ninja', true);
 
   // Boss 1 on left fortress
   makeBlock(580, GROUND_Y-130, 13, 260, 'bamboo');
@@ -748,11 +772,15 @@ function resetBird() {
 
   // Lucky bird roll
   const roll = Math.random();
-  if (roll < 0.15) {
+  if (roll < 0.02) {
+    birdType = 'super';
+    luckyText = '🌈 スーパーモクモク！！';
+    luckyTimer = 110;
+  } else if (roll < 0.17) {
     birdType = 'giant';
     luckyText = '🌟 ジャイアントモクモク！';
     luckyTimer = 90;
-  } else if (roll < 0.35) {
+  } else if (roll < 0.37) {
     birdType = 'speed';
     luckyText = '⚡ スピードモクモク！';
     luckyTimer = 90;
@@ -762,7 +790,7 @@ function resetBird() {
     luckyTimer = 0;
   }
 
-  const r = birdType === 'giant' ? GIANT_R : BIRD_R;
+  const r = (birdType === 'giant' || birdType === 'super') ? GIANT_R : BIRD_R;
   bird = new Bird(SX, FORK_Y, r, birdType);
   document.getElementById('boost-hint').style.opacity = '0';
 }
@@ -790,8 +818,8 @@ function circleCirle(ax, ay, ar, bx, by, br) {
 function checkCollisions() {
   if (!bird || !bird.launched || !bird.alive) return;
   const speed = Math.sqrt(bird.vx*bird.vx + bird.vy*bird.vy);
-  const dmgMult = birdType === 'giant' ? 2.5 : birdType === 'speed' ? 1.4 : 1;
-  const bounce  = birdType === 'giant' ? 0.85 : 0.65;
+  const dmgMult = birdType === 'super' ? 3.2 : birdType === 'giant' ? 2.5 : birdType === 'speed' ? 1.4 : 1;
+  const bounce  = birdType === 'super' ? 0.92 : birdType === 'giant' ? 0.85 : 0.65;
 
   rats.forEach(rat => {
     if (!rat.alive || rat.dying) return;
@@ -1451,7 +1479,14 @@ function drawBird() {
   if (!bird) return;
 
   // Lucky bird glow
-  if (birdType === 'giant') {
+  if (birdType === 'super') {
+    ctx.save();
+    const hue = (Date.now() * 0.3) % 360;
+    ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 36;
+    ctx.fillStyle = `hsla(${hue},100%,60%,0.15)`;
+    ctx.beginPath(); ctx.arc(bird.x, bird.y, bird.r + 12, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else if (birdType === 'giant') {
     ctx.save();
     ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 28;
     ctx.fillStyle = 'rgba(255,215,0,0.12)';
@@ -1466,14 +1501,35 @@ function drawBird() {
   }
 
   // Trail
-  const trailColor = birdType === 'speed' ? '#00EEFF' : birdType === 'giant' ? '#FFD700' : '#FFE070';
-  bird.trail.forEach((pt, i) => {
-    const alpha = (i / bird.trail.length) * 0.35;
-    const sz = bird.r * 0.3 * (i / bird.trail.length);
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = trailColor;
-    ctx.beginPath(); ctx.arc(pt.x, pt.y, sz, 0, Math.PI*2); ctx.fill();
-  });
+  const RAINBOW = ['#FF3060','#FF8800','#FFE030','#30FF70','#3090FF','#AA00FF','#FF30CC'];
+  if (birdType === 'super') {
+    bird.trail.forEach((pt, i) => {
+      const alpha = (i / bird.trail.length) * 0.55;
+      const sz = bird.r * 0.45 * (i / bird.trail.length);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = RAINBOW[i % RAINBOW.length];
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, sz, 0, Math.PI*2); ctx.fill();
+    });
+    // Sparkles at bird position
+    if (bird.launched) {
+      for (let s = 0; s < 5; s++) {
+        const sa = (Date.now() * 0.01 + s * 1.26) % (Math.PI * 2);
+        const sd = bird.r * 0.7 + Math.sin(Date.now() * 0.008 + s) * 6;
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = RAINBOW[s % RAINBOW.length];
+        ctx.beginPath(); ctx.arc(bird.x + Math.cos(sa)*sd, bird.y + Math.sin(sa)*sd, 2.5, 0, Math.PI*2); ctx.fill();
+      }
+    }
+  } else {
+    const trailColor = birdType === 'speed' ? '#00EEFF' : birdType === 'giant' ? '#FFD700' : '#FFE070';
+    bird.trail.forEach((pt, i) => {
+      const alpha = (i / bird.trail.length) * 0.35;
+      const sz = bird.r * 0.3 * (i / bird.trail.length);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = trailColor;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, sz, 0, Math.PI*2); ctx.fill();
+    });
+  }
   ctx.globalAlpha = 1;
 
   // Flash ring
@@ -1641,24 +1697,32 @@ function showResult(result) {
   const title   = document.getElementById('ov-title');
   const sub     = document.getElementById('ov-sub');
   const nextBtn = document.getElementById('ov-next-btn');
-  ov.classList.remove('hidden');
 
   if (result === 'WIN') {
     const unused = Math.max(0, birdsLeft - 1);
     if (unused > 0) { score += unused * BIRD_BONUS; updateHUD(); }
     saveProgress();
 
+    // All-clear: last level cleared
+    if (currentLevel >= LEVEL_CONFIGS.length - 1) {
+      totalPlayTime = Math.floor((Date.now() - gameStartTime) / 1000);
+      state = 'ALLCLEAR';
+      return;
+    }
+
+    ov.classList.remove('hidden');
     const cfg   = LEVEL_CONFIGS[currentLevel];
-    const stars = score >= cfg.stars[2] ? 3 : score >= cfg.stars[1] ? 2 : 1;
+    const lvScore = score - levelStartScore;
+    const stars = lvScore >= cfg.stars[2] ? 3 : lvScore >= cfg.stars[1] ? 2 : 1;
     const starStr = '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
     title.textContent = '🎉 全員やっつけた！';
-    sub.textContent   = `${starStr}  ${score} pt`;
-    nextBtn.style.display = (currentLevel + 1 < LEVEL_CONFIGS.length) ? 'inline-block' : 'none';
+    sub.textContent   = `${starStr}  累計 ${score} pt`;
+    nextBtn.style.display = 'inline-block';
   } else {
+    ov.classList.remove('hidden');
     title.textContent = '😢 やられた…';
     const hasNext = currentLevel + 1 < LEVEL_CONFIGS.length;
-    // Allow advancing if player killed enough rats (all but 1, or ≥ 4)
-    const canAdvance = hasNext && (ratsKilled >= totalRatsAtStart - 1 || ratsKilled >= 4);
+    const canAdvance = hasNext && ratsKilled > 0 && ratsKilled >= totalRatsAtStart - 1;
     if (canAdvance) {
       sub.textContent = `${ratsKilled}/${totalRatsAtStart}匹倒した！次のレベルへ進める！`;
       nextBtn.style.display = 'inline-block';
@@ -1670,7 +1734,8 @@ function showResult(result) {
 }
 
 function restartGame() {
-  score = 0;
+  score = levelStartScore; // revert to score at start of this level
+  totalDeaths++;
   particles = [];
   state = 'AIMING';
   document.getElementById('overlay').classList.add('hidden');
@@ -1681,7 +1746,7 @@ function restartGame() {
 
 function nextLevel() {
   currentLevel++;
-  score = 0;
+  levelStartScore = score; // carry cumulative score forward
   particles = [];
   state = 'AIMING';
   document.getElementById('overlay').classList.add('hidden');
@@ -1708,7 +1773,10 @@ function startFromTitle() {
   const lvl = (titleMenuSel === 1 && savedLevel >= 0 && savedLevel < LEVEL_CONFIGS.length)
     ? savedLevel : 0;
   currentLevel = lvl;
-  score = 0; particles = [];
+  score = 0; levelStartScore = 0; totalDeaths = 0;
+  totalPlayTime = 0; gameStartTime = Date.now();
+  allClearParticles = [];
+  particles = [];
   document.getElementById('hud').style.visibility = 'visible';
   setupLevel(currentLevel);
   resetBird();
@@ -1718,6 +1786,13 @@ function startFromTitle() {
 
 function onDown(e) {
   e.preventDefault();
+  if (state === 'ALLCLEAR') {
+    state = 'TITLE';
+    titleMenuSel = 0; titleFrame = 0;
+    allClearParticles = [];
+    document.getElementById('hud').style.visibility = 'hidden';
+    return;
+  }
   if (state === 'TITLE') {
     const p = getPos(e);
     const menuY = 345;
@@ -1806,7 +1881,7 @@ document.addEventListener('keydown', e => {
 // ─── MAIN LOOP ────────────────────────────────────────────────
 
 function update() {
-  if (state === 'TITLE' || state === 'WIN' || state === 'LOSE') return;
+  if (state === 'TITLE' || state === 'WIN' || state === 'LOSE' || state === 'ALLCLEAR') return;
 
   // Always animate particles/dying objects even while waiting
   particles.forEach(p => p.update());
@@ -1873,10 +1948,111 @@ function drawLuckyAnnouncement() {
   ctx.scale(scale, scale);
   ctx.textAlign = 'center';
   ctx.font = 'bold 32px Arial';
-  ctx.shadowColor = birdType === 'giant' ? '#FF8800' : '#0088FF';
-  ctx.shadowBlur = 22;
-  ctx.fillStyle = birdType === 'giant' ? '#FFD700' : '#00EEFF';
+  const hueShift = (Date.now() * 0.3) % 360;
+  ctx.shadowColor = birdType === 'super' ? `hsl(${hueShift},100%,60%)` : birdType === 'giant' ? '#FF8800' : '#0088FF';
+  ctx.shadowBlur = birdType === 'super' ? 30 : 22;
+  ctx.fillStyle = birdType === 'super' ? `hsl(${hueShift},100%,72%)` : birdType === 'giant' ? '#FFD700' : '#00EEFF';
   ctx.fillText(luckyText, 0, 0);
+  ctx.restore();
+}
+
+function computeRating(totalScore, timeSeconds, deaths) {
+  let pts = Math.min(60, Math.floor(totalScore / 500));
+  if      (timeSeconds < 300)  pts += 25;
+  else if (timeSeconds < 600)  pts += 20;
+  else if (timeSeconds < 900)  pts += 14;
+  else if (timeSeconds < 1200) pts += 8;
+  else if (timeSeconds < 1800) pts += 3;
+  pts -= Math.min(25, deaths * 5);
+  if (pts >= 72) return '伝説';
+  if (pts >= 55) return 'エース';
+  if (pts >= 38) return 'ベテラン';
+  if (pts >= 20) return 'アマチュア';
+  return 'ビギナー';
+}
+
+function drawAllClearScreen() {
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#1C0038'); bg.addColorStop(1, '#020A20');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Spawn fireworks
+  if (Math.random() < 0.06) {
+    const fx = 80 + Math.random() * (W - 160);
+    const fy = 40 + Math.random() * 200;
+    const FCOLS = ['#FF3060','#FF9020','#FFE030','#30FF90','#30A0FF','#CC30FF','#FF30C0'];
+    const fc = FCOLS[Math.floor(Math.random() * FCOLS.length)];
+    for (let i = 0; i < 18; i++) {
+      const a2 = (i / 18) * Math.PI * 2;
+      const sp = 2 + Math.random() * 4.5;
+      allClearParticles.push(new Particle(fx, fy, Math.cos(a2)*sp, Math.sin(a2)*sp - 1.5, fc, 4 + Math.random()*3, 55));
+    }
+  }
+  // Update & draw firework particles
+  allClearParticles.forEach(p => {
+    p.update();
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+  });
+  allClearParticles = allClearParticles.filter(p => p.alive);
+  ctx.globalAlpha = 1;
+
+  // "全クリア！" title
+  ctx.save();
+  ctx.textAlign = 'center';
+  const hue = (Date.now() * 0.2) % 360;
+  ctx.shadowColor = `hsl(${hue},100%,65%)`; ctx.shadowBlur = 38;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 58px Arial';
+  ctx.fillText('🎊  全 ク リ ア ！  🎊', W/2, 88);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  // Bouncing Mokumoku
+  const bob = Math.sin(Date.now() * 0.003) * 6;
+  const tilt = Math.sin(Date.now() * 0.002) * 0.12;
+  drawMokumoku(W/2, 182 + bob, 52, tilt, 'super-angry');
+
+  // Rating
+  const rating = computeRating(score, totalPlayTime, totalDeaths);
+  const GRADE_COLS = { '伝説':'#FFD700', 'エース':'#FF88FF', 'ベテラン':'#60DDFF', 'アマチュア':'#AAFFAA', 'ビギナー':'#AAAAAA' };
+  const GRADE_STARS = { '伝説':5, 'エース':4, 'ベテラン':3, 'アマチュア':2, 'ビギナー':1 };
+  const gcol = GRADE_COLS[rating] || '#FFFFFF';
+  const stars = GRADE_STARS[rating] || 1;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.shadowColor = gcol; ctx.shadowBlur = 22;
+  ctx.fillStyle = gcol;
+  ctx.font = 'bold 38px Arial';
+  ctx.fillText(`${rating}モクモク`, W/2, 268);
+  ctx.shadowBlur = 0;
+  ctx.font = '30px Arial';
+  ctx.fillText('⭐'.repeat(stars) + '☆'.repeat(5 - stars), W/2, 306);
+  ctx.restore();
+
+  // Stats
+  const mins = Math.floor(totalPlayTime / 60);
+  const secs = totalPlayTime % 60;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  ctx.font = '17px Arial';
+  ctx.fillText(`累計スコア: ${score} pt`, W/2, 346);
+  ctx.fillText(`プレイ時間: ${mins}分 ${String(secs).padStart(2,'0')}秒`, W/2, 370);
+  ctx.fillText(`やられた回数: ${totalDeaths}回`, W/2, 394);
+  ctx.restore();
+
+  // Tap to continue
+  const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.005);
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE030';
+  ctx.font = 'bold 20px Arial';
+  ctx.fillText('▶ タップしてタイトルへ ◀', W/2, H - 28);
   ctx.restore();
 }
 
@@ -1976,6 +2152,7 @@ function drawPlayerCount() {
 function draw() {
   ctx.clearRect(0, 0, W, H);
   if (state === 'TITLE') { drawTitleScreen(); return; }
+  if (state === 'ALLCLEAR') { drawAllClearScreen(); return; }
   drawBackground();
   drawBlocks();
   drawRats();
