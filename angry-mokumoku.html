@@ -1721,15 +1721,8 @@ function showResult(result) {
   } else {
     ov.classList.remove('hidden');
     title.textContent = '😢 やられた…';
-    const hasNext = currentLevel + 1 < LEVEL_CONFIGS.length;
-    const canAdvance = hasNext && ratsKilled > 0 && ratsKilled >= totalRatsAtStart - 1;
-    if (canAdvance) {
-      sub.textContent = `${ratsKilled}/${totalRatsAtStart}匹倒した！次のレベルへ進める！`;
-      nextBtn.style.display = 'inline-block';
-    } else {
-      sub.textContent = `${ratsKilled}/${totalRatsAtStart}匹倒した  スコア: ${score}pt`;
-      nextBtn.style.display = 'none';
-    }
+    sub.textContent = `${ratsKilled}/${totalRatsAtStart}匹倒した  スコア: ${score}pt`;
+    nextBtn.style.display = 'none';
   }
 }
 
