@@ -1,0 +1,18 @@
+{
+  "name": "Water",
+  "short_name": "Water",
+  "description": "水・波・雨。それだけ。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060b12",
+  "theme_color": "#060b12",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
