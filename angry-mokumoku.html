@@ -269,6 +269,7 @@ class Rat {
       return;
     }
     if (this.grounded && this.vy === 0 && Math.abs(this.vx) < 0.1) return;
+    const wasAirborne = !this.grounded;
     this.grounded = false;
     this.vy += GRAV;
     this.x += this.vx;
@@ -278,11 +279,17 @@ class Rat {
     this.angV *= 0.9;
 
     if (this.y + this.r >= GROUND_Y) {
+      const impactVy = this.vy;
       this.y = GROUND_Y - this.r;
       this.vy *= -0.4;
       this.vx *= 0.85;
       this.angV *= 0.7;
       if (Math.abs(this.vy) < 1) { this.vy = 0; this.grounded = true; }
+      // Kill rat that falls from a height (knocked off perch)
+      if (wasAirborne && impactVy > 3) {
+        this.die();
+        return;
+      }
     }
     if (this.y > H + 60) { this.alive = false; }
   }
@@ -481,11 +488,13 @@ function checkCollisions() {
       blk.alive = false;
       score += 50; updateHUD();
       addParticles(blk.x, blk.y, blockColor(blk.type), 10, 4);
+      // Knock ALL nearby rats when a block collapses (large radius)
       rats.forEach(rat => {
         if (rat.dying) return;
-        if (Math.abs(rat.x - blk.x) < blk.w * 0.8 && rat.y > blk.y - blk.h) {
-          rat.vy -= 4 + Math.random() * 2;
-          rat.vx += (Math.random() - 0.5) * 6;
+        const dx = rat.x - blk.x, dy = rat.y - blk.y;
+        if (Math.sqrt(dx*dx + dy*dy) < 220) {
+          rat.vy -= 5 + Math.random() * 3;
+          rat.vx += (Math.random() - 0.5) * 8;
           rat.grounded = false;
         }
       });
