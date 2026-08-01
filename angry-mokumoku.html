@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="モクモク">
+<meta name="apple-mobile-web-app-title" content="Angry Mokumoku">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -3022,10 +3022,16 @@ function update() {
   blocks.forEach(b => b.update());
   blocks = blocks.filter(b => b.alive);
 
-  if (state === 'AIMING' || state === 'WAITING') return;
+  if (state === 'AIMING') return;
 
   if (boostCooldown > 0) boostCooldown--;
   if (bird) bird.update();
+
+  // WAITING can be entered mid-flight (win detected before the bird lands).
+  // Keep running bird.update() above so it still falls/settles naturally
+  // instead of freezing in mid-air — but skip collisions/win-checks below,
+  // the result is already being finalized.
+  if (state === 'WAITING') return;
 
   checkCollisions();
   checkBlockRatCollisions();

@@ -1,6 +1,6 @@
 {
   "name": "Angry Mokumoku",
-  "short_name": "モクモク",
+  "short_name": "Angry Mokumoku",
   "description": "アングリーモクモク — Southeast Asian city-hopping owl slingshot game",
   "start_url": "./angry-mokumoku.html",
   "scope": "./",
