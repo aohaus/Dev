@@ -22,8 +22,8 @@ body {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-  width: min(900px, 100vw);
-  max-width: 100%;
+  width: 100vw;
+  max-width: min(1366px, calc(100vh * 1.8));
 }
 canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 #hud {
@@ -35,12 +35,19 @@ canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 #score-display {
   background: rgba(0,0,0,0.45);
   color: #FFE066;
-  font-size: 20px; font-weight: 700;
+  font-size: 16px; font-weight: 700;
   padding: 6px 14px; border-radius: 20px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+}
+#target-display {
+  background: rgba(0,0,0,0.35);
+  color: rgba(255,255,255,0.85);
+  font-size: 13px;
+  padding: 5px 12px; border-radius: 20px;
+  letter-spacing: 0.2px;
 }
 #birds-display {
-  font-size: 22px;
+  font-size: 20px;
   background: rgba(0,0,0,0.45);
   padding: 6px 12px; border-radius: 20px;
 }
@@ -55,14 +62,17 @@ canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 #overlay.hidden { display: none; }
 #overlay h1 { color: #fff; font-size: 42px; margin-bottom: 8px; text-shadow: 0 2px 12px rgba(0,0,0,0.5); }
 #overlay p { color: #FFE066; font-size: 18px; margin-bottom: 24px; }
+#overlay .btn-row { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
 #overlay button {
   background: #FF6B35; color: #fff;
   border: none; border-radius: 30px;
-  padding: 12px 36px; font-size: 20px; font-weight: 700;
+  padding: 12px 32px; font-size: 18px; font-weight: 700;
   cursor: pointer; transition: transform 0.15s, background 0.15s;
   box-shadow: 0 4px 16px rgba(255,107,53,0.4);
 }
 #overlay button:hover { background: #FF8C5A; transform: scale(1.05); }
+#ov-next-btn { background: #3DA890; box-shadow: 0 4px 16px rgba(61,168,144,0.4); }
+#ov-next-btn:hover { background: #4ABEA3; }
 #boost-hint {
   position: absolute; bottom: 14px; left: 50%;
   transform: translateX(-50%);
@@ -90,13 +100,17 @@ canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 <div id="wrapper">
   <canvas id="c"></canvas>
   <div id="hud">
-    <div id="score-display">スコア: 0</div>
+    <div id="score-display">Lv.1 | スコア: 0</div>
+    <div id="target-display">⭐⭐⭐ = 1800pt</div>
     <div id="birds-display">🦉🦉🦉</div>
   </div>
   <div id="overlay" class="hidden">
     <h1 id="ov-title"></h1>
     <p id="ov-sub"></p>
-    <button id="ov-btn">もう一度！</button>
+    <div class="btn-row">
+      <button id="ov-next-btn" style="display:none">次のレベルへ！🚀</button>
+      <button id="ov-btn">もう一度！</button>
+    </div>
   </div>
     <div id="boost-hint">クリックでブースト！</div>
 </div>
@@ -127,13 +141,22 @@ const BIRD_R      = 23;
 const RAT_R       = 17;
 const SETTLE_WAIT = 90;
 
+// ─── LEVELS ───────────────────────────────────────────────────
+const LEVEL_CONFIGS = [
+  { birds: 3, stars: [600, 1200, 1800],  name: 'Lv.1' },
+  { birds: 4, stars: [1000, 2000, 3000], name: 'Lv.2' },
+];
+const BIRD_BONUS = 200; // pts per unused bird at win
+
 // ─── STATE ────────────────────────────────────────────────────
-let state        = 'AIMING'; // AIMING | FLYING | SETTLING | WIN | LOSE
+let state        = 'AIMING'; // AIMING | FLYING | SETTLING | WAITING | WIN | LOSE
 let score        = 0;
-let totalBirds   = 3;
+let currentLevel = 0;
+let totalBirds   = LEVEL_CONFIGS[0].birds;
 let birdsLeft    = totalBirds;
 let settleTimer  = 0;
 let boostUsed    = false;
+let boostCooldown = 0;
 let bird         = null;
 let blocks       = [];
 let rats         = [];
@@ -298,7 +321,9 @@ function addParticles(x, y, col, count, sz) {
 }
 
 function updateHUD() {
-  document.getElementById('score-display').textContent = `スコア: ${score}`;
+  const cfg = LEVEL_CONFIGS[currentLevel];
+  document.getElementById('score-display').textContent = `${cfg.name} | スコア: ${score}`;
+  document.getElementById('target-display').textContent = `⭐⭐⭐ = ${cfg.stars[2]}pt`;
   const rem = Math.max(0, birdsLeft);
   document.getElementById('birds-display').textContent = '🦉'.repeat(rem);
 }
@@ -316,38 +341,59 @@ function makeRat(x, y) {
   rats.push(r); return r;
 }
 
-function setupLevel() {
+function setupLevel(idx) {
   blocks = []; rats = [];
+  const cfg = LEVEL_CONFIGS[idx];
+  totalBirds = cfg.birds;
+  birdsLeft  = totalBirds;
+  if (idx === 0) _buildLevel1();
+  else           _buildLevel2();
+}
 
-  // === Hawker stall structure (left cluster) ===
-  // Bamboo poles
-  makeBlock(510, GROUND_Y - 85, 13, 170, 'bamboo');
-  makeBlock(610, GROUND_Y - 85, 13, 170, 'bamboo');
-  // Top plank
+function _buildLevel1() {
+  // Hawker stall (left)
+  makeBlock(510, GROUND_Y - 85,  13, 170, 'bamboo');
+  makeBlock(610, GROUND_Y - 85,  13, 170, 'bamboo');
   makeBlock(560, GROUND_Y - 172, 112, 13, 'wood');
-  // Crates on plank
-  makeBlock(537, GROUND_Y - 204, 38, 38, 'crate');
-  makeBlock(583, GROUND_Y - 204, 38, 38, 'crate');
-  // Rat on left crate
+  makeBlock(537, GROUND_Y - 204,  38, 38, 'crate');
+  makeBlock(583, GROUND_Y - 204,  38, 38, 'crate');
   makeRat(537, GROUND_Y - 204 - 38/2 - RAT_R + 2);
-
-  // === Tower structure (right) ===
-  // Bamboo poles
-  makeBlock(700, GROUND_Y - 70, 13, 140, 'bamboo');
-  makeBlock(760, GROUND_Y - 70, 13, 140, 'bamboo');
-  // Plank
-  makeBlock(730, GROUND_Y - 142, 74, 13, 'wood');
-  // Crate
-  makeBlock(730, GROUND_Y - 175, 42, 38, 'crate');
-  // Second level
-  makeBlock(730, GROUND_Y - 213, 42, 32, 'wood');
-  // Top rat
+  // Tower (right)
+  makeBlock(700, GROUND_Y - 70,  13, 140, 'bamboo');
+  makeBlock(760, GROUND_Y - 70,  13, 140, 'bamboo');
+  makeBlock(730, GROUND_Y - 142, 74,  13, 'wood');
+  makeBlock(730, GROUND_Y - 175, 42,  38, 'crate');
+  makeBlock(730, GROUND_Y - 213, 42,  32, 'wood');
   makeRat(730, GROUND_Y - 213 - 32/2 - RAT_R + 2);
-
-  // === Lone exposed rat on bamboo perch ===
+  // Lone perch
   makeBlock(840, GROUND_Y - 100, 13, 200, 'bamboo');
-  makeBlock(840, GROUND_Y - 102, 50, 13, 'wood');
+  makeBlock(840, GROUND_Y - 102, 50,  13, 'wood');
   makeRat(840, GROUND_Y - 102 - 13/2 - RAT_R + 2);
+}
+
+function _buildLevel2() {
+  // Double-decker tower (left) — 2 rats
+  makeBlock(490, GROUND_Y - 90, 13, 180, 'bamboo');
+  makeBlock(570, GROUND_Y - 90, 13, 180, 'bamboo');
+  makeBlock(530, GROUND_Y - 182, 94, 13, 'wood');
+  makeBlock(530, GROUND_Y - 218, 54, 42, 'crate');
+  makeRat(530, GROUND_Y - 218 - 21 - RAT_R + 2);         // rat 1
+  makeBlock(530, GROUND_Y - 272, 54, 36, 'wood');
+  makeRat(530, GROUND_Y - 272 - 18 - RAT_R + 2);         // rat 2
+
+  // Tall solo tower (center) — 1 rat high up
+  makeBlock(690, GROUND_Y - 130, 13, 260, 'bamboo');
+  makeBlock(750, GROUND_Y - 130, 13, 260, 'bamboo');
+  makeBlock(720, GROUND_Y - 262, 74,  13, 'wood');
+  makeBlock(720, GROUND_Y - 300, 46,  44, 'crate');
+  makeRat(720, GROUND_Y - 300 - 22 - RAT_R + 2);         // rat 3
+
+  // Bamboo wall + perch (far right) — 1 rat
+  makeBlock(820, GROUND_Y - 80, 13, 160, 'bamboo');
+  makeBlock(835, GROUND_Y - 80, 13, 160, 'bamboo');
+  makeBlock(850, GROUND_Y - 80, 13, 160, 'bamboo');
+  makeBlock(855, GROUND_Y - 94, 55,  13, 'wood');
+  makeRat(835, GROUND_Y - 94 - 6 - RAT_R + 2);           // rat 4
 }
 
 function resetBird() {
@@ -966,6 +1012,7 @@ function launch() {
   bird.launched = true;
   state = 'FLYING';
   settleTimer = 0;
+  boostCooldown = 20; // prevent accidental boost on launch touchend
 
   document.getElementById('boost-hint').style.opacity = '1';
   setTimeout(() => {
@@ -974,7 +1021,7 @@ function launch() {
 }
 
 function applyBoost() {
-  if (!bird || !bird.launched || boostUsed) return;
+  if (!bird || !bird.launched || boostUsed || boostCooldown > 0) return;
   const sp = Math.sqrt(bird.vx*bird.vx + bird.vy*bird.vy);
   if (sp < 0.1) return;
   const nx = bird.vx / sp, ny = bird.vy / sp;
@@ -1019,29 +1066,51 @@ function nextBirdOrLose() {
 }
 
 function showResult(result) {
-  const ov = document.getElementById('overlay');
-  const title = document.getElementById('ov-title');
-  const sub   = document.getElementById('ov-sub');
-  ov.classList.remove('hidden');
-  if (result === 'WIN') {
-    title.textContent = '🎉 ミッション完了！';
-    sub.textContent   = `スコア: ${score} pt — ラット全員撃退！`;
-  } else {
-    title.textContent = '😢 やられた…';
-    sub.textContent   = `スコア: ${score} pt — リトライ！`;
-  }
   state = result;
+  const ov      = document.getElementById('overlay');
+  const title   = document.getElementById('ov-title');
+  const sub     = document.getElementById('ov-sub');
+  const nextBtn = document.getElementById('ov-next-btn');
+  ov.classList.remove('hidden');
+
+  if (result === 'WIN') {
+    // Add unused-bird bonus (birdsLeft still includes the bird that just fired)
+    const unused = Math.max(0, birdsLeft - 1);
+    if (unused > 0) { score += unused * BIRD_BONUS; updateHUD(); }
+
+    const cfg   = LEVEL_CONFIGS[currentLevel];
+    const stars = score >= cfg.stars[2] ? 3 : score >= cfg.stars[1] ? 2 : 1;
+    const starStr = '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
+    title.textContent = '🎉 ミッション完了！';
+    sub.textContent   = `${starStr}  ${score} pt`;
+    nextBtn.style.display = (currentLevel + 1 < LEVEL_CONFIGS.length) ? 'inline-block' : 'none';
+  } else {
+    const cfg = LEVEL_CONFIGS[currentLevel];
+    title.textContent = '😢 やられた…';
+    sub.textContent   = `スコア: ${score} pt（⭐目標: ${cfg.stars[0]}pt〜）`;
+    nextBtn.style.display = 'none';
+  }
 }
 
 function restartGame() {
   score = 0;
-  birdsLeft = totalBirds;
   particles = [];
   state = 'AIMING';
   document.getElementById('overlay').classList.add('hidden');
-  updateHUD();
-  setupLevel();
+  setupLevel(currentLevel);
   resetBird();
+  updateHUD();
+}
+
+function nextLevel() {
+  currentLevel++;
+  score = 0;
+  particles = [];
+  state = 'AIMING';
+  document.getElementById('overlay').classList.add('hidden');
+  setupLevel(currentLevel);
+  resetBird();
+  updateHUD();
 }
 
 // ─── INPUT ────────────────────────────────────────────────────
@@ -1102,31 +1171,43 @@ function onClick(e) {
   }
 }
 
-canvas.addEventListener('mousedown',  onDown,  { passive: false });
-canvas.addEventListener('mousemove',  onMove,  { passive: false });
-canvas.addEventListener('mouseup',    onUp,    { passive: false });
+function onTouchStart(e) {
+  e.preventDefault();
+  if (state === 'FLYING') {
+    applyBoost();
+    return;
+  }
+  onDown(e);
+}
+
+canvas.addEventListener('mousedown',  onDown,        { passive: false });
+canvas.addEventListener('mousemove',  onMove,        { passive: false });
+canvas.addEventListener('mouseup',    onUp,          { passive: false });
 canvas.addEventListener('click',      onClick);
-canvas.addEventListener('touchstart', onDown,  { passive: false });
-canvas.addEventListener('touchmove',  onMove,  { passive: false });
-canvas.addEventListener('touchend',   onUp,    { passive: false });
+canvas.addEventListener('touchstart', onTouchStart,  { passive: false });
+canvas.addEventListener('touchmove',  onMove,        { passive: false });
+canvas.addEventListener('touchend',   onUp,          { passive: false });
 
 document.getElementById('ov-btn').addEventListener('click', restartGame);
+document.getElementById('ov-next-btn').addEventListener('click', nextLevel);
 
 // ─── MAIN LOOP ────────────────────────────────────────────────
 
 function update() {
-  if (state === 'AIMING') return;
   if (state === 'WIN' || state === 'LOSE') return;
 
-  if (bird) bird.update();
-  blocks.forEach(b => b.update());
-  rats.forEach(r => r.update());
+  // Always animate particles/dying objects even while waiting
   particles.forEach(p => p.update());
-
-  blocks    = blocks.filter(b => b.alive);
   particles = particles.filter(p => p.alive);
-  // Keep dying rats in array until animation done
+  rats.forEach(r => r.update());
   rats = rats.filter(r => r.alive);
+  blocks.forEach(b => b.update());
+  blocks = blocks.filter(b => b.alive);
+
+  if (state === 'AIMING' || state === 'WAITING') return;
+
+  if (boostCooldown > 0) boostCooldown--;
+  if (bird) bird.update();
 
   checkCollisions();
 
@@ -1138,9 +1219,24 @@ function update() {
   if (state === 'SETTLING') {
     settleTimer++;
     if (settleTimer >= SETTLE_WAIT) {
+      state = 'WAITING'; // guard: prevent calling nextBirdOrLose every frame
       nextBirdOrLose();
     }
   }
+}
+
+function drawBoostPrompt() {
+  if (state !== 'FLYING' || boostUsed || !bird || boostCooldown > 0) return;
+  const a = 0.65 + 0.35 * Math.sin(Date.now() * 0.006);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.font = 'bold 22px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE030';
+  ctx.shadowColor = '#FF8000';
+  ctx.shadowBlur = 10;
+  ctx.fillText('💥 タップでブースト！', W / 2, H - 55);
+  ctx.restore();
 }
 
 function draw() {
@@ -1153,6 +1249,7 @@ function draw() {
   drawSlingshot();
   drawBird();
   if (state === 'AIMING') drawAimUI();
+  drawBoostPrompt();
 }
 
 function loop() {
@@ -1164,7 +1261,7 @@ function loop() {
 // ─── INIT ─────────────────────────────────────────────────────
 
 function init() {
-  setupLevel();
+  setupLevel(0);
   resetBird();
   updateHUD();
   loop();
