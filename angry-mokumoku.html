@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Angry Mokumoku - KL Edition</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #1a1228;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 100vh;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  user-select: none;
+}
+#wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+canvas { display: block; cursor: crosshair; }
+#hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 10px 16px;
+  display: flex; justify-content: space-between; align-items: center;
+  pointer-events: none;
+}
+#score-display {
+  background: rgba(0,0,0,0.45);
+  color: #FFE066;
+  font-size: 20px; font-weight: 700;
+  padding: 6px 14px; border-radius: 20px;
+  letter-spacing: 0.5px;
+}
+#birds-display {
+  font-size: 22px;
+  background: rgba(0,0,0,0.45);
+  padding: 6px 12px; border-radius: 20px;
+}
+#overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  pointer-events: all;
+}
+#overlay.hidden { display: none; }
+#overlay h1 { color: #fff; font-size: 42px; margin-bottom: 8px; text-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+#overlay p { color: #FFE066; font-size: 18px; margin-bottom: 24px; }
+#overlay button {
+  background: #FF6B35; color: #fff;
+  border: none; border-radius: 30px;
+  padding: 12px 36px; font-size: 20px; font-weight: 700;
+  cursor: pointer; transition: transform 0.15s, background 0.15s;
+  box-shadow: 0 4px 16px rgba(255,107,53,0.4);
+}
+#overlay button:hover { background: #FF8C5A; transform: scale(1.05); }
+#boost-hint {
+  position: absolute; bottom: 14px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.45);
+  color: rgba(255,255,255,0.85);
+  font-size: 13px; padding: 5px 14px; border-radius: 20px;
+  pointer-events: none; opacity: 0; transition: opacity 0.3s;
+}
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <div id="score-display">スコア: 0</div>
+    <div id="birds-display">🦉🦉🦉</div>
+  </div>
+  <div id="overlay" class="hidden">
+    <h1 id="ov-title"></h1>
+    <p id="ov-sub"></p>
+    <button id="ov-btn">もう一度！</button>
+  </div>
+  <div id="boost-hint">クリックでブースト！</div>
+</div>
+
+<script>
+// ─── CANVAS ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = 900, H = 500;
+canvas.width  = W;
+canvas.height = H;
+
+// ─── CONFIG ───────────────────────────────────────────────────
+const GRAV        = 0.42;
+const GROUND_Y    = 435;
+const SX          = 155;   // slingshot x
+const SY          = GROUND_Y;
+const FORK_H      = 95;
+const FORK_Y      = SY - FORK_H;
+const MAX_PULL    = 78;
+const POWER       = 0.145;
+const BOOST_SPD   = 7;
+const BIRD_R      = 23;
+const RAT_R       = 17;
+const SETTLE_WAIT = 90;
+
+// ─── STATE ────────────────────────────────────────────────────
+let state        = 'AIMING'; // AIMING | FLYING | SETTLING | WIN | LOSE
+let score        = 0;
+let totalBirds   = 3;
+let birdsLeft    = totalBirds;
+let settleTimer  = 0;
+let boostUsed    = false;
+let bird         = null;
+let blocks       = [];
+let rats         = [];
+let particles    = [];
+let mouse        = { x: 0, y: 0, down: false };
+let dragging     = false;
+let pullX = 0, pullY = 0;
+
+// ─── CLASSES ──────────────────────────────────────────────────
+
+class Bird {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.vx = 0; this.vy = 0;
+    this.r = BIRD_R;
+    this.angle = 0;
+    this.alive = true;
+    this.launched = false;
+    this.trail = [];
+    this.flash = 0;
+  }
+  update() {
+    if (!this.launched) return;
+    this.vy += GRAV;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.angle = Math.atan2(this.vy, this.vx);
+    this.flash = Math.max(0, this.flash - 1);
+
+    // Trail
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > 22) this.trail.shift();
+
+    // Ground
+    if (this.y + this.r >= GROUND_Y) {
+      this.y = GROUND_Y - this.r;
+      this.vy *= -0.35;
+      this.vx *= 0.78;
+      addParticles(this.x, this.y + this.r, '#C8A060', 5, 2);
+      if (Math.abs(this.vy) < 1.5) { this.vy = 0; this.alive = false; }
+    }
+    if (this.x > W + 120 || this.x < -120 || this.y > H + 100) this.alive = false;
+  }
+}
+
+class Block {
+  constructor(x, y, w, h, type) {
+    this.x = x; this.y = y;
+    this.w = w; this.h = h;
+    this.type = type;
+    this.vx = 0; this.vy = 0;
+    this.angle = 0;
+    this.angV = 0;
+    this.alive = true;
+    this.hp = type === 'bamboo' ? 1.5 : type === 'wood' ? 3 : 5;
+    this.flash = 0;
+    this.grounded = true;
+  }
+  update() {
+    this.flash = Math.max(0, this.flash - 1);
+    if (this.grounded && this.vy === 0 && Math.abs(this.vx) < 0.2) return;
+    this.grounded = false;
+    this.vy += GRAV;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.angle += this.angV;
+    this.vx *= 0.99;
+    this.angV *= 0.97;
+
+    if (this.y + this.h / 2 >= GROUND_Y) {
+      this.y = GROUND_Y - this.h / 2;
+      this.vy *= -0.28;
+      this.vx *= 0.82;
+      this.angV *= 0.68;
+      if (Math.abs(this.vy) < 1.2) { this.vy = 0; this.grounded = true; }
+    }
+  }
+}
+
+class Rat {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.r = RAT_R;
+    this.vx = 0; this.vy = 0;
+    this.angle = 0;
+    this.angV = 0;
+    this.alive = true;
+    this.dying = false;
+    this.deathT = 0;
+    this.grounded = true;
+    this.eyeAnim = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.eyeAnim += 0.06;
+    if (this.dying) {
+      this.deathT++;
+      this.vy += GRAV;
+      this.x += this.vx;
+      this.y += this.vy;
+      this.angle += this.angV;
+      if (this.deathT > 55 || this.y > H + 60) this.alive = false;
+      return;
+    }
+    if (this.grounded && this.vy === 0 && Math.abs(this.vx) < 0.1) return;
+    this.grounded = false;
+    this.vy += GRAV;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.angle += this.angV;
+    this.vx *= 0.95;
+    this.angV *= 0.9;
+
+    if (this.y + this.r >= GROUND_Y) {
+      this.y = GROUND_Y - this.r;
+      this.vy *= -0.4;
+      this.vx *= 0.85;
+      this.angV *= 0.7;
+      if (Math.abs(this.vy) < 1) { this.vy = 0; this.grounded = true; }
+    }
+    if (this.y > H + 60) { this.alive = false; }
+  }
+  die() {
+    if (this.dying) return;
+    this.dying = true;
+    this.vx += (Math.random() - 0.5) * 5;
+    this.vy -= 5 + Math.random() * 3;
+    this.angV = (Math.random() - 0.5) * 0.35;
+    score += 500;
+    updateHUD();
+    addParticles(this.x, this.y, '#FFB830', 14, 4);
+    addParticles(this.x, this.y, '#FF6030', 8, 3);
+  }
+}
+
+class Particle {
+  constructor(x, y, vx, vy, col, sz, life) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.col = col; this.sz = sz;
+    this.alpha = 1;
+    this.life = life || 35;
+    this.age = 0;
+  }
+  update() {
+    this.vy += 0.18;
+    this.x += this.vx; this.y += this.vy;
+    this.age++;
+    this.alpha = 1 - this.age / this.life;
+    this.sz *= 0.94;
+  }
+  get alive() { return this.age < this.life; }
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────
+
+function addParticles(x, y, col, count, sz) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.PI * 2 * i / count + Math.random() * 0.5;
+    const sp = 2 + Math.random() * 5;
+    particles.push(new Particle(x, y, Math.cos(a)*sp, Math.sin(a)*sp - 2, col, sz || 5));
+  }
+}
+
+function updateHUD() {
+  document.getElementById('score-display').textContent = `スコア: ${score}`;
+  const rem = Math.max(0, birdsLeft);
+  document.getElementById('birds-display').textContent = '🦉'.repeat(rem);
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ─── LEVEL ────────────────────────────────────────────────────
+
+function makeBlock(x, y, w, h, type) {
+  const b = new Block(x, y, w, h, type);
+  blocks.push(b); return b;
+}
+function makeRat(x, y) {
+  const r = new Rat(x, y);
+  rats.push(r); return r;
+}
+
+function setupLevel() {
+  blocks = []; rats = [];
+
+  // === Hawker stall structure (left cluster) ===
+  // Bamboo poles
+  makeBlock(510, GROUND_Y - 85, 13, 170, 'bamboo');
+  makeBlock(610, GROUND_Y - 85, 13, 170, 'bamboo');
+  // Top plank
+  makeBlock(560, GROUND_Y - 172, 112, 13, 'wood');
+  // Crates on plank
+  makeBlock(537, GROUND_Y - 204, 38, 38, 'crate');
+  makeBlock(583, GROUND_Y - 204, 38, 38, 'crate');
+  // Rat on left crate
+  makeRat(537, GROUND_Y - 204 - 38/2 - RAT_R + 2);
+
+  // === Tower structure (right) ===
+  // Bamboo poles
+  makeBlock(700, GROUND_Y - 70, 13, 140, 'bamboo');
+  makeBlock(760, GROUND_Y - 70, 13, 140, 'bamboo');
+  // Plank
+  makeBlock(730, GROUND_Y - 142, 74, 13, 'wood');
+  // Crate
+  makeBlock(730, GROUND_Y - 175, 42, 38, 'crate');
+  // Second level
+  makeBlock(730, GROUND_Y - 213, 42, 32, 'wood');
+  // Top rat
+  makeRat(730, GROUND_Y - 213 - 32/2 - RAT_R + 2);
+
+  // === Lone exposed rat on bamboo perch ===
+  makeBlock(840, GROUND_Y - 100, 13, 200, 'bamboo');
+  makeBlock(840, GROUND_Y - 102, 50, 13, 'wood');
+  makeRat(840, GROUND_Y - 102 - 13/2 - RAT_R + 2);
+}
+
+function resetBird() {
+  boostUsed = false;
+  dragging = false;
+  pullX = 0; pullY = 0;
+  bird = new Bird(SX, FORK_Y);
+  document.getElementById('boost-hint').style.opacity = '0';
+}
+
+// ─── COLLISION ────────────────────────────────────────────────
+
+function circleRect(cx, cy, cr, rx, ry, rw, rh) {
+  const nx = clamp(cx, rx - rw/2, rx + rw/2);
+  const ny = clamp(cy, ry - rh/2, ry + rh/2);
+  const dx = cx - nx, dy = cy - ny;
+  const d2 = dx*dx + dy*dy;
+  if (d2 >= cr*cr) return null;
+  const d = Math.sqrt(d2) || 0.001;
+  return { nx: dx/d, ny: dy/d, d };
+}
+
+function circleCirle(ax, ay, ar, bx, by, br) {
+  const dx = bx - ax, dy = by - ay;
+  const d2 = dx*dx + dy*dy;
+  if (d2 >= (ar+br)*(ar+br)) return null;
+  const d = Math.sqrt(d2) || 0.001;
+  return { nx: dx/d, ny: dy/d, d };
+}
+
+function checkCollisions() {
+  if (!bird || !bird.launched || !bird.alive) return;
+  const speed = Math.sqrt(bird.vx*bird.vx + bird.vy*bird.vy);
+
+  rats.forEach(rat => {
+    if (!rat.alive || rat.dying) return;
+    const c = circleCirle(bird.x, bird.y, bird.r, rat.x, rat.y, rat.r);
+    if (c) {
+      rat.die();
+      bird.vx *= 0.65; bird.vy *= 0.65;
+    }
+  });
+
+  blocks.forEach(blk => {
+    if (!blk.alive) return;
+    const c = circleRect(bird.x, bird.y, bird.r, blk.x, blk.y, blk.w, blk.h);
+    if (!c) return;
+
+    blk.hp -= speed * 0.12;
+    blk.flash = 8;
+
+    if (blk.hp <= 0) {
+      blk.alive = false;
+      score += 50; updateHUD();
+      addParticles(blk.x, blk.y, blockColor(blk.type), 10, 4);
+      // Topple nearby rats
+      rats.forEach(rat => {
+        if (rat.dying) return;
+        if (Math.abs(rat.x - blk.x) < blk.w * 0.8 && rat.y > blk.y - blk.h) {
+          rat.vy -= 4 + Math.random() * 2;
+          rat.vx += (Math.random() - 0.5) * 6;
+          rat.grounded = false;
+        }
+      });
+    } else {
+      blk.vx += c.nx * speed * 0.4;
+      blk.vy += c.ny * speed * 0.4;
+      blk.angV += (Math.random() - 0.5) * 0.12;
+      blk.grounded = false;
+    }
+
+    bird.vx -= c.nx * speed * 0.25;
+    bird.vy -= c.ny * speed * 0.25;
+    bird.flash = 6;
+  });
+}
+
+// ─── DRAW HELPERS ─────────────────────────────────────────────
+
+function blockColor(type) {
+  return type === 'bamboo' ? '#7DB84A' : type === 'wood' ? '#A0652A' : '#C8A030';
+}
+
+function drawBackground() {
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  sky.addColorStop(0, '#6EC6F0');
+  sky.addColorStop(0.6, '#A8D8F0');
+  sky.addColorStop(1, '#D0ECFF');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+
+  // Sun
+  ctx.save();
+  ctx.shadowColor = '#FFE033';
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = '#FFE033';
+  ctx.beginPath();
+  ctx.arc(820, 70, 38, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // Fluffy clouds
+  drawCloud(120, 80, 0.9);
+  drawCloud(340, 55, 1.1);
+  drawCloud(620, 90, 0.75);
+
+  // ── Petronas Towers (background silhouette) ──
+  drawPetronas(450, GROUND_Y - 10);
+
+  // ── KL City buildings (mid-distance) ──
+  drawCityBuildings();
+
+  // ── Shophouses (foreground left) ──
+  drawShophouses(0, GROUND_Y, 4);
+
+  // Ground
+  const grd = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  grd.addColorStop(0, '#8B6B2A');
+  grd.addColorStop(0.2, '#7A5C22');
+  grd.addColorStop(1, '#5A3E18');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+  // Grass strip
+  ctx.fillStyle = '#5AAA30';
+  ctx.beginPath();
+  ctx.roundRect(0, GROUND_Y - 6, W, 14, 4);
+  ctx.fill();
+
+  // Ground detail — paving tiles
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 50) {
+    ctx.beginPath();
+    ctx.moveTo(x, GROUND_Y + 8);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+}
+
+function drawCloud(x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  const puffs = [
+    [0, 0, 28], [-30, 8, 22], [30, 8, 22], [-14, -10, 20], [14, -10, 20]
+  ];
+  puffs.forEach(([px, py, r]) => {
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawPetronas(cx, gy) {
+  const tw = 52, th = 210, gap = 36;
+  const lx = cx - gap/2 - tw, rx = cx + gap/2;
+  const col = 'rgba(180,195,215,0.55)';
+
+  [lx, rx].forEach(tx => {
+    // Main shaft
+    ctx.fillStyle = col;
+    ctx.fillRect(tx + tw*0.12, gy - th, tw*0.76, th);
+    // Side tabs every 15px
+    for (let i = 0; i < 8; i++) {
+      const yy = gy - th * 0.25 - i * (th*0.06);
+      ctx.fillRect(tx, yy, tw*0.12, th*0.055);
+      ctx.fillRect(tx + tw*0.88, yy, tw*0.12, th*0.055);
+    }
+    // Spire
+    ctx.fillStyle = 'rgba(170,185,205,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(tx + tw/2, gy - th - 52);
+    ctx.lineTo(tx + tw*0.35, gy - th);
+    ctx.lineTo(tx + tw*0.65, gy - th);
+    ctx.closePath(); ctx.fill();
+    // Ball (bulb before spire)
+    ctx.beginPath();
+    ctx.arc(tx + tw/2, gy - th - 10, tw*0.14, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // Sky bridge
+  ctx.fillStyle = col;
+  ctx.fillRect(lx + tw*0.85, gy - th*0.41, gap + tw*0.28, th*0.042);
+
+  // Windows (subtle)
+  ctx.fillStyle = 'rgba(210,230,255,0.25)';
+  [lx, rx].forEach(tx => {
+    for (let row = 1; row < 14; row++) {
+      for (let col = 0; col < 3; col++) {
+        ctx.fillRect(tx + tw*0.18 + col*(tw*0.22), gy - row*(th/14.5), tw*0.14, th*0.05);
+      }
+    }
+  });
+}
+
+function drawCityBuildings() {
+  const bldgs = [
+    { x: 20,  w: 55, h: 120, col: '#B8C8D8' },
+    { x: 80,  w: 40, h: 90,  col: '#C0D0C0' },
+    { x: 340, w: 45, h: 150, col: '#C8C0B0' },
+    { x: 390, w: 35, h: 100, col: '#B0C0B8' },
+    { x: 600, w: 50, h: 130, col: '#C0B8C8' },
+    { x: 660, w: 40, h: 85,  col: '#C8C8B0' },
+    { x: 820, w: 60, h: 110, col: '#B8C0C8' },
+  ];
+  bldgs.forEach(b => {
+    ctx.fillStyle = b.col;
+    ctx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
+    // Window grid
+    ctx.fillStyle = 'rgba(200,230,255,0.35)';
+    for (let row = 1; row * 14 < b.h - 10; row++) {
+      for (let c = 0; c * 12 < b.w - 6; c++) {
+        ctx.fillRect(b.x + 5 + c*12, GROUND_Y - b.h + row*14, 7, 8);
+      }
+    }
+    // Roof accent
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(b.x, GROUND_Y - b.h, b.w, 6);
+  });
+}
+
+function drawShophouses(startX, gy, count) {
+  const colors = ['#E8A060', '#70C8A0', '#E8D060', '#C080C8', '#60A8D8'];
+  const ws = [85, 70, 90, 75, 80];
+  let x = startX;
+  for (let i = 0; i < count; i++) {
+    const w = ws[i % ws.length];
+    const h = 140 + (i % 2) * 20;
+    const col = colors[i % colors.length];
+    // Body
+    ctx.fillStyle = col;
+    ctx.fillRect(x, gy - h, w, h);
+    // Darker stripe at top
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(x, gy - h, w, 20);
+    // Windows
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let row = 0; row < 2; row++) {
+      ctx.fillRect(x + 12, gy - h + 28 + row * 36, 18, 24);
+      ctx.fillRect(x + w - 30, gy - h + 28 + row * 36, 18, 24);
+    }
+    // 5-foot way arch
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.arc(x + w/2, gy - 22, w*0.38, Math.PI, 0);
+    ctx.closePath(); ctx.fill();
+    // Divider
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x + w, gy - h); ctx.lineTo(x + w, gy); ctx.stroke();
+    x += w;
+  }
+}
+
+function drawBlocks() {
+  blocks.forEach(b => {
+    if (!b.alive) return;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.angle);
+
+    const hw = b.w / 2, hh = b.h / 2;
+
+    if (b.type === 'bamboo') {
+      // Bamboo pole
+      const grad = ctx.createLinearGradient(-hw, 0, hw, 0);
+      grad.addColorStop(0, '#9DC45A');
+      grad.addColorStop(0.5, '#C0E070');
+      grad.addColorStop(1, '#7A9840');
+      ctx.fillStyle = b.flash > 0 ? '#FFFFFF' : grad;
+      ctx.beginPath();
+      ctx.roundRect(-hw, -hh, b.w, b.h, 4);
+      ctx.fill();
+      // Bamboo joints
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 1.5;
+      const joints = Math.floor(b.h / 28);
+      for (let i = 1; i < joints; i++) {
+        const jy = -hh + i * (b.h / joints);
+        ctx.beginPath();
+        ctx.moveTo(-hw, jy);
+        ctx.lineTo(hw, jy);
+        ctx.stroke();
+      }
+    } else if (b.type === 'wood') {
+      // Wood plank
+      const grad = ctx.createLinearGradient(0, -hh, 0, hh);
+      grad.addColorStop(0, '#C4803A');
+      grad.addColorStop(1, '#8A5018');
+      ctx.fillStyle = b.flash > 0 ? '#FFE8A0' : grad;
+      ctx.beginPath();
+      ctx.roundRect(-hw, -hh, b.w, b.h, 3);
+      ctx.fill();
+      // Wood grain
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+      ctx.lineWidth = 1;
+      const grains = Math.max(2, Math.floor(b.w / 18));
+      for (let i = 1; i < grains; i++) {
+        const gx = -hw + i * (b.w / grains);
+        ctx.beginPath(); ctx.moveTo(gx, -hh); ctx.lineTo(gx, hh); ctx.stroke();
+      }
+      // Border
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(-hw, -hh, b.w, b.h, 3); ctx.stroke();
+    } else {
+      // Crate
+      ctx.fillStyle = b.flash > 0 ? '#FFE8A0' : '#C8A830';
+      ctx.fillRect(-hw, -hh, b.w, b.h);
+      // Crate planks
+      ctx.strokeStyle = '#8A6010';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-hw, -hh, b.w, b.h);
+      ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw, 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -hh); ctx.lineTo(0, hh); ctx.stroke();
+      // X cross
+      ctx.strokeStyle = 'rgba(100,60,0,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-hw, -hh); ctx.lineTo(hw, hh); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hw, -hh); ctx.lineTo(-hw, hh); ctx.stroke();
+    }
+
+    // HP damage cracks
+    const dmgRatio = 1 - b.hp / (b.type === 'bamboo' ? 1.5 : b.type === 'wood' ? 3 : 5);
+    if (dmgRatio > 0.3) {
+      ctx.strokeStyle = `rgba(0,0,0,${dmgRatio * 0.5})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, -hh * 0.3); ctx.lineTo(hw * 0.4, hh * 0.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-hw * 0.2, hh * 0.1); ctx.lineTo(hw * 0.3, -hh * 0.2); ctx.stroke();
+    }
+
+    ctx.restore();
+  });
+}
+
+function drawRats() {
+  rats.forEach(rat => {
+    if (!rat.alive) return;
+    ctx.save();
+    ctx.translate(rat.x, rat.y);
+    ctx.rotate(rat.angle);
+    ctx.globalAlpha = rat.dying ? Math.max(0, 1 - rat.deathT / 30) : 1;
+
+    const r = rat.r;
+    // Body
+    ctx.fillStyle = '#787878';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+
+    // Snout (pointing right by default)
+    ctx.fillStyle = '#A09090';
+    ctx.beginPath(); ctx.ellipse(r*0.55, r*0.08, r*0.42, r*0.28, 0, 0, Math.PI*2); ctx.fill();
+
+    // Ears
+    [[-r*0.25, -r*0.88], [r*0.38, -r*0.88]].forEach(([ex, ey]) => {
+      ctx.fillStyle = '#787878';
+      ctx.beginPath(); ctx.ellipse(ex, ey, r*0.22, r*0.28, ex > 0 ? 0.25 : -0.25, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#D08080';
+      ctx.beginPath(); ctx.ellipse(ex, ey, r*0.12, r*0.16, ex > 0 ? 0.25 : -0.25, 0, Math.PI*2); ctx.fill();
+    });
+
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-r*0.05, -r*0.15, r*0.11, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(r*0.5, -r*0.05, r*0.09, 0, Math.PI*2); ctx.fill();
+    // Shine
+    ctx.fillStyle = 'white';
+    ctx.beginPath(); ctx.arc(-r*0.01, -r*0.2, r*0.04, 0, Math.PI*2); ctx.fill();
+
+    // Nose
+    ctx.fillStyle = '#FF8888';
+    ctx.beginPath(); ctx.arc(r*0.9, r*0.08, r*0.08, 0, Math.PI*2); ctx.fill();
+
+    // Whiskers
+    ctx.strokeStyle = 'rgba(200,200,200,0.7)';
+    ctx.lineWidth = 0.8;
+    [[-0.3, 0.1], [0.1, -0.05], [-0.1, 0.3]].forEach(([a, b]) => {
+      ctx.beginPath(); ctx.moveTo(r*0.5, r*0.08); ctx.lineTo(r*1.5 + a*r, r*0.08 + b*r); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(r*0.5, r*0.08); ctx.lineTo(-r*0.2 + a*r*0.3, r*0.08 + b*r); ctx.stroke();
+    });
+
+    // Tail
+    ctx.strokeStyle = '#909090';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-r, r*0.15);
+    ctx.bezierCurveTo(-r*1.6, -r*0.4, -r*2.1, r*0.7, -r*1.9, r*1.3);
+    ctx.stroke();
+
+    // Chef hat (the food stealer!)
+    ctx.fillStyle = 'white';
+    ctx.fillRect(-r*0.35, -r*1.35, r*0.7, r*0.35);
+    ctx.beginPath(); ctx.ellipse(0, -r*1.55, r*0.28, r*0.28, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#DDD'; ctx.lineWidth = 1;
+    ctx.strokeRect(-r*0.35, -r*1.35, r*0.7, r*0.35);
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawMokumoku(x, y, r, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle || 0);
+
+  // Body (main brown)
+  ctx.fillStyle = '#C8956A';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+  // Body shading
+  const bodyShade = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r);
+  bodyShade.addColorStop(0, 'rgba(255,255,255,0.15)');
+  bodyShade.addColorStop(1, 'rgba(0,0,0,0.2)');
+  ctx.fillStyle = bodyShade;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+
+  // Face patch (lighter oval)
+  ctx.fillStyle = '#E8D5B0';
+  ctx.beginPath();
+  ctx.ellipse(0, r*0.12, r*0.66, r*0.76, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Eyes (large black ovals — Rowlet style)
+  ctx.fillStyle = '#151515';
+  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.14, r*0.19, r*0.235, -0.08, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r*0.32, -r*0.14, r*0.19, r*0.235, 0.08, 0, Math.PI*2); ctx.fill();
+
+  // Eye whites (oval outline)
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.14, r*0.19, r*0.235, -0.08, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(r*0.32, -r*0.14, r*0.19, r*0.235, 0.08, 0, Math.PI*2); ctx.stroke();
+
+  // Eye highlights
+  ctx.fillStyle = 'white';
+  ctx.beginPath(); ctx.arc(-r*0.27, -r*0.2, r*0.065, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r*0.37, -r*0.2, r*0.065, 0, Math.PI*2); ctx.fill();
+
+  // Forehead orange stripe / beak base
+  ctx.fillStyle = '#E89230';
+  ctx.beginPath(); ctx.ellipse(0, -r*0.02, r*0.24, r*0.115, 0, 0, Math.PI*2); ctx.fill();
+
+  // Beak (round triangle pointing down)
+  ctx.fillStyle = '#D07818';
+  ctx.beginPath();
+  ctx.ellipse(0, r*0.12, r*0.115, r*0.135, 0, 0, Math.PI);
+  ctx.fill();
+
+  // Teal leaf bowtie
+  ctx.fillStyle = '#3DA890';
+  ctx.beginPath(); ctx.ellipse(-r*0.28, r*0.47, r*0.24, r*0.13, -0.35, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r*0.28, r*0.47, r*0.24, r*0.13, 0.35, 0, Math.PI*2); ctx.fill();
+  // Bowtie center knot
+  ctx.fillStyle = '#2A7868';
+  ctx.beginPath(); ctx.arc(0, r*0.47, r*0.07, 0, Math.PI*2); ctx.fill();
+  // Leaf vein details
+  ctx.strokeStyle = '#2A7868'; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(-r*0.04, r*0.47); ctx.lineTo(-r*0.48, r*0.45); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r*0.04, r*0.47); ctx.lineTo(r*0.48, r*0.45); ctx.stroke();
+
+  // Orange feet
+  ctx.fillStyle = '#E89230';
+  ctx.beginPath(); ctx.ellipse(-r*0.26, r*0.88, r*0.13, r*0.08, 0.25, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r*0.26, r*0.88, r*0.13, r*0.08, -0.25, 0, Math.PI*2); ctx.fill();
+  // Toe details
+  ctx.strokeStyle = '#C06810'; ctx.lineWidth = 1.2;
+  [-r*0.26, r*0.26].forEach(fx => {
+    ctx.beginPath(); ctx.moveTo(fx - r*0.07, r*0.9); ctx.lineTo(fx - r*0.15, r*0.96); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(fx, r*0.92); ctx.lineTo(fx, r*1.0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(fx + r*0.07, r*0.9); ctx.lineTo(fx + r*0.15, r*0.96); ctx.stroke();
+  });
+
+  ctx.restore();
+}
+
+function drawSlingshot() {
+  const forkL = { x: SX - 18, y: FORK_Y + 4 };
+  const forkR = { x: SX + 18, y: FORK_Y + 4 };
+
+  // Elastic bands
+  if (state === 'AIMING' && dragging) {
+    const birdX = SX + pullX;
+    const birdY = FORK_Y + pullY;
+    ctx.strokeStyle = '#A0623A';
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    // Left band
+    ctx.beginPath(); ctx.moveTo(forkL.x, forkL.y); ctx.lineTo(birdX, birdY); ctx.stroke();
+    // Right band
+    ctx.beginPath(); ctx.moveTo(forkR.x, forkR.y); ctx.lineTo(birdX, birdY); ctx.stroke();
+  } else {
+    // Relaxed bands
+    ctx.strokeStyle = '#8A5230';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(forkL.x, forkL.y); ctx.lineTo(SX, FORK_Y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(forkR.x, forkR.y); ctx.lineTo(SX, FORK_Y); ctx.stroke();
+  }
+
+  // Fork prongs
+  ctx.strokeStyle = '#6B3C12';
+  ctx.lineWidth = 9;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(SX, SY);
+  ctx.lineTo(SX, FORK_Y + 20);
+  ctx.stroke();
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(SX, FORK_Y + 24);
+  ctx.lineTo(forkL.x, forkL.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(SX, FORK_Y + 24);
+  ctx.lineTo(forkR.x, forkR.y);
+  ctx.stroke();
+  // Fork tips
+  ctx.fillStyle = '#8B5A2B';
+  [forkL, forkR].forEach(f => {
+    ctx.beginPath(); ctx.arc(f.x, f.y, 4.5, 0, Math.PI*2); ctx.fill();
+  });
+}
+
+function drawBird() {
+  if (!bird) return;
+
+  // Trail
+  bird.trail.forEach((pt, i) => {
+    const alpha = (i / bird.trail.length) * 0.35;
+    const sz = BIRD_R * 0.3 * (i / bird.trail.length);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#FFE070';
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, sz, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Flash ring
+  if (bird.flash > 0) {
+    ctx.strokeStyle = `rgba(255,220,50,${bird.flash / 8})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bird.x, bird.y, BIRD_R + 8, 0, Math.PI*2); ctx.stroke();
+  }
+
+  const angle = bird.launched ? bird.angle : 0;
+  drawMokumoku(bird.x, bird.y, BIRD_R, angle);
+}
+
+function drawTrajectoryArc() {
+  if (!dragging) return;
+  const vx = -pullX * POWER;
+  const vy = -pullY * POWER;
+  let x = SX + pullX, y = FORK_Y + pullY;
+  let dvx = vx, dvy = vy;
+
+  ctx.save();
+  ctx.setLineDash([5, 8]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  for (let i = 0; i < 55; i++) {
+    dvy += GRAV;
+    x += dvx; y += dvy;
+    if (y > GROUND_Y || x > W) break;
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawWaitingBirds() {
+  // Show extra birds waiting near base of slingshot
+  for (let i = 0; i < birdsLeft - 1; i++) {
+    const bx = SX - 60 - i * 52;
+    drawMokumoku(bx, GROUND_Y - 16, 16, 0);
+  }
+}
+
+// ─── AIMING UI ────────────────────────────────────────────────
+
+function drawAimUI() {
+  // Highlight zone around bird when not dragging
+  if (!dragging) {
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.005);
+    ctx.strokeStyle = `rgba(255,220,80,${0.4 + pulse * 0.4})`;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.arc(SX, FORK_Y, BIRD_R + 14, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  drawTrajectoryArc();
+}
+
+// ─── GAME LOGIC ───────────────────────────────────────────────
+
+function launch() {
+  if (!bird || state !== 'AIMING') return;
+  const vx = -pullX * POWER;
+  const vy = -pullY * POWER;
+  bird.x = SX + pullX;
+  bird.y = FORK_Y + pullY;
+  bird.vx = vx;
+  bird.vy = vy;
+  bird.launched = true;
+  state = 'FLYING';
+  settleTimer = 0;
+
+  document.getElementById('boost-hint').style.opacity = '1';
+  setTimeout(() => {
+    document.getElementById('boost-hint').style.opacity = '0';
+  }, 2000);
+}
+
+function applyBoost() {
+  if (!bird || !bird.launched || boostUsed) return;
+  const sp = Math.sqrt(bird.vx*bird.vx + bird.vy*bird.vy);
+  if (sp < 0.1) return;
+  const nx = bird.vx / sp, ny = bird.vy / sp;
+  bird.vx += nx * BOOST_SPD;
+  bird.vy += ny * BOOST_SPD;
+  bird.flash = 18;
+  boostUsed = true;
+  addParticles(bird.x, bird.y, '#FFE030', 16, 6);
+  addParticles(bird.x, bird.y, '#FF8030', 10, 4);
+  document.getElementById('boost-hint').style.opacity = '0';
+}
+
+function checkWinLose() {
+  const livingRats = rats.filter(r => r.alive && !r.dying);
+  if (livingRats.length === 0) {
+    setTimeout(() => showResult('WIN'), 800);
+    return true;
+  }
+  return false;
+}
+
+function nextBirdOrLose() {
+  if (checkWinLose()) return;
+
+  birdsLeft--;
+  updateHUD();
+
+  if (birdsLeft <= 0) {
+    const dyingRats = rats.filter(r => r.dying).length;
+    const aliveRats  = rats.filter(r => r.alive && !r.dying).length;
+    if (aliveRats > 0) {
+      setTimeout(() => showResult('LOSE'), 800);
+    } else {
+      setTimeout(() => showResult('WIN'), 800);
+    }
+  } else {
+    setTimeout(() => {
+      resetBird();
+      state = 'AIMING';
+    }, 1200);
+  }
+}
+
+function showResult(result) {
+  const ov = document.getElementById('overlay');
+  const title = document.getElementById('ov-title');
+  const sub   = document.getElementById('ov-sub');
+  ov.classList.remove('hidden');
+  if (result === 'WIN') {
+    title.textContent = '🎉 ミッション完了！';
+    sub.textContent   = `スコア: ${score} pt — ラット全員撃退！`;
+  } else {
+    title.textContent = '😢 やられた…';
+    sub.textContent   = `スコア: ${score} pt — リトライ！`;
+  }
+  state = result;
+}
+
+function restartGame() {
+  score = 0;
+  birdsLeft = totalBirds;
+  particles = [];
+  state = 'AIMING';
+  document.getElementById('overlay').classList.add('hidden');
+  updateHUD();
+  setupLevel();
+  resetBird();
+}
+
+// ─── INPUT ────────────────────────────────────────────────────
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * scaleX,
+    y: (src.clientY - rect.top)  * scaleY,
+  };
+}
+
+function onDown(e) {
+  e.preventDefault();
+  if (state !== 'AIMING') return;
+  const p = getPos(e);
+  const dx = p.x - SX, dy = p.y - FORK_Y;
+  if (Math.sqrt(dx*dx + dy*dy) < BIRD_R + 20) {
+    dragging = true;
+    mouse = p;
+  }
+}
+
+function onMove(e) {
+  e.preventDefault();
+  if (!dragging || state !== 'AIMING') return;
+  const p = getPos(e);
+  mouse = p;
+  let dx = p.x - SX, dy = p.y - FORK_Y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist > MAX_PULL) {
+    dx = dx / dist * MAX_PULL;
+    dy = dy / dist * MAX_PULL;
+  }
+  pullX = dx; pullY = dy;
+  if (bird) { bird.x = SX + pullX; bird.y = FORK_Y + pullY; }
+}
+
+function onUp(e) {
+  e.preventDefault();
+  if (!dragging || state !== 'AIMING') return;
+  dragging = false;
+  const dist = Math.sqrt(pullX*pullX + pullY*pullY);
+  if (dist > 12) {
+    launch();
+  } else {
+    pullX = 0; pullY = 0;
+    if (bird) { bird.x = SX; bird.y = FORK_Y; }
+  }
+}
+
+function onClick(e) {
+  if (state === 'FLYING') {
+    applyBoost();
+  }
+}
+
+canvas.addEventListener('mousedown',  onDown,  { passive: false });
+canvas.addEventListener('mousemove',  onMove,  { passive: false });
+canvas.addEventListener('mouseup',    onUp,    { passive: false });
+canvas.addEventListener('click',      onClick);
+canvas.addEventListener('touchstart', onDown,  { passive: false });
+canvas.addEventListener('touchmove',  onMove,  { passive: false });
+canvas.addEventListener('touchend',   onUp,    { passive: false });
+
+document.getElementById('ov-btn').addEventListener('click', restartGame);
+
+// ─── MAIN LOOP ────────────────────────────────────────────────
+
+function update() {
+  if (state === 'AIMING') return;
+  if (state === 'WIN' || state === 'LOSE') return;
+
+  if (bird) bird.update();
+  blocks.forEach(b => b.update());
+  rats.forEach(r => r.update());
+  particles.forEach(p => p.update());
+
+  blocks    = blocks.filter(b => b.alive);
+  particles = particles.filter(p => p.alive);
+  // Keep dying rats in array until animation done
+  rats = rats.filter(r => r.alive);
+
+  checkCollisions();
+
+  if (bird && !bird.alive && state === 'FLYING') {
+    state = 'SETTLING';
+    settleTimer = 0;
+  }
+
+  if (state === 'SETTLING') {
+    settleTimer++;
+    if (settleTimer >= SETTLE_WAIT) {
+      nextBirdOrLose();
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+  drawBlocks();
+  drawRats();
+  drawParticles();
+  drawWaitingBirds();
+  drawSlingshot();
+  drawBird();
+  if (state === 'AIMING') drawAimUI();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────
+
+function init() {
+  setupLevel();
+  resetBird();
+  updateHUD();
+  loop();
+}
+
+init();
+</script>
+</body>
+</html>
