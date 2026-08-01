@@ -134,10 +134,12 @@ const SX          = 155;   // slingshot x
 const SY          = GROUND_Y;
 const FORK_H      = 95;
 const FORK_Y      = SY - FORK_H;
-const MAX_PULL    = 78;
-const POWER       = 0.145;
+const MAX_PULL    = 85;
+const POWER       = 0.175;
 const BOOST_SPD   = 7;
 const BIRD_R      = 23;
+const GIANT_R     = 38;
+const SPEED_MULT  = 1.5;
 const RAT_R       = 17;
 const SETTLE_WAIT = 90;
 
@@ -157,6 +159,9 @@ let birdsLeft    = totalBirds;
 let settleTimer  = 0;
 let boostUsed    = false;
 let boostCooldown = 0;
+let birdType     = 'normal'; // 'normal' | 'giant' | 'speed'
+let luckyTimer   = 0;
+let luckyText    = '';
 let bird         = null;
 let blocks       = [];
 let rats         = [];
@@ -168,10 +173,11 @@ let pullX = 0, pullY = 0;
 // ─── CLASSES ──────────────────────────────────────────────────
 
 class Bird {
-  constructor(x, y) {
+  constructor(x, y, r, type) {
     this.x = x; this.y = y;
     this.vx = 0; this.vy = 0;
-    this.r = BIRD_R;
+    this.r = r || BIRD_R;
+    this.type = type || 'normal';
     this.angle = 0;
     this.alive = true;
     this.launched = false;
@@ -398,9 +404,28 @@ function _buildLevel2() {
 
 function resetBird() {
   boostUsed = false;
+  boostCooldown = 0;
   dragging = false;
   pullX = 0; pullY = 0;
-  bird = new Bird(SX, FORK_Y);
+
+  // Lucky bird roll
+  const roll = Math.random();
+  if (roll < 0.15) {
+    birdType = 'giant';
+    luckyText = '🌟 ジャイアントモクモク！';
+    luckyTimer = 90;
+  } else if (roll < 0.27) {
+    birdType = 'speed';
+    luckyText = '⚡ スピードモクモク！';
+    luckyTimer = 90;
+  } else {
+    birdType = 'normal';
+    luckyText = '';
+    luckyTimer = 0;
+  }
+
+  const r = birdType === 'giant' ? GIANT_R : BIRD_R;
+  bird = new Bird(SX, FORK_Y, r, birdType);
   document.getElementById('boost-hint').style.opacity = '0';
 }
 
@@ -427,13 +452,15 @@ function circleCirle(ax, ay, ar, bx, by, br) {
 function checkCollisions() {
   if (!bird || !bird.launched || !bird.alive) return;
   const speed = Math.sqrt(bird.vx*bird.vx + bird.vy*bird.vy);
+  const dmgMult = birdType === 'giant' ? 2.5 : birdType === 'speed' ? 1.4 : 1;
+  const bounce  = birdType === 'giant' ? 0.85 : 0.65;
 
   rats.forEach(rat => {
     if (!rat.alive || rat.dying) return;
     const c = circleCirle(bird.x, bird.y, bird.r, rat.x, rat.y, rat.r);
     if (c) {
       rat.die();
-      bird.vx *= 0.65; bird.vy *= 0.65;
+      bird.vx *= bounce; bird.vy *= bounce;
     }
   });
 
@@ -442,14 +469,13 @@ function checkCollisions() {
     const c = circleRect(bird.x, bird.y, bird.r, blk.x, blk.y, blk.w, blk.h);
     if (!c) return;
 
-    blk.hp -= speed * 0.12;
+    blk.hp -= speed * 0.12 * dmgMult;
     blk.flash = 8;
 
     if (blk.hp <= 0) {
       blk.alive = false;
       score += 50; updateHUD();
       addParticles(blk.x, blk.y, blockColor(blk.type), 10, 4);
-      // Topple nearby rats
       rats.forEach(rat => {
         if (rat.dying) return;
         if (Math.abs(rat.x - blk.x) < blk.w * 0.8 && rat.y > blk.y - blk.h) {
@@ -465,8 +491,9 @@ function checkCollisions() {
       blk.grounded = false;
     }
 
-    bird.vx -= c.nx * speed * 0.25;
-    bird.vy -= c.ny * speed * 0.25;
+    const birdBounce = birdType === 'giant' ? 0.1 : 0.25;
+    bird.vx -= c.nx * speed * birdBounce;
+    bird.vy -= c.ny * speed * birdBounce;
     bird.flash = 6;
   });
 }
@@ -797,61 +824,83 @@ function drawRats() {
   });
 }
 
-function drawMokumoku(x, y, r, angle) {
+function drawMokumoku(x, y, r, angle, mood) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle || 0);
+  mood = mood || 'neutral';
 
-  // Body (main brown)
-  ctx.fillStyle = '#C8956A';
+  // Body — slightly redder when super-angry
+  ctx.fillStyle = mood === 'super-angry' ? '#D48060' : '#C8956A';
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
-  // Body shading
   const bodyShade = ctx.createRadialGradient(-r*0.3, -r*0.3, 0, 0, 0, r);
   bodyShade.addColorStop(0, 'rgba(255,255,255,0.15)');
   bodyShade.addColorStop(1, 'rgba(0,0,0,0.2)');
   ctx.fillStyle = bodyShade;
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
 
-  // Face patch (lighter oval)
+  // Face patch
   ctx.fillStyle = '#E8D5B0';
-  ctx.beginPath();
-  ctx.ellipse(0, r*0.12, r*0.66, r*0.76, 0, 0, Math.PI*2);
-  ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, r*0.12, r*0.66, r*0.76, 0, 0, Math.PI*2); ctx.fill();
 
-  // Eyes (large black ovals — Rowlet style)
+  // Eye height based on mood
+  const eyeH = mood === 'super-angry' ? r*0.145 : mood === 'angry' ? r*0.175 : r*0.235;
+  const eyeW = r*0.19;
+
+  // Eyes
   ctx.fillStyle = '#151515';
-  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.14, r*0.19, r*0.235, -0.08, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(r*0.32, -r*0.14, r*0.19, r*0.235, 0.08, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.14, eyeW, eyeH, -0.08, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r*0.32, -r*0.14, eyeW, eyeH, 0.08, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.14, eyeW, eyeH, -0.08, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(r*0.32, -r*0.14, eyeW, eyeH, 0.08, 0, Math.PI*2); ctx.stroke();
 
-  // Eye whites (oval outline)
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.ellipse(-r*0.32, -r*0.14, r*0.19, r*0.235, -0.08, 0, Math.PI*2); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(r*0.32, -r*0.14, r*0.19, r*0.235, 0.08, 0, Math.PI*2); ctx.stroke();
+  // Angry eyebrows
+  if (mood === 'angry' || mood === 'super-angry') {
+    const slope = mood === 'super-angry' ? r*0.16 : r*0.10;
+    ctx.strokeStyle = '#4A1800';
+    ctx.lineWidth = mood === 'super-angry' ? r*0.09 : r*0.07;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-r*0.52, -r*0.36 - slope); ctx.lineTo(-r*0.14, -r*0.36 + slope*0.3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(r*0.14, -r*0.36 + slope*0.3); ctx.lineTo(r*0.52, -r*0.36 - slope); ctx.stroke();
+  }
 
   // Eye highlights
   ctx.fillStyle = 'white';
   ctx.beginPath(); ctx.arc(-r*0.27, -r*0.2, r*0.065, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(r*0.37, -r*0.2, r*0.065, 0, Math.PI*2); ctx.fill();
 
-  // Forehead orange stripe / beak base
-  ctx.fillStyle = '#E89230';
+  // Forehead stripe
+  ctx.fillStyle = mood === 'super-angry' ? '#C87818' : '#E89230';
   ctx.beginPath(); ctx.ellipse(0, -r*0.02, r*0.24, r*0.115, 0, 0, Math.PI*2); ctx.fill();
 
-  // Beak (round triangle pointing down)
-  ctx.fillStyle = '#D07818';
-  ctx.beginPath();
-  ctx.ellipse(0, r*0.12, r*0.115, r*0.135, 0, 0, Math.PI);
-  ctx.fill();
+  // Beak — open when angry
+  if (mood === 'super-angry') {
+    // Open beak: dark mouth interior + upper/lower parts
+    ctx.fillStyle = '#2A1000';
+    ctx.beginPath(); ctx.ellipse(0, r*0.15, r*0.115, r*0.10, 0, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = '#D07818';
+    ctx.beginPath(); ctx.ellipse(0, r*0.10, r*0.115, r*0.075, 0, Math.PI, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, r*0.17, r*0.115, r*0.06, 0, 0, Math.PI); ctx.fill();
+  } else if (mood === 'angry') {
+    // Slightly open beak
+    ctx.fillStyle = '#5A2800';
+    ctx.beginPath(); ctx.ellipse(0, r*0.14, r*0.105, r*0.055, 0, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = '#D07818';
+    ctx.beginPath(); ctx.ellipse(0, r*0.09, r*0.115, r*0.075, 0, Math.PI, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, r*0.155, r*0.105, r*0.055, 0, 0, Math.PI); ctx.fill();
+  } else {
+    // Closed beak
+    ctx.fillStyle = '#D07818';
+    ctx.beginPath(); ctx.ellipse(0, r*0.12, r*0.115, r*0.135, 0, 0, Math.PI); ctx.fill();
+  }
 
   // Teal leaf bowtie
   ctx.fillStyle = '#3DA890';
   ctx.beginPath(); ctx.ellipse(-r*0.28, r*0.47, r*0.24, r*0.13, -0.35, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(r*0.28, r*0.47, r*0.24, r*0.13, 0.35, 0, Math.PI*2); ctx.fill();
-  // Bowtie center knot
   ctx.fillStyle = '#2A7868';
   ctx.beginPath(); ctx.arc(0, r*0.47, r*0.07, 0, Math.PI*2); ctx.fill();
-  // Leaf vein details
   ctx.strokeStyle = '#2A7868'; ctx.lineWidth = 0.8;
   ctx.beginPath(); ctx.moveTo(-r*0.04, r*0.47); ctx.lineTo(-r*0.48, r*0.45); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(r*0.04, r*0.47); ctx.lineTo(r*0.48, r*0.45); ctx.stroke();
@@ -860,7 +909,6 @@ function drawMokumoku(x, y, r, angle) {
   ctx.fillStyle = '#E89230';
   ctx.beginPath(); ctx.ellipse(-r*0.26, r*0.88, r*0.13, r*0.08, 0.25, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(r*0.26, r*0.88, r*0.13, r*0.08, -0.25, 0, Math.PI*2); ctx.fill();
-  // Toe details
   ctx.strokeStyle = '#C06810'; ctx.lineWidth = 1.2;
   [-r*0.26, r*0.26].forEach(fx => {
     ctx.beginPath(); ctx.moveTo(fx - r*0.07, r*0.9); ctx.lineTo(fx - r*0.15, r*0.96); ctx.stroke();
@@ -922,12 +970,28 @@ function drawSlingshot() {
 function drawBird() {
   if (!bird) return;
 
+  // Lucky bird glow
+  if (birdType === 'giant') {
+    ctx.save();
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 28;
+    ctx.fillStyle = 'rgba(255,215,0,0.12)';
+    ctx.beginPath(); ctx.arc(bird.x, bird.y, bird.r + 8, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else if (birdType === 'speed') {
+    ctx.save();
+    ctx.shadowColor = '#00EEFF'; ctx.shadowBlur = 28;
+    ctx.fillStyle = 'rgba(0,238,255,0.10)';
+    ctx.beginPath(); ctx.arc(bird.x, bird.y, bird.r + 8, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
   // Trail
+  const trailColor = birdType === 'speed' ? '#00EEFF' : birdType === 'giant' ? '#FFD700' : '#FFE070';
   bird.trail.forEach((pt, i) => {
     const alpha = (i / bird.trail.length) * 0.35;
-    const sz = BIRD_R * 0.3 * (i / bird.trail.length);
+    const sz = bird.r * 0.3 * (i / bird.trail.length);
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#FFE070';
+    ctx.fillStyle = trailColor;
     ctx.beginPath(); ctx.arc(pt.x, pt.y, sz, 0, Math.PI*2); ctx.fill();
   });
   ctx.globalAlpha = 1;
@@ -936,34 +1000,59 @@ function drawBird() {
   if (bird.flash > 0) {
     ctx.strokeStyle = `rgba(255,220,50,${bird.flash / 8})`;
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(bird.x, bird.y, BIRD_R + 8, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(bird.x, bird.y, bird.r + 8, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // Mood: neutral when aiming, angry when flying, super-angry after boost or lucky bird
+  let mood = 'neutral';
+  if (score >= 1500) mood = 'angry';
+  if (state === 'FLYING') {
+    mood = (boostUsed || birdType !== 'normal') ? 'super-angry' : 'angry';
   }
 
   const angle = bird.launched ? bird.angle : 0;
-  drawMokumoku(bird.x, bird.y, BIRD_R, angle);
+  drawMokumoku(bird.x, bird.y, bird.r, angle, mood);
 }
 
 function drawTrajectoryArc() {
   if (!dragging) return;
-  const vx = -pullX * POWER;
-  const vy = -pullY * POWER;
+  const speedMult = birdType === 'speed' ? SPEED_MULT : 1;
+  const r = birdType === 'giant' ? GIANT_R : BIRD_R;
+  const vx = -pullX * POWER * speedMult;
+  const vy = -pullY * POWER * speedMult;
   let x = SX + pullX, y = FORK_Y + pullY;
   let dvx = vx, dvy = vy;
+  let landX = x, landY = y;
+  let landed = false;
+
+  const arcColor = birdType === 'speed' ? 'rgba(100,230,255,0.65)' :
+                   birdType === 'giant' ? 'rgba(255,210,50,0.65)' :
+                   'rgba(255,255,255,0.55)';
 
   ctx.save();
   ctx.setLineDash([5, 8]);
-  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.strokeStyle = arcColor;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  for (let i = 0; i < 55; i++) {
+  for (let i = 0; i < 120; i++) {
     dvy += GRAV;
     x += dvx; y += dvy;
-    if (y > GROUND_Y || x > W) break;
+    if (y >= GROUND_Y - r || x > W) {
+      landX = x; landY = Math.min(y, GROUND_Y);
+      landed = true; break;
+    }
     ctx.lineTo(x, y);
   }
   ctx.stroke();
   ctx.setLineDash([]);
+
+  // Landing indicator
+  if (landed && landX < W) {
+    ctx.fillStyle = arcColor;
+    ctx.beginPath(); ctx.arc(landX, landY, 5, 0, Math.PI*2); ctx.fill();
+  }
+
   ctx.restore();
 }
 
@@ -1003,8 +1092,9 @@ function drawAimUI() {
 
 function launch() {
   if (!bird || state !== 'AIMING') return;
-  const vx = -pullX * POWER;
-  const vy = -pullY * POWER;
+  const speedMult = birdType === 'speed' ? SPEED_MULT : 1;
+  const vx = -pullX * POWER * speedMult;
+  const vy = -pullY * POWER * speedMult;
   bird.x = SX + pullX;
   bird.y = FORK_Y + pullY;
   bird.vx = vx;
@@ -1012,7 +1102,7 @@ function launch() {
   bird.launched = true;
   state = 'FLYING';
   settleTimer = 0;
-  boostCooldown = 20; // prevent accidental boost on launch touchend
+  boostCooldown = 30; // prevent accidental boost on launch touchend
 
   document.getElementById('boost-hint').style.opacity = '1';
   setTimeout(() => {
@@ -1239,6 +1329,24 @@ function drawBoostPrompt() {
   ctx.restore();
 }
 
+function drawLuckyAnnouncement() {
+  if (luckyTimer <= 0 || !luckyText) return;
+  luckyTimer--;
+  const alpha = luckyTimer > 60 ? 1 : luckyTimer / 60;
+  const scale = luckyTimer > 75 ? 1 + (90 - luckyTimer) * 0.025 : 1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(W / 2, H / 2 - 70);
+  ctx.scale(scale, scale);
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 32px Arial';
+  ctx.shadowColor = birdType === 'giant' ? '#FF8800' : '#0088FF';
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = birdType === 'giant' ? '#FFD700' : '#00EEFF';
+  ctx.fillText(luckyText, 0, 0);
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
   drawBackground();
@@ -1250,6 +1358,7 @@ function draw() {
   drawBird();
   if (state === 'AIMING') drawAimUI();
   drawBoostPrompt();
+  drawLuckyAnnouncement();
 }
 
 function loop() {
