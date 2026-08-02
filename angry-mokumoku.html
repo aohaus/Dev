@@ -154,6 +154,19 @@ const GIANT_R     = 38;
 const SPEED_MULT  = 1.4;
 const RAT_R       = 17;
 const SETTLE_WAIT = 90;
+const CEIL_Y      = 65;   // "floor" anchor line for reversed-gravity levels (mirrors GROUND_Y's margin)
+
+// Per-level gravity state (levels 21-25 flip gravity — see setupLevel()).
+// curGDir:  1 = normal (floor below, gravity pulls down), -1 = flipped (floor above, gravity pulls up)
+let curGDir   = 1;
+let curFloorY = GROUND_Y;
+let curGrav   = GRAV;
+// Amount to add to vy to "pop" something away from its resting surface
+// (upward when normal, downward when flipped) — used for death/knockback pops.
+function popAway(amount) { return curGDir * -amount; }
+// Level-builder helper: the y coordinate `dist` px out from the floor/ceiling
+// into open play space. Equivalent to `GROUND_Y - dist` when gravity is normal.
+function GY(dist) { return curFloorY - curGDir * dist; }
 
 // ─── LEVELS ───────────────────────────────────────────────────
 // Stars calibrated: max = sum(rat.pts) + blocks*50 + potential_unused*200
@@ -179,6 +192,16 @@ const LEVEL_CONFIGS = [
   { birds: 8, stars: [4200, 8000,10800], name: 'Lv.18' }, // 氷の世界
   { birds: 9, stars: [4500, 8500,11500], name: 'Lv.19' }, // 魔法の森
   { birds: 9, stars: [5000, 9000,12500], name: 'Lv.20' }, // 天空神殿
+  { birds: 8, stars: [4800, 9000,12000], name: 'Lv.21' }, // 重力反転ゾーン1
+  { birds: 8, stars: [5100, 9600,12800], name: 'Lv.22' }, // 重力反転ゾーン2
+  { birds: 9, stars: [5400,10200,13600], name: 'Lv.23' }, // 重力反転ゾーン3
+  { birds: 9, stars: [5700,10800,14400], name: 'Lv.24' }, // 重力反転ゾーン4
+  { birds: 9, stars: [6000,11400,15200], name: 'Lv.25' }, // 重力反転ゾーン5
+  { birds: 8, stars: [6300,12000,16000], name: 'Lv.26' }, // アルゼンチン
+  { birds: 8, stars: [6600,12600,16800], name: 'Lv.27' }, // フランス
+  { birds: 9, stars: [6900,13200,17600], name: 'Lv.28' }, // ブラジル
+  { birds: 9, stars: [7200,13800,18400], name: 'Lv.29' }, // 日本
+  { birds:10, stars: [7800,14800,19800], name: 'Lv.30' }, // スペイン
 ];
 const BIRD_BONUS = 200; // pts per unused bird at win
 
@@ -193,7 +216,9 @@ function getTimeOfDay() {
 function getLevelGroup(idx) {
   if (idx < 10) return Math.floor(idx / 2);  // KL: groups 0-4
   if (idx < 15) return 5 + (idx - 10);        // SE Asia: groups 5-9
-  return 10 + (idx - 15);                      // Isekai: groups 10-14
+  if (idx < 20) return 10 + (idx - 15);       // Isekai: groups 10-14
+  if (idx < 25) return 15 + (idx - 20);       // Reversed Gravity: groups 15-19
+  return 20 + (idx - 25);                      // Soccer kits: groups 20-24
 }
 function saveProgress() { localStorage.setItem('amoku-level', (currentLevel + 1).toString()); }
 function getSavedLevel() {
@@ -228,7 +253,7 @@ function applyBrightness(hex, f) {
 }
 
 // ─── STATE ────────────────────────────────────────────────────
-let state        = 'TITLE'; // TITLE | AIMING | FLYING | SETTLING | WAITING | WIN | LOSE | ALLCLEAR
+let state        = 'TITLE'; // TITLE | AIMING | FLYING | SETTLING | WAITING | WIN | LOSE | CHECKPOINT | ALLCLEAR
 let score        = 0;
 let currentLevel = 0;
 let totalBirds   = LEVEL_CONFIGS[0].birds;
@@ -295,16 +320,16 @@ class Bird {
       this.flash = Math.max(0, this.flash - 1);
       this.trail.push({ x: this.x, y: this.y });
       if (this.trail.length > 22) this.trail.shift();
-      if (this.y + this.r >= GROUND_Y) {
-        this.y = GROUND_Y - this.r;
-        addParticles(this.x, this.y + this.r, '#C8A060', 5, 2);
+      if (curGDir === 1 ? (this.y + this.r >= curFloorY) : (this.y - this.r <= curFloorY)) {
+        this.y = curGDir === 1 ? (curFloorY - this.r) : (curFloorY + this.r);
+        addParticles(this.x, this.y + curGDir * this.r, '#C8A060', 5, 2);
         this.alive = false;
       }
-      if (this.x > W + 120 || this.x < -120 || this.y < -150) this.alive = false;
+      if (this.x > W + 120 || this.x < -120 || this.y > H + 150 || this.y < -150) this.alive = false;
       return;
     }
 
-    this.vy += GRAV;
+    this.vy += curGrav;
     this.x += this.vx;
     this.y += this.vy;
     this.angle = Math.atan2(this.vy, this.vx);
@@ -314,15 +339,15 @@ class Bird {
     this.trail.push({ x: this.x, y: this.y });
     if (this.trail.length > 22) this.trail.shift();
 
-    // Ground
-    if (this.y + this.r >= GROUND_Y) {
-      this.y = GROUND_Y - this.r;
+    // Floor/ceiling contact (whichever side gravity pulls toward)
+    if (curGDir === 1 ? (this.y + this.r >= curFloorY) : (this.y - this.r <= curFloorY)) {
+      this.y = curGDir === 1 ? (curFloorY - this.r) : (curFloorY + this.r);
       this.vy *= -0.35;
       this.vx *= 0.78;
-      addParticles(this.x, this.y + this.r, '#C8A060', 5, 2);
+      addParticles(this.x, this.y + curGDir * this.r, '#C8A060', 5, 2);
       if (Math.abs(this.vy) < 1.5) { this.vy = 0; this.alive = false; }
     }
-    if (this.x > W + 120 || this.x < -120 || this.y > H + 100) this.alive = false;
+    if (this.x > W + 120 || this.x < -120 || this.y > H + 150 || this.y < -150) this.alive = false;
   }
 }
 
@@ -343,15 +368,15 @@ class Block {
     this.flash = Math.max(0, this.flash - 1);
     if (this.grounded && this.vy === 0 && Math.abs(this.vx) < 0.2) return;
     this.grounded = false;
-    this.vy += GRAV;
+    this.vy += curGrav;
     this.x += this.vx;
     this.y += this.vy;
     this.angle += this.angV;
     this.vx *= 0.99;
     this.angV *= 0.97;
 
-    if (this.y + this.h / 2 >= GROUND_Y) {
-      this.y = GROUND_Y - this.h / 2;
+    if (curGDir === 1 ? (this.y + this.h / 2 >= curFloorY) : (this.y - this.h / 2 <= curFloorY)) {
+      this.y = curGDir === 1 ? (curFloorY - this.h / 2) : (curFloorY + this.h / 2);
       this.vy *= -0.28;
       this.vx *= 0.82;
       this.angV *= 0.68;
@@ -390,11 +415,11 @@ class Rat {
     this.eyeAnim += 0.06;
     if (this.dying) {
       this.deathT++;
-      this.vy += GRAV;
+      this.vy += curGrav;
       this.x += this.vx;
       this.y += this.vy;
       this.angle += this.angV;
-      if (this.deathT > 55 || this.y > H + 60) this.alive = false;
+      if (this.deathT > 55 || this.y > H + 60 || this.y < -60) this.alive = false;
       return;
     }
     if (this.vPatrol) {
@@ -416,34 +441,34 @@ class Rat {
     }
     const wasAirborne = !this.grounded;
     this.grounded = false;
-    this.vy += GRAV;
+    this.vy += curGrav;
     this.x += this.vx;
     this.y += this.vy;
     this.angle += this.angV;
     this.vx *= 0.95;
     this.angV *= 0.9;
 
-    if (this.y + this.r >= GROUND_Y) {
+    if (curGDir === 1 ? (this.y + this.r >= curFloorY) : (this.y - this.r <= curFloorY)) {
       const impactVy = this.vy;
-      this.y = GROUND_Y - this.r;
+      this.y = curGDir === 1 ? (curFloorY - this.r) : (curFloorY + this.r);
       this.vy *= -0.4;
       this.vx *= 0.85;
       this.angV *= 0.7;
       if (Math.abs(this.vy) < 1) { this.vy = 0; this.grounded = true; }
-      // Kill rat that falls from a height (knocked off perch)
-      if (wasAirborne && impactVy > 3) {
+      // Kill rat that falls hard into the floor/ceiling (knocked off perch)
+      if (wasAirborne && (curGDir === 1 ? impactVy > 3 : impactVy < -3)) {
         this.die();
         return;
       }
     }
     this.x = clamp(this.x, this.r + 2, W - this.r - 2);
-    if (this.y > H + 60) { this.alive = false; }
+    if (this.y > H + 60 || this.y < -60) { this.alive = false; }
   }
   die() {
     if (this.dying) return;
     this.dying = true;
     this.vx += (Math.random() - 0.5) * 5;
-    this.vy -= 5 + Math.random() * 3;
+    this.vy += popAway(5 + Math.random() * 3);
     this.angV = (Math.random() - 0.5) * 0.35;
     // Combo multiplier
     const now = Date.now();
@@ -525,34 +550,42 @@ function makeRat(x, y, type, patrol, vRange) {
   rats.push(r); return r;
 }
 
-// Scales every block/rat's height-above-ground uniformly (about the ground
-// line) so the tallest tower's top never goes off the top of the canvas —
-// stacked pieces stay glued together since they all scale by the same factor.
+// Scales every block/rat's distance from the floor/ceiling anchor uniformly
+// so the tallest tower's far edge never goes off-canvas — stacked pieces
+// stay glued together since they all scale by the same factor. Works for
+// both normal levels (anchor = ground, structures reach toward the top) and
+// gravity-flipped levels (anchor = ceiling, structures hang toward the bottom).
 function _clampLevelToScreen() {
-  const SAFE_TOP = 18;
-  let maxAbove = 0;
+  const SAFE_MARGIN = 18;
+  const s = curGDir;
+  const anchor = curFloorY;
+  const limitDist = s === 1 ? (anchor - SAFE_MARGIN) : ((GROUND_Y - 40) - anchor);
+  const extentOf = (edgeY) => s * (anchor - edgeY);
+  let maxExtent = 0;
   blocks.forEach(b => {
-    maxAbove = Math.max(maxAbove, (GROUND_Y - b.y) + b.h / 2);
+    const edge = s === 1 ? (b.y - b.h / 2) : (b.y + b.h / 2);
+    maxExtent = Math.max(maxExtent, extentOf(edge));
   });
   rats.forEach(r => {
     const margin = r.type === 'boss' ? r.r * 2.2 : r.type === 'chef' ? r.r * 2.0 : r.r * 1.5;
     const baseY = r.vPatrol ? r.vPatrolHome : r.y;
-    maxAbove = Math.max(maxAbove, (GROUND_Y - baseY) + margin + (r.vPatrol ? r.vPatrolRange : 0));
+    const vExtra = r.vPatrol ? r.vPatrolRange : 0;
+    const edge = s === 1 ? (baseY - margin - vExtra) : (baseY + margin + vExtra);
+    maxExtent = Math.max(maxExtent, extentOf(edge));
   });
-  const available = GROUND_Y - SAFE_TOP;
-  if (maxAbove <= available) return;
-  const F = available / maxAbove;
+  if (maxExtent <= limitDist) return;
+  const F = limitDist / maxExtent;
   blocks.forEach(b => {
-    const dist = GROUND_Y - b.y;
-    b.y = GROUND_Y - dist * F;
+    const dist = s * (anchor - b.y);
+    b.y = anchor - s * dist * F;
     b.h *= F;
   });
   rats.forEach(r => {
-    const dist = GROUND_Y - r.y;
-    r.y = GROUND_Y - dist * F;
+    const dist = s * (anchor - r.y);
+    r.y = anchor - s * dist * F;
     if (r.vPatrol) {
-      const vDist = GROUND_Y - r.vPatrolHome;
-      r.vPatrolHome = GROUND_Y - vDist * F;
+      const vDist = s * (anchor - r.vPatrolHome);
+      r.vPatrolHome = anchor - s * vDist * F;
       r.vPatrolRange *= F;
     }
   });
@@ -565,10 +598,16 @@ function setupLevel(idx) {
   const cfg = LEVEL_CONFIGS[idx];
   totalBirds = cfg.birds;
   birdsLeft  = totalBirds;
+  const flipped = idx >= 20 && idx <= 24;
+  curGDir   = flipped ? -1 : 1;
+  curFloorY = flipped ? CEIL_Y : GROUND_Y;
+  curGrav   = GRAV * curGDir;
   [_buildLevel1,_buildLevel2,_buildLevel3,_buildLevel4,_buildLevel5,
    _buildLevel6,_buildLevel7,_buildLevel8,_buildLevel9,_buildLevel10,
    _buildLevel11,_buildLevel12,_buildLevel13,_buildLevel14,_buildLevel15,
-   _buildLevel16,_buildLevel17,_buildLevel18,_buildLevel19,_buildLevel20][idx]();
+   _buildLevel16,_buildLevel17,_buildLevel18,_buildLevel19,_buildLevel20,
+   _buildLevel21,_buildLevel22,_buildLevel23,_buildLevel24,_buildLevel25,
+   _buildLevel26,_buildLevel27,_buildLevel28,_buildLevel29,_buildLevel30][idx]();
   _clampLevelToScreen();
   totalRatsAtStart = rats.length;
 }
@@ -1286,6 +1325,447 @@ function _buildLevel20() {
   makeBlock(801, GROUND_Y-348, 34, 40, 'tnt');
 }
 
+function _buildLevel21() {
+  // 重力反転ゾーン1 — towers hang from the ceiling; aim DOWN to launch UP.
+  // 4 boss + 2 suit + 1 ninja, 3 TNT
+  makeBlock(440, GY(60), 13, 120, 'bamboo');
+  makeBlock(468, GY(60), 13, 120, 'bamboo');
+  makeBlock(454, GY(114), 40, 13, 'wood');
+  makeRat(454, GY(114+6+13), 'ninja', true);
+
+  makeBlock(510, GY(140), 13, 280, 'bamboo');
+  makeBlock(600, GY(140), 13, 280, 'bamboo');
+  makeBlock(555, GY(282), 102, 13, 'wood');
+  makeBlock(555, GY(346), 66, 68, 'crate');
+  makeBlock(555, GY(426), 56, 58, 'crate');
+  makeRat(555, GY(426+29+22), 'boss', true);
+  makeBlock(522, GY(218), 52, 13, 'wood');
+  makeRat(522, GY(218+6+17), 'suit', false, 26);
+
+  makeBlock(660, GY(160), 13, 320, 'bamboo');
+  makeBlock(760, GY(160), 13, 320, 'bamboo');
+  makeBlock(710, GY(322), 112, 13, 'wood');
+  makeBlock(710, GY(392), 74, 74, 'crate');
+  makeBlock(710, GY(478), 62, 64, 'wood');
+  makeRat(710, GY(478+32+22), 'boss', false, 30);
+  makeRat(710, GY(322+6+17), 'suit', true);
+
+  makeBlock(820, GY(140), 13, 280, 'bamboo');
+  makeBlock(880, GY(140), 13, 280, 'bamboo');
+  makeBlock(850, GY(282), 72, 13, 'wood');
+  makeBlock(850, GY(350), 60, 72, 'crate');
+  makeBlock(850, GY(434), 50, 62, 'crate');
+  makeRat(850, GY(434+31+22), 'boss');
+
+  makeBlock(862, GY(55), 13, 110, 'bamboo');
+  makeBlock(862, GY(57), 44, 13, 'wood');
+  makeRat(862, GY(57+6+22), 'boss');
+
+  makeBlock(521, GY(308), 34, 40, 'tnt');
+  makeBlock(671, GY(348), 34, 40, 'tnt');
+  makeBlock(831, GY(308), 34, 40, 'tnt');
+}
+
+function _buildLevel22() {
+  // 重力反転ゾーン2 — 4 boss + 2 suit + 2 ninja, 3 TNT
+  makeBlock(432, GY(60), 13, 120, 'bamboo');
+  makeBlock(460, GY(60), 13, 120, 'bamboo');
+  makeBlock(446, GY(114), 40, 13, 'wood');
+  makeRat(438, GY(114+6+13), 'ninja', true);
+  makeRat(454, GY(114+6+13), 'ninja');
+
+  makeBlock(508, GY(130), 13, 260, 'bamboo');
+  makeBlock(592, GY(130), 13, 260, 'bamboo');
+  makeBlock(550, GY(262), 96, 13, 'wood');
+  makeBlock(550, GY(326), 64, 68, 'crate');
+  makeBlock(550, GY(406), 54, 58, 'crate');
+  makeRat(550, GY(406+29+22), 'boss', true);
+  makeBlock(516, GY(200), 52, 13, 'wood');
+  makeRat(516, GY(200+6+17), 'suit', false, 24);
+
+  makeBlock(655, GY(155), 13, 310, 'bamboo');
+  makeBlock(750, GY(155), 13, 310, 'bamboo');
+  makeBlock(702, GY(312), 108, 13, 'wood');
+  makeBlock(702, GY(382), 72, 74, 'crate');
+  makeBlock(702, GY(468), 62, 64, 'wood');
+  makeRat(702, GY(468+32+22), 'boss', false, 32);
+  makeRat(702, GY(312+6+17), 'suit', true);
+
+  makeBlock(812, GY(145), 13, 290, 'bamboo');
+  makeBlock(878, GY(145), 13, 290, 'bamboo');
+  makeBlock(845, GY(292), 78, 13, 'wood');
+  makeBlock(845, GY(362), 62, 74, 'crate');
+  makeBlock(845, GY(448), 52, 64, 'crate');
+  makeRat(845, GY(448+32+22), 'boss');
+
+  makeBlock(860, GY(60), 13, 120, 'bamboo');
+  makeBlock(860, GY(62), 46, 13, 'wood');
+  makeRat(860, GY(62+6+22), 'boss');
+
+  makeBlock(519, GY(288), 34, 40, 'tnt');
+  makeBlock(665, GY(338), 34, 40, 'tnt');
+  makeBlock(823, GY(318), 34, 40, 'tnt');
+}
+
+function _buildLevel23() {
+  // 重力反転ゾーン3 — 5 boss + 2 suit + 1 baby, 3 TNT
+  makeBlock(428, GY(40), 13, 80, 'bamboo');
+  makeBlock(428, GY(42), 38, 13, 'wood');
+  makeRat(428, GY(42+6+10), 'baby');
+
+  makeBlock(490, GY(140), 13, 280, 'bamboo');
+  makeBlock(578, GY(140), 13, 280, 'bamboo');
+  makeBlock(534, GY(282), 100, 13, 'wood');
+  makeBlock(534, GY(348), 66, 70, 'crate');
+  makeBlock(534, GY(430), 56, 60, 'crate');
+  makeRat(534, GY(430+30+22), 'boss', true);
+  makeBlock(498, GY(218), 54, 13, 'wood');
+  makeRat(498, GY(218+6+17), 'suit', false, 26);
+
+  makeBlock(645, GY(160), 13, 320, 'bamboo');
+  makeBlock(745, GY(160), 13, 320, 'bamboo');
+  makeBlock(695, GY(322), 112, 13, 'wood');
+  makeBlock(695, GY(396), 74, 78, 'crate');
+  makeBlock(695, GY(486), 64, 68, 'wood');
+  makeRat(695, GY(486+34+22), 'boss', false, 32);
+  makeRat(695, GY(322+6+17), 'suit', true);
+
+  makeBlock(808, GY(150), 13, 300, 'bamboo');
+  makeBlock(878, GY(150), 13, 300, 'bamboo');
+  makeBlock(843, GY(302), 82, 13, 'wood');
+  makeBlock(843, GY(374), 64, 76, 'crate');
+  makeBlock(843, GY(462), 54, 66, 'crate');
+  makeRat(843, GY(462+33+22), 'boss', false, 28);
+
+  makeBlock(855, GY(65), 13, 130, 'bamboo');
+  makeBlock(882, GY(65), 13, 130, 'bamboo');
+  makeBlock(868, GY(130), 58, 13, 'wood');
+  makeBlock(868, GY(186), 48, 60, 'crate');
+  makeRat(868, GY(186+30+22), 'boss');
+
+  makeBlock(860, GY(55), 13, 110, 'bamboo');
+  makeBlock(860, GY(57), 44, 13, 'wood');
+  makeRat(860, GY(57+6+22), 'boss');
+
+  makeBlock(501, GY(308), 34, 40, 'tnt');
+  makeBlock(656, GY(348), 34, 40, 'tnt');
+  makeBlock(819, GY(328), 34, 40, 'tnt');
+}
+
+function _buildLevel24() {
+  // 重力反転ゾーン4 — 5 boss + 3 suit + 1 ninja, 3 TNT
+  makeBlock(428, GY(60), 13, 120, 'bamboo');
+  makeBlock(456, GY(60), 13, 120, 'bamboo');
+  makeBlock(442, GY(114), 40, 13, 'wood');
+  makeRat(442, GY(114+6+13), 'ninja', true);
+
+  makeBlock(495, GY(140), 13, 280, 'bamboo');
+  makeBlock(583, GY(140), 13, 280, 'bamboo');
+  makeBlock(539, GY(282), 100, 13, 'wood');
+  makeBlock(539, GY(350), 66, 72, 'crate');
+  makeBlock(539, GY(434), 56, 62, 'crate');
+  makeRat(539, GY(434+31+22), 'boss', true);
+  makeBlock(504, GY(218), 54, 13, 'wood');
+  makeRat(504, GY(218+6+17), 'suit', false, 24);
+  makeBlock(539, GY(170), 52, 13, 'wood');
+  makeRat(539, GY(170+6+17), 'suit', true);
+
+  makeBlock(648, GY(165), 13, 330, 'bamboo');
+  makeBlock(750, GY(165), 13, 330, 'bamboo');
+  makeBlock(699, GY(332), 114, 13, 'wood');
+  makeBlock(699, GY(408), 76, 80, 'crate');
+  makeBlock(699, GY(500), 66, 70, 'wood');
+  makeRat(699, GY(500+35+22), 'boss', false, 34);
+  makeRat(699, GY(332+6+17), 'suit', true);
+
+  makeBlock(815, GY(155), 13, 310, 'bamboo');
+  makeBlock(882, GY(155), 13, 310, 'bamboo');
+  makeBlock(848, GY(312), 80, 13, 'wood');
+  makeBlock(848, GY(386), 64, 78, 'crate');
+  makeBlock(848, GY(476), 54, 68, 'crate');
+  makeRat(848, GY(476+34+22), 'boss', false, 30);
+
+  makeBlock(860, GY(70), 13, 140, 'bamboo');
+  makeBlock(887, GY(70), 13, 140, 'bamboo');
+  makeBlock(873, GY(142), 60, 13, 'wood');
+  makeBlock(873, GY(202), 50, 64, 'crate');
+  makeRat(873, GY(202+32+22), 'boss');
+
+  makeBlock(860, GY(60), 13, 120, 'bamboo');
+  makeBlock(860, GY(62), 46, 13, 'wood');
+  makeRat(860, GY(62+6+22), 'boss');
+
+  makeBlock(506, GY(308), 34, 40, 'tnt');
+  makeBlock(659, GY(358), 34, 40, 'tnt');
+  makeBlock(825, GY(338), 34, 40, 'tnt');
+}
+
+function _buildLevel25() {
+  // 重力反転ゾーン5 — grand finale of the flip chapter
+  // 6 boss + 3 suit + 1 ninja, 4 TNT
+  makeBlock(424, GY(60), 13, 120, 'bamboo');
+  makeBlock(452, GY(60), 13, 120, 'bamboo');
+  makeBlock(438, GY(114), 40, 13, 'wood');
+  makeRat(438, GY(114+6+13), 'ninja', true);
+
+  makeBlock(490, GY(140), 13, 280, 'bamboo');
+  makeBlock(578, GY(140), 13, 280, 'bamboo');
+  makeBlock(534, GY(282), 100, 13, 'wood');
+  makeBlock(534, GY(352), 66, 74, 'crate');
+  makeBlock(534, GY(438), 56, 64, 'crate');
+  makeRat(534, GY(438+32+22), 'boss', true);
+  makeBlock(500, GY(220), 54, 13, 'wood');
+  makeRat(500, GY(220+6+17), 'suit');
+  makeBlock(534, GY(172), 52, 13, 'wood');
+  makeRat(534, GY(172+6+17), 'suit', true);
+
+  makeBlock(640, GY(165), 13, 330, 'bamboo');
+  makeBlock(740, GY(165), 13, 330, 'bamboo');
+  makeBlock(690, GY(332), 112, 13, 'wood');
+  makeBlock(690, GY(408), 76, 80, 'crate');
+  makeBlock(690, GY(500), 66, 70, 'wood');
+  makeRat(690, GY(500+35+22), 'boss');
+  makeRat(690, GY(332+6+17), 'suit', true);
+
+  makeBlock(806, GY(160), 13, 320, 'bamboo');
+  makeBlock(878, GY(160), 13, 320, 'bamboo');
+  makeBlock(842, GY(322), 84, 13, 'wood');
+  makeBlock(842, GY(400), 66, 82, 'crate');
+  makeBlock(842, GY(494), 56, 72, 'crate');
+  makeRat(842, GY(494+36+22), 'boss');
+
+  makeBlock(855, GY(75), 13, 150, 'bamboo');
+  makeBlock(882, GY(75), 13, 150, 'bamboo');
+  makeBlock(868, GY(150), 62, 13, 'wood');
+  makeBlock(868, GY(216), 52, 70, 'crate');
+  makeBlock(868, GY(298), 44, 60, 'crate');
+  makeRat(868, GY(298+30+22), 'boss');
+
+  makeBlock(862, GY(65), 13, 130, 'bamboo');
+  makeBlock(862, GY(67), 48, 13, 'wood');
+  makeRat(862, GY(67+6+22), 'boss');
+
+  makeBlock(501, GY(308), 34, 40, 'tnt');
+  makeBlock(567, GY(308), 34, 40, 'tnt');
+  makeBlock(651, GY(358), 34, 40, 'tnt');
+  makeBlock(801, GY(348), 34, 40, 'tnt');
+}
+
+function _buildLevel26() {
+  // アルゼンチン — 4 boss + 2 suit + 1 ninja, 3 TNT
+  makeBlock(436, GY(65), 13, 130, 'bamboo');
+  makeBlock(465, GY(65), 13, 130, 'bamboo');
+  makeBlock(450, GY(122), 42, 13, 'wood');
+  makeRat(450, GY(122+6+13), 'ninja', true);
+
+  makeBlock(512, GY(145), 13, 290, 'bamboo');
+  makeBlock(602, GY(145), 13, 290, 'bamboo');
+  makeBlock(557, GY(292), 104, 13, 'wood');
+  makeBlock(557, GY(358), 68, 70, 'crate');
+  makeBlock(557, GY(440), 58, 60, 'crate');
+  makeRat(557, GY(440+30+22), 'boss', true);
+  makeBlock(524, GY(226), 54, 13, 'wood');
+  makeRat(524, GY(226+6+17), 'suit', false, 26);
+
+  makeBlock(662, GY(165), 13, 330, 'bamboo');
+  makeBlock(762, GY(165), 13, 330, 'bamboo');
+  makeBlock(712, GY(332), 114, 13, 'wood');
+  makeBlock(712, GY(404), 76, 76, 'crate');
+  makeBlock(712, GY(492), 64, 66, 'wood');
+  makeRat(712, GY(492+33+22), 'boss', false, 30);
+  makeRat(712, GY(332+6+17), 'suit', true);
+
+  makeBlock(822, GY(145), 13, 290, 'bamboo');
+  makeBlock(882, GY(145), 13, 290, 'bamboo');
+  makeBlock(852, GY(292), 74, 13, 'wood');
+  makeBlock(852, GY(362), 62, 74, 'crate');
+  makeBlock(852, GY(448), 52, 64, 'crate');
+  makeRat(852, GY(448+32+22), 'boss');
+
+  makeBlock(864, GY(58), 13, 116, 'bamboo');
+  makeBlock(864, GY(60), 46, 13, 'wood');
+  makeRat(864, GY(60+6+22), 'boss');
+
+  makeBlock(523, GY(318), 34, 40, 'tnt');
+  makeBlock(673, GY(360), 34, 40, 'tnt');
+  makeBlock(833, GY(318), 34, 40, 'tnt');
+}
+
+function _buildLevel27() {
+  // フランス — 4 boss + 2 suit + 2 ninja, 3 TNT
+  makeBlock(428, GY(65), 13, 130, 'bamboo');
+  makeBlock(456, GY(65), 13, 130, 'bamboo');
+  makeBlock(442, GY(122), 42, 13, 'wood');
+  makeRat(434, GY(122+6+13), 'ninja', true);
+  makeRat(450, GY(122+6+13), 'ninja');
+
+  makeBlock(506, GY(135), 13, 270, 'bamboo');
+  makeBlock(592, GY(135), 13, 270, 'bamboo');
+  makeBlock(549, GY(272), 98, 13, 'wood');
+  makeBlock(549, GY(338), 66, 70, 'crate');
+  makeBlock(549, GY(420), 56, 60, 'crate');
+  makeRat(549, GY(420+30+22), 'boss', true);
+  makeBlock(515, GY(208), 52, 13, 'wood');
+  makeRat(515, GY(208+6+17), 'suit', false, 25);
+
+  makeBlock(658, GY(160), 13, 320, 'bamboo');
+  makeBlock(754, GY(160), 13, 320, 'bamboo');
+  makeBlock(706, GY(322), 112, 13, 'wood');
+  makeBlock(706, GY(394), 74, 76, 'crate');
+  makeBlock(706, GY(482), 62, 66, 'wood');
+  makeRat(706, GY(482+33+22), 'boss', false, 32);
+  makeRat(706, GY(322+6+17), 'suit', true);
+
+  makeBlock(816, GY(150), 13, 300, 'bamboo');
+  makeBlock(882, GY(150), 13, 300, 'bamboo');
+  makeBlock(849, GY(302), 80, 13, 'wood');
+  makeBlock(849, GY(374), 64, 76, 'crate');
+  makeBlock(849, GY(462), 54, 66, 'crate');
+  makeRat(849, GY(462+33+22), 'boss');
+
+  makeBlock(500, GY(320), 34, 40, 'tnt');
+  makeBlock(660, GY(360), 34, 40, 'tnt');
+  makeBlock(816, GY(340), 34, 40, 'tnt');
+}
+
+function _buildLevel28() {
+  // ブラジル — 5 boss + 2 suit + 1 baby, 3 TNT
+  makeBlock(424, GY(45), 13, 90, 'bamboo');
+  makeBlock(424, GY(47), 40, 13, 'wood');
+  makeRat(424, GY(47+6+10), 'baby');
+
+  makeBlock(488, GY(150), 13, 300, 'bamboo');
+  makeBlock(578, GY(150), 13, 300, 'bamboo');
+  makeBlock(533, GY(302), 102, 13, 'wood');
+  makeBlock(533, GY(370), 68, 72, 'crate');
+  makeBlock(533, GY(454), 58, 62, 'crate');
+  makeRat(533, GY(454+31+22), 'boss', true);
+  makeBlock(497, GY(228), 54, 13, 'wood');
+  makeRat(497, GY(228+6+17), 'suit', false, 27);
+
+  makeBlock(644, GY(170), 13, 340, 'bamboo');
+  makeBlock(746, GY(170), 13, 340, 'bamboo');
+  makeBlock(695, GY(342), 114, 13, 'wood');
+  makeBlock(695, GY(418), 76, 80, 'crate');
+  makeBlock(695, GY(510), 66, 70, 'wood');
+  makeRat(695, GY(510+35+22), 'boss', false, 33);
+  makeRat(695, GY(342+6+17), 'suit', true);
+
+  makeBlock(808, GY(155), 13, 310, 'bamboo');
+  makeBlock(878, GY(155), 13, 310, 'bamboo');
+  makeBlock(843, GY(312), 82, 13, 'wood');
+  makeBlock(843, GY(386), 66, 78, 'crate');
+  makeBlock(843, GY(476), 56, 68, 'crate');
+  makeRat(843, GY(476+34+22), 'boss', false, 29);
+
+  makeBlock(858, GY(68), 13, 136, 'bamboo');
+  makeBlock(886, GY(68), 13, 136, 'bamboo');
+  makeBlock(872, GY(136), 60, 13, 'wood');
+  makeBlock(872, GY(196), 50, 62, 'crate');
+  makeRat(872, GY(196+31+22), 'boss');
+
+  makeBlock(505, GY(320), 34, 40, 'tnt');
+  makeBlock(662, GY(370), 34, 40, 'tnt');
+  makeBlock(830, GY(340), 34, 40, 'tnt');
+}
+
+function _buildLevel29() {
+  // 日本 — 5 boss + 3 suit + 1 ninja, 3 TNT
+  makeBlock(420, GY(65), 13, 130, 'bamboo');
+  makeBlock(448, GY(65), 13, 130, 'bamboo');
+  makeBlock(434, GY(122), 42, 13, 'wood');
+  makeRat(434, GY(122+6+13), 'ninja', true);
+
+  makeBlock(487, GY(150), 13, 300, 'bamboo');
+  makeBlock(577, GY(150), 13, 300, 'bamboo');
+  makeBlock(532, GY(302), 102, 13, 'wood');
+  makeBlock(532, GY(372), 68, 74, 'crate');
+  makeBlock(532, GY(458), 58, 64, 'crate');
+  makeRat(532, GY(458+32+22), 'boss', true);
+  makeBlock(497, GY(230), 55, 13, 'wood');
+  makeRat(497, GY(230+6+17), 'suit', false, 25);
+  makeBlock(532, GY(180), 52, 13, 'wood');
+  makeRat(532, GY(180+6+17), 'suit', true);
+
+  makeBlock(642, GY(172), 13, 344, 'bamboo');
+  makeBlock(744, GY(172), 13, 344, 'bamboo');
+  makeBlock(693, GY(346), 116, 13, 'wood');
+  makeBlock(693, GY(424), 78, 82, 'crate');
+  makeBlock(693, GY(518), 68, 72, 'wood');
+  makeRat(693, GY(518+36+22), 'boss', false, 35);
+  makeRat(693, GY(346+6+17), 'suit', true);
+
+  makeBlock(810, GY(160), 13, 320, 'bamboo');
+  makeBlock(880, GY(160), 13, 320, 'bamboo');
+  makeBlock(845, GY(322), 82, 13, 'wood');
+  makeBlock(845, GY(398), 66, 80, 'crate');
+  makeBlock(845, GY(490), 56, 70, 'crate');
+  makeRat(845, GY(490+35+22), 'boss', false, 31);
+
+  makeBlock(862, GY(72), 13, 144, 'bamboo');
+  makeBlock(889, GY(72), 13, 144, 'bamboo');
+  makeBlock(875, GY(144), 62, 13, 'wood');
+  makeBlock(875, GY(206), 52, 66, 'crate');
+  makeRat(875, GY(206+33+22), 'boss');
+
+  makeBlock(503, GY(322), 34, 40, 'tnt');
+  makeBlock(662, GY(374), 34, 40, 'tnt');
+  makeBlock(828, GY(344), 34, 40, 'tnt');
+}
+
+function _buildLevel30() {
+  // スペイン — 全30ステージ最終決戦: 6 boss + 3 suit + 1 ninja + 1 baby, 4 TNT
+  makeBlock(414, GY(45), 13, 90, 'bamboo');
+  makeBlock(414, GY(47), 40, 13, 'wood');
+  makeRat(414, GY(47+6+10), 'baby');
+
+  makeBlock(470, GY(65), 13, 130, 'bamboo');
+  makeBlock(498, GY(65), 13, 130, 'bamboo');
+  makeBlock(484, GY(122), 42, 13, 'wood');
+  makeRat(484, GY(122+6+13), 'ninja', true);
+
+  makeBlock(538, GY(155), 13, 310, 'bamboo');
+  makeBlock(628, GY(155), 13, 310, 'bamboo');
+  makeBlock(583, GY(312), 104, 13, 'wood');
+  makeBlock(583, GY(380), 68, 76, 'crate');
+  makeBlock(583, GY(468), 58, 66, 'crate');
+  makeRat(583, GY(468+33+22), 'boss', true);
+  makeBlock(548, GY(238), 56, 13, 'wood');
+  makeRat(548, GY(238+6+17), 'suit', false, 27);
+  makeBlock(583, GY(188), 52, 13, 'wood');
+  makeRat(583, GY(188+6+17), 'suit', true);
+
+  makeBlock(692, GY(178), 13, 356, 'bamboo');
+  makeBlock(796, GY(178), 13, 356, 'bamboo');
+  makeBlock(744, GY(358), 118, 13, 'wood');
+  makeBlock(744, GY(438), 78, 84, 'crate');
+  makeBlock(744, GY(534), 68, 74, 'wood');
+  makeRat(744, GY(534+37+22), 'boss', false, 36);
+  makeRat(744, GY(358+6+17), 'suit', true);
+
+  makeBlock(858, GY(165), 13, 330, 'bamboo');
+  makeBlock(886, GY(165), 13, 330, 'bamboo');
+  makeBlock(872, GY(332), 78, 13, 'wood');
+  makeBlock(872, GY(410), 64, 82, 'crate');
+  makeBlock(872, GY(506), 54, 72, 'crate');
+  makeRat(872, GY(506+36+22), 'boss', false, 32);
+
+  makeBlock(862, GY(70), 13, 140, 'bamboo');
+  makeBlock(889, GY(70), 13, 140, 'bamboo');
+  makeBlock(875, GY(140), 60, 13, 'wood');
+  makeBlock(875, GY(200), 50, 64, 'crate');
+  makeRat(875, GY(200+32+22), 'boss');
+
+  makeBlock(886, GY(52), 13, 104, 'bamboo');
+  makeBlock(886, GY(54), 40, 13, 'wood');
+  makeRat(886, GY(54+6+22), 'boss');
+
+  makeBlock(510, GY(330), 34, 40, 'tnt');
+  makeBlock(610, GY(350), 34, 40, 'tnt');
+  makeBlock(700, GY(390), 34, 40, 'tnt');
+  makeBlock(840, GY(360), 34, 40, 'tnt');
+}
+
 function resetBird() {
   boostUsed = false;
   boostCooldown = 0;
@@ -1406,7 +1886,7 @@ function checkCollisions() {
           if (rat.dying) return;
           const dx = rat.x - blk.x, dy = rat.y - blk.y;
           if (Math.sqrt(dx*dx + dy*dy) < 110) {
-            rat.vy -= 5 + Math.random() * 3;
+            rat.vy += popAway(5 + Math.random() * 3);
             rat.vx += (Math.random() - 0.5) * 8;
             rat.grounded = false;
           }
@@ -1428,7 +1908,7 @@ function checkCollisions() {
 
 function checkBlockRatCollisions() {
   blocks.forEach(blk => {
-    if (!blk.alive || blk.grounded || blk.vy < 1.5) return;
+    if (!blk.alive || blk.grounded || (curGDir === 1 ? blk.vy < 1.5 : blk.vy > -1.5)) return;
     rats.forEach(rat => {
       if (!rat.alive || rat.dying) return;
       const c = circleRect(rat.x, rat.y, rat.r, blk.x, blk.y, blk.w, blk.h);
@@ -1446,6 +1926,9 @@ function blockColor(type) {
 function drawBackground() {
   const group = getLevelGroup(currentLevel);
 
+  // Soccer-kit worlds and reversed-gravity worlds: completely custom backgrounds
+  if (group >= 20) { _drawSoccerBackground(group - 20); return; }
+  if (group >= 15) { _drawReversedGravityBackground(group - 15); return; }
   // Isekai: completely custom background (sky + ground)
   if (group >= 10) { _drawIsekaiBackground(group - 10); return; }
 
@@ -2244,6 +2727,190 @@ function _drawIsekaiSkyTemple() {
   }
 }
 
+// ─── REVERSED GRAVITY BACKGROUNDS (Lv21-25) ────────────────────
+
+function _drawReversedGravityBackground(idx) {
+  const ACCENTS = ['#8A3CFF', '#2EE6C5', '#FF3CB0', '#FFA82E', '#3CC8FF'];
+  const accent = ACCENTS[idx];
+  const t = Date.now();
+
+  // Cosmic void sky
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#05030F');
+  sky.addColorStop(0.5, '#0A0620');
+  sky.addColorStop(1, '#140A2E');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+
+  // Distant stars
+  const starPts = [[60,140,1.0],[150,200,0.8],[260,110,1.1],[350,250,0.7],[440,170,1.2],
+    [530,230,0.8],[620,150,1.0],[710,270,0.9],[800,190,1.1],[860,240,0.7],[100,320,0.8],[400,330,0.9],[700,310,0.8]];
+  starPts.forEach(([sx, sy, sr]) => {
+    ctx.globalAlpha = 0.4 + 0.4 * Math.sin(t * 0.001 * sr + sx);
+    ctx.fillStyle = 'white';
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Ceiling rock formation (mirrored "ground") — towers hang from here
+  const ceilH = CEIL_Y + 30;
+  const ceilGrad = ctx.createLinearGradient(0, 0, 0, ceilH);
+  ceilGrad.addColorStop(0, '#241640'); ceilGrad.addColorStop(1, '#140A22');
+  ctx.fillStyle = ceilGrad;
+  ctx.fillRect(0, 0, W, ceilH);
+  // Jagged bottom edge + glowing crack, computed once for reuse
+  const jagPts = [];
+  for (let x = 0; x <= W; x += 40) jagPts.push([x, ceilH - (8 + 10 * Math.sin(x * 0.05 + idx))]);
+  ctx.fillStyle = '#1A1030';
+  ctx.beginPath();
+  ctx.moveTo(0, ceilH);
+  jagPts.forEach(([x, y]) => ctx.lineTo(x, y));
+  ctx.lineTo(W, ceilH); ctx.closePath(); ctx.fill();
+  ctx.save();
+  ctx.shadowColor = accent; ctx.shadowBlur = 14;
+  ctx.strokeStyle = accent; ctx.globalAlpha = 0.7; ctx.lineWidth = 2;
+  ctx.beginPath();
+  jagPts.forEach(([x, y], i) => { if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+  ctx.stroke();
+  ctx.restore();
+
+  // Drifting motes floating upward, toward the ceiling
+  for (let i = 0; i < 16; i++) {
+    const seed = i * 137.5;
+    const speed = 0.02 + (i % 5) * 0.006;
+    const span = H - ceilH + 40;
+    const py = H - ((t * speed + seed) % span);
+    const px = (seed * 3.7) % W;
+    const alpha = Math.max(0, 0.25 + 0.35 * Math.sin(t * 0.002 + i));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = accent; ctx.shadowBlur = 8;
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(px, py, 2 + (i % 3), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Floating debris chunks mid-air (decorative)
+  [[130, H*0.45], [330, H*0.58], [560, H*0.4], [760, H*0.55]].forEach(([dx, dy], i) => {
+    const bob = Math.sin(t * 0.0015 + i * 2) * 10;
+    ctx.save();
+    ctx.translate(dx, dy + bob);
+    ctx.rotate(Math.sin(t * 0.0008 + i) * 0.15);
+    ctx.fillStyle = '#2A1E44';
+    ctx.beginPath();
+    ctx.moveTo(-14,-8); ctx.lineTo(10,-12); ctx.lineTo(16,4); ctx.lineTo(-6,12); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = accent; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // Ground platform at the bottom — the slingshot's safe footing
+  const grd = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  grd.addColorStop(0, '#241A38'); grd.addColorStop(1, '#140A1E');
+  ctx.fillStyle = grd; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = accent;
+  ctx.beginPath(); ctx.roundRect(0, GROUND_Y - 4, W, 8, 3); ctx.fill();
+  ctx.restore();
+}
+
+// ─── SOCCER KIT BACKGROUNDS (Lv26-30) ──────────────────────────
+
+function _drawSoccerBackground(idx) {
+  const KITS = [
+    { bands: ['#75C6F2', '#FFFFFF', '#75C6F2'], seat: ['#75C6F2', '#FFFFFF'], accent: '#F6B40E', pattern: 'vstripe' }, // Argentina
+    { bands: ['#0055A4', '#FFFFFF', '#EF4135'], seat: ['#0055A4', '#EF4135'], accent: '#FFD700', pattern: 'vstripe' }, // France
+    { bands: ['#FFDF00', '#FFF3B0', '#FFDF00'], seat: ['#009739', '#FFDF00'], accent: '#002776', pattern: 'sun'     }, // Brazil
+    { bands: ['#FFFFFF', '#FCEAEA', '#FFFFFF'], seat: ['#BC002D', '#FFFFFF'], accent: '#BC002D', pattern: 'disc'    }, // Japan
+    { bands: ['#AA151B', '#F1BF00', '#AA151B'], seat: ['#F1BF00', '#AA151B'], accent: '#AA151B', pattern: 'hstripe' }, // Spain
+  ];
+  const kit = KITS[idx];
+
+  // Sky — kit-colored bands
+  if (kit.pattern === 'hstripe') {
+    const bh = GROUND_Y / kit.bands.length;
+    kit.bands.forEach((col, i) => { ctx.fillStyle = col; ctx.fillRect(0, i * bh, W, bh + 1); });
+  } else {
+    const bw = W / (kit.bands.length * 2);
+    for (let i = 0; i < kit.bands.length * 2; i++) {
+      ctx.fillStyle = kit.bands[i % kit.bands.length];
+      ctx.fillRect(i * bw, 0, bw + 1, GROUND_Y);
+    }
+  }
+  // Soft white haze near horizon for legibility
+  const haze = ctx.createLinearGradient(0, GROUND_Y - 140, 0, GROUND_Y);
+  haze.addColorStop(0, 'rgba(255,255,255,0)');
+  haze.addColorStop(1, 'rgba(255,255,255,0.35)');
+  ctx.fillStyle = haze; ctx.fillRect(0, GROUND_Y - 140, W, 140);
+
+  // Country accent emblem
+  ctx.save();
+  if (kit.pattern === 'sun') {
+    ctx.translate(W/2, 90);
+    for (let i = 0; i < 16; i++) {
+      const a = (Math.PI * 2 * i) / 16;
+      ctx.save(); ctx.rotate(a);
+      ctx.fillStyle = kit.accent; ctx.globalAlpha = 0.35;
+      ctx.fillRect(-4, -70, 8, 40);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = kit.accent;
+    ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI*2); ctx.fill();
+  } else if (kit.pattern === 'disc') {
+    ctx.fillStyle = kit.accent;
+    ctx.beginPath(); ctx.arc(W/2, 95, 46, 0, Math.PI*2); ctx.fill();
+  } else {
+    ctx.translate(W/2, 90);
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = kit.accent; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = kit.accent;
+    ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(13,10); ctx.lineTo(-13,10); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+
+  // Stadium stands silhouette (curved bowl, crowd dot-texture)
+  const standTop = GROUND_Y - 165;
+  ctx.fillStyle = 'rgba(20,20,30,0.42)';
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y);
+  ctx.quadraticCurveTo(W*0.5, standTop, W, GROUND_Y);
+  ctx.closePath(); ctx.fill();
+  for (let row = 0; row < 7; row++) {
+    const ry = GROUND_Y - 30 - row * 20;
+    if (ry < standTop) continue;
+    for (let cx2 = 20; cx2 < W - 20; cx2 += 16) {
+      const curveY = standTop + (GROUND_Y - standTop) * Math.pow(Math.abs(cx2 - W/2) / (W/2), 1.6);
+      if (ry < curveY - 10) continue;
+      ctx.fillStyle = kit.seat[(row + Math.floor(cx2/16)) % kit.seat.length];
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.arc(cx2, ry, 3.2, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  // Floodlights
+  [90, W - 90].forEach(fx => {
+    ctx.strokeStyle = 'rgba(40,40,50,0.6)'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(fx, GROUND_Y - 40); ctx.lineTo(fx, 60); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,240,0.85)';
+    ctx.beginPath(); ctx.roundRect(fx - 22, 40, 44, 16, 3); ctx.fill();
+  });
+
+  // Ground — pitch (green grass + white lines) instead of dirt
+  const pitch = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  pitch.addColorStop(0, '#2E9E44'); pitch.addColorStop(1, '#1E7A32');
+  ctx.fillStyle = pitch; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  for (let x = 0; x < W; x += 60) {
+    ctx.fillStyle = (Math.floor(x / 60) % 2 === 0) ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+    ctx.fillRect(x, GROUND_Y, 60, H - GROUND_Y);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, GROUND_Y + 8); ctx.lineTo(W, GROUND_Y + 8); ctx.stroke();
+  ctx.beginPath(); ctx.arc(W/2, GROUND_Y + 8, 26, 0, Math.PI, false); ctx.stroke();
+}
+
 function drawBlocks() {
   blocks.forEach(b => {
     if (!b.alive) return;
@@ -2694,10 +3361,10 @@ function drawTrajectoryArc() {
   ctx.beginPath();
   ctx.moveTo(x, y);
   for (let i = 0; i < 120; i++) {
-    dvy += GRAV;
+    dvy += curGrav;
     x += dvx; y += dvy;
-    if (y >= GROUND_Y - r || x > W) {
-      landX = x; landY = Math.min(y, GROUND_Y);
+    if (curGDir === 1 ? (y >= curFloorY - r || x > W) : (y <= curFloorY + r || x > W)) {
+      landX = x; landY = curGDir === 1 ? Math.min(y, curFloorY) : Math.max(y, curFloorY);
       landed = true; break;
     }
     ctx.lineTo(x, y);
@@ -2841,6 +3508,12 @@ function showResult(result) {
       return;
     }
 
+    // Chapter checkpoint: pause on a congrats screen at Lv.10 and Lv.20
+    if (currentLevel === 9 || currentLevel === 19) {
+      state = 'CHECKPOINT';
+      return;
+    }
+
     ov.classList.remove('hidden');
     const cfg   = LEVEL_CONFIGS[currentLevel];
     const lvScore = score - levelStartScore;
@@ -2911,6 +3584,11 @@ function startFromTitle() {
 
 function onDown(e) {
   e.preventDefault();
+  if (state === 'CHECKPOINT') {
+    allClearParticles = [];
+    nextLevel();
+    return;
+  }
   if (state === 'ALLCLEAR') {
     const p = getPos(e);
     // Share button: centered at W/2=450, y range [398,436]
@@ -3012,7 +3690,7 @@ document.addEventListener('keydown', e => {
 // ─── MAIN LOOP ────────────────────────────────────────────────
 
 function update() {
-  if (state === 'TITLE' || state === 'WIN' || state === 'LOSE' || state === 'ALLCLEAR') return;
+  if (state === 'TITLE' || state === 'WIN' || state === 'LOSE' || state === 'CHECKPOINT' || state === 'ALLCLEAR') return;
 
   // Always animate particles/dying objects even while waiting
   particles.forEach(p => p.update());
@@ -3156,6 +3834,79 @@ function computeRating(totalScore, timeSeconds, deaths) {
   if (pts >= 38) return 'ベテラン';
   if (pts >= 20) return 'アマチュア';
   return 'ビギナー';
+}
+
+const CHECKPOINTS = {
+  9:  { title: '🎉 クアラルンプール編 クリア！', sub: '次は東南アジア各都市を巡る旅へ…',
+        col1: '#1C0038', col2: '#0A1830', hue: 190 },
+  19: { title: '🎉 東南アジア＆異世界編 クリア！', sub: '次は重力が反転する未知のゾーンへ…',
+        col1: '#140A28', col2: '#02051A', hue: 280 },
+};
+
+function drawCheckpointScreen() {
+  const cp = CHECKPOINTS[currentLevel] || CHECKPOINTS[9];
+
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, cp.col1); bg.addColorStop(1, cp.col2);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Gentle sparkle particles (reuses the all-clear firework particle pool, calmer rate)
+  if (Math.random() < 0.03) {
+    const fx = 80 + Math.random() * (W - 160);
+    const fy = 40 + Math.random() * 180;
+    const FCOLS = ['#FFD700', '#00CCFF', '#FF88CC', '#88FF88'];
+    const fc = FCOLS[Math.floor(Math.random() * FCOLS.length)];
+    for (let i = 0; i < 10; i++) {
+      const a2 = (i / 10) * Math.PI * 2;
+      const sp = 1.5 + Math.random() * 3;
+      allClearParticles.push(new Particle(fx, fy, Math.cos(a2)*sp, Math.sin(a2)*sp - 1, fc, 3 + Math.random()*2, 45));
+    }
+  }
+  allClearParticles.forEach(p => {
+    p.update();
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+  });
+  allClearParticles = allClearParticles.filter(p => p.alive);
+  ctx.globalAlpha = 1;
+
+  // Title
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.shadowColor = `hsl(${cp.hue},100%,65%)`; ctx.shadowBlur = 30;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 36px Arial';
+  ctx.fillText(cp.title, W/2, 130);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  // Bouncing Mokumoku
+  const bob = Math.sin(Date.now() * 0.003) * 6;
+  const tilt = Math.sin(Date.now() * 0.002) * 0.12;
+  drawMokumoku(W/2, 240 + bob, 52, tilt, 'angry');
+
+  // Subtitle / teaser
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = '18px Arial';
+  ctx.fillText(cp.sub, W/2, 330);
+  ctx.fillStyle = 'rgba(255,224,60,0.9)';
+  ctx.font = '15px Arial';
+  ctx.fillText(`累計スコア: ${score} pt`, W/2, 358);
+  ctx.restore();
+
+  // Tap to continue
+  const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.005);
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE030';
+  ctx.font = 'bold 18px Arial';
+  ctx.fillText('▶ タップして次のステージへ ◀', W/2, H - 30);
+  ctx.restore();
 }
 
 function drawAllClearScreen() {
@@ -3386,6 +4137,7 @@ function draw() {
   ctx.clearRect(0, 0, W, H);
   if (state === 'TITLE') { drawTitleScreen(); return; }
   if (state === 'ALLCLEAR') { drawAllClearScreen(); return; }
+  if (state === 'CHECKPOINT') { drawCheckpointScreen(); return; }
   // Screen shake
   ctx.save();
   ctx.translate(shakeX, shakeY);
