@@ -392,18 +392,18 @@ function canPlace(col, row, rot) {
   return true;
 }
 
-function moveLeft()  { if (piece && canPlace(piece.col - 1, piece.row, piece.rot)) piece.col--; }
-function moveRight() { if (piece && canPlace(piece.col + 1, piece.row, piece.rot)) piece.col++; }
+function moveLeft()  { if (piece && canPlace(piece.col - 1, piece.row, piece.rot)) { piece.col--; playSfx('move'); } }
+function moveRight() { if (piece && canPlace(piece.col + 1, piece.row, piece.rot)) { piece.col++; playSfx('move'); } }
 function rotatePiece() {
   if (!piece) return;
   const newRot = (piece.rot + 3) % 4; // counter-clockwise
-  if (canPlace(piece.col, piece.row, newRot)) { piece.rot = newRot; return; }
-  if (canPlace(piece.col - 1, piece.row, newRot)) { piece.col--; piece.rot = newRot; return; }
-  if (canPlace(piece.col + 1, piece.row, newRot)) { piece.col++; piece.rot = newRot; return; }
+  if (canPlace(piece.col, piece.row, newRot)) { piece.rot = newRot; playSfx('rotate'); return; }
+  if (canPlace(piece.col - 1, piece.row, newRot)) { piece.col--; piece.rot = newRot; playSfx('rotate'); return; }
+  if (canPlace(piece.col + 1, piece.row, newRot)) { piece.col++; piece.rot = newRot; playSfx('rotate'); return; }
 }
 function softDrop() {
   if (!piece) return;
-  if (canPlace(piece.col, piece.row + 1, piece.rot)) { piece.row++; score += 1; updateHUD(); }
+  if (canPlace(piece.col, piece.row + 1, piece.rot)) { piece.row++; score += 1; updateHUD(); playSfx('drop'); }
 }
 
 function lockPiece() {
@@ -415,6 +415,7 @@ function lockPiece() {
   piece = null;
   phase = 'LOCK_PAUSE';
   pauseTimer = 10;
+  playSfx('lock');
 }
 
 function trySpawnPiece() {
@@ -526,6 +527,9 @@ function resolveStep() {
     legendText = '✨ マジックモヨモヨ炸裂！';
     legendTimer = 130;
     addShake(14);
+    playSfx('magic');
+  } else {
+    playSfx('match', chainCount);
   }
 
   addShake(4 + chainCount * 2);
@@ -550,6 +554,7 @@ function resolveStep() {
       addParticles(bx, by, burstCols[Math.floor(Math.random() * burstCols.length)], 24, 6);
     }
     addShake(16 + chainCount * 2);
+    playSfx('chainBig');
   }
   checkLevelUp();
   updateHUD();
@@ -566,6 +571,7 @@ function checkLevelUp() {
   celebrateTimer = 100;
   flashAlpha = 0.5;
   addShake(10);
+  playSfx('levelup');
 }
 
 function applyLevelPreset() {
@@ -1106,7 +1112,7 @@ function closeBoard() {
 function gameOver() {
   state = 'GAMEOVER';
   piece = null;
-  stopBGM();
+  playSfx('gameover');
   if (score > bestScore) {
     bestScore = score;
     localStorage.setItem('moyomoyo-best', String(bestScore));
@@ -1116,7 +1122,7 @@ function gameOver() {
   const ss = secs % 60;
   const ov = document.getElementById('overlay');
   ov.classList.remove('hidden');
-  document.getElementById('ov-title').textContent = '😵 グミがあふれた！';
+  document.getElementById('ov-title').textContent = '😵 モヨモヨがあふれた！';
   document.getElementById('ov-sub').textContent =
     `Lv.${level}　スコア: ${score}pt　ベスト: ${bestScore}pt\n⏱ ${mm}:${String(ss).padStart(2,'0')}`;
   const nameRow = document.getElementById('ov-name-row');
@@ -1159,34 +1165,24 @@ function startGame() {
   document.getElementById('overlay').classList.add('hidden');
   updateHUD();
   updateTimeDisplay();
-  startBGM();
   trySpawnPiece();
 }
 
-// ─── BGM (soft ambient pad) ─────────────────────────────────────
-
-const BGM_GAIN = 0.09;        // clearly audible but still soft
-const BGM_GAIN_DUCKED = 0.03; // quieter while paused
+// ─── SFX (short synthesized sounds, gameplay only — no BGM) ────
 
 let audioCtx = null;
-let bgmMaster = null;
-let bgmNodes = null;
-let bgmDucked = false;
 
 function initAudio() {
   if (audioCtx) return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   audioCtx = new AC();
-  bgmMaster = audioCtx.createGain();
-  bgmMaster.gain.value = 0;
-  bgmMaster.connect(audioCtx.destination);
 }
 
 // iOS Safari only unlocks the audio hardware inside the very first
 // user-gesture handler on the page — unlocking as early as possible
-// (rather than waiting for the "start game" tap) avoids any edge case
-// where a later, indirect call misses that window and the BGM stays
+// (rather than waiting for the first sound effect) avoids any edge
+// case where a later, indirect call misses that window and SFX stay
 // silent even though the game logic runs fine.
 function unlockAudioOnce() {
   initAudio();
@@ -1197,72 +1193,58 @@ function unlockAudioOnce() {
 document.addEventListener('touchstart', unlockAudioOnce, { passive: true });
 document.addEventListener('mousedown', unlockAudioOnce, { passive: true });
 
-function startBGM() {
-  initAudio();
+function beep(freq, dur, { type = 'square', gain = 0.16, delay = 0, slideTo = null } = {}) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime + delay;
+  const osc = audioCtx.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.03);
+}
+
+function playSfx(kind, arg) {
   if (!audioCtx) return;
   if (audioCtx.state === 'suspended') audioCtx.resume();
-  if (bgmNodes) return;
-
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.value = 900;
-  filter.Q.value = 0.3;
-  filter.connect(bgmMaster);
-
-  const freqs = [130.81, 164.81, 196.00, 261.63]; // soft C major pad
-  const oscs = freqs.map(f => {
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = f;
-    const g = audioCtx.createGain();
-    g.gain.value = 0.22 / freqs.length;
-    osc.connect(g);
-    g.connect(filter);
-    osc.start();
-    return { osc, g };
-  });
-
-  // Slow filter wobble for a gentle "もよもよ" breathing feel
-  const lfo = audioCtx.createOscillator();
-  lfo.type = 'sine';
-  lfo.frequency.value = 0.07;
-  const lfoGain = audioCtx.createGain();
-  lfoGain.gain.value = 260;
-  lfo.connect(lfoGain);
-  lfoGain.connect(filter.frequency);
-  lfo.start();
-
-  bgmNodes = { filter, oscs, lfo, lfoGain };
-
-  const target = bgmDucked ? BGM_GAIN_DUCKED : BGM_GAIN;
-  const now = audioCtx.currentTime;
-  bgmMaster.gain.cancelScheduledValues(now);
-  bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
-  bgmMaster.gain.linearRampToValueAtTime(target, now + 2.5);
-}
-
-function stopBGM() {
-  if (!audioCtx || !bgmNodes) return;
-  const now = audioCtx.currentTime;
-  bgmMaster.gain.cancelScheduledValues(now);
-  bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
-  bgmMaster.gain.linearRampToValueAtTime(0, now + 0.8);
-  const nodes = bgmNodes;
-  bgmNodes = null;
-  setTimeout(() => {
-    nodes.oscs.forEach(({ osc, g }) => { osc.stop(); osc.disconnect(); g.disconnect(); });
-    nodes.lfo.stop(); nodes.lfo.disconnect(); nodes.lfoGain.disconnect();
-    nodes.filter.disconnect();
-  }, 900);
-}
-
-function duckBGM(down) {
-  bgmDucked = down;
-  if (!audioCtx || !bgmMaster) return;
-  const now = audioCtx.currentTime;
-  bgmMaster.gain.cancelScheduledValues(now);
-  bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
-  bgmMaster.gain.linearRampToValueAtTime(down ? BGM_GAIN_DUCKED : BGM_GAIN, now + 0.6);
+  switch (kind) {
+    case 'move':
+      beep(520, 0.045, { type: 'square', gain: 0.1 });
+      break;
+    case 'rotate':
+      beep(440, 0.055, { type: 'triangle', gain: 0.12, slideTo: 700 });
+      break;
+    case 'drop':
+      beep(300, 0.03, { type: 'square', gain: 0.06, slideTo: 210 });
+      break;
+    case 'lock':
+      beep(190, 0.08, { type: 'square', gain: 0.13, slideTo: 90 });
+      break;
+    case 'match': {
+      const chain = arg || 1;
+      const base = Math.min(440 * Math.pow(1.13, chain - 1), 1100);
+      beep(base, 0.13, { type: 'square', gain: 0.17, slideTo: base * 1.6 });
+      beep(base * 1.5, 0.1, { type: 'triangle', gain: 0.08, delay: 0.03, slideTo: base * 2 });
+      break;
+    }
+    case 'chainBig':
+      [0, 0.08, 0.16].forEach((d, i) => beep(523 * Math.pow(2, i / 12 * 4), 0.14, { type: 'triangle', gain: 0.14, delay: d }));
+      break;
+    case 'magic':
+      [880, 1175, 1568].forEach((f, i) => beep(f, 0.09, { type: 'triangle', gain: 0.1, delay: i * 0.045 }));
+      break;
+    case 'levelup':
+      [523, 659, 784].forEach((f, i) => beep(f, 0.12, { type: 'square', gain: 0.13, delay: i * 0.07 }));
+      break;
+    case 'gameover':
+      beep(220, 0.45, { type: 'sine', gain: 0.16, slideTo: 70 });
+      break;
+  }
 }
 
 // ─── INPUT ────────────────────────────────────────────────────
@@ -1282,13 +1264,11 @@ function pauseGame() {
   if (state !== 'PLAYING') return;
   state = 'PAUSED';
   document.getElementById('pause-btn').textContent = '▶';
-  duckBGM(true);
 }
 function resumeGame() {
   if (state !== 'PAUSED') return;
   state = 'PLAYING';
   document.getElementById('pause-btn').textContent = '⏸';
-  duckBGM(false);
 }
 function quitToTitle() {
   state = 'TITLE';
@@ -1297,7 +1277,6 @@ function quitToTitle() {
   document.getElementById('hud').style.visibility = 'hidden';
   document.getElementById('left-col').style.visibility = 'hidden';
   document.getElementById('right-col').style.visibility = 'hidden';
-  stopBGM();
 }
 
 function onDown(e) {
