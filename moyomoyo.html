@@ -19,6 +19,7 @@ body {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   font-family: 'Helvetica Neue', Arial, sans-serif;
   user-select: none;
   overflow: hidden;
@@ -30,8 +31,14 @@ body {
   border-radius: 18px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  /* 100dvh (dynamic viewport height) excludes the area mobile Safari's
+     collapsible toolbar can cover — plain 100vh overstates available
+     height while the toolbar is shown, clipping the bottom of the game
+     (the control buttons) in both orientations. */
   height: 100vh;
-  max-height: min(950px, calc(100vw * 2.166));
+  height: 100dvh;
+  max-height: min(950px, calc(100vw * 2.166), calc(100vh - 16px));
+  max-height: min(950px, calc(100vw * 2.166), calc(100dvh - 16px));
 }
 canvas { display: block; cursor: pointer; height: 100%; width: auto; }
 #hud {
@@ -170,6 +177,10 @@ let comboText = '';
 let comboTimer = 0;
 let legendText = '';
 let legendTimer = 0;
+let celebrateText = '';
+let celebrateTimer = 0;
+let level = 1;
+let pendingGarbage = 0;
 let titleFrame = 0;
 let shakeX = 0, shakeY = 0;
 let activeBtn = null;
@@ -231,7 +242,7 @@ function moveLeft()  { if (piece && canPlace(piece.col - 1, piece.row, piece.rot
 function moveRight() { if (piece && canPlace(piece.col + 1, piece.row, piece.rot)) piece.col++; }
 function rotatePiece() {
   if (!piece) return;
-  const newRot = (piece.rot + 1) % 4;
+  const newRot = (piece.rot + 3) % 4; // counter-clockwise
   if (canPlace(piece.col, piece.row, newRot)) { piece.rot = newRot; return; }
   if (canPlace(piece.col - 1, piece.row, newRot)) { piece.col--; piece.rot = newRot; return; }
   if (canPlace(piece.col + 1, piece.row, newRot)) { piece.col++; piece.rot = newRot; return; }
@@ -332,13 +343,52 @@ function resolveStep() {
     comboText = `${chainCount}れんさ！ ×${mult.toFixed(1)}`;
     comboTimer = 90;
   }
+  if (chainCount >= 3) {
+    celebrateText = chainCount >= 5 ? '🎉🎉 大連鎖！！ 🎉🎉' : '🎉 3連鎖ボーナス！';
+    celebrateTimer = 85;
+    const burstCols = ['#FFD700', '#FF6FA8', '#4F9DFF', '#FFE14D', '#CFF2C2'];
+    for (let i = 0; i < 3; i++) {
+      const bx = GRID_X0 + Math.random() * GRID_W;
+      const by = GRID_Y0 + Math.random() * GRID_H * 0.5;
+      addParticles(bx, by, burstCols[Math.floor(Math.random() * burstCols.length)], 16, 5);
+    }
+    addShake(10);
+  }
+  checkLevelUp();
   updateHUD();
   applyGravity();
   return true;
 }
 
+function checkLevelUp() {
+  const newLevel = 1 + Math.floor(score / 500);
+  if (newLevel <= level) return;
+  for (let lv = level + 1; lv <= newLevel; lv++) pendingGarbage += (lv - 1);
+  level = newLevel;
+  celebrateText = `⬆️ Lv.${level} UP！`;
+  celebrateTimer = 85;
+  addShake(6);
+}
+
+function injectGarbage(count) {
+  // Only the bottom half of the grid, so a level-up never instantly buries
+  // the spawn column near the top.
+  const emptyCells = [];
+  for (let c = 0; c < GRID_COLS; c++) {
+    for (let r = Math.floor(GRID_ROWS / 2); r < GRID_ROWS; r++) {
+      if (grid[c][r] === null) emptyCells.push([c, r]);
+    }
+  }
+  for (let i = 0; i < count && emptyCells.length > 0; i++) {
+    const idx = Math.floor(Math.random() * emptyCells.length);
+    const [c, r] = emptyCells.splice(idx, 1)[0];
+    grid[c][r] = rollStage();
+  }
+  applyGravity();
+}
+
 function updateHUD() {
-  document.getElementById('score-display').textContent = `スコア: ${score}`;
+  document.getElementById('score-display').textContent = `Lv.${level}  スコア: ${score}`;
   document.getElementById('best-display').textContent = `ベスト: ${Math.max(score, bestScore)}`;
 }
 
@@ -501,6 +551,21 @@ function drawComboAnnouncement() {
     ctx.fillText(legendText, W / 2, GRID_Y0 + GRID_H * 0.22);
     ctx.restore();
   }
+  if (celebrateTimer > 0 && celebrateText) {
+    celebrateTimer--;
+    const alpha = celebrateTimer > 55 ? 1 : celebrateTimer / 55;
+    const scale = celebrateTimer > 65 ? 1 + (85 - celebrateTimer) * 0.025 : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(W / 2, GRID_Y0 + GRID_H * 0.46);
+    ctx.scale(scale, scale);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 24px Arial';
+    ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 22;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(celebrateText, 0, 0);
+    ctx.restore();
+  }
 }
 
 function drawTitleScreen() {
@@ -613,7 +678,7 @@ function update() {
 
   if (phase === 'FALL') {
     fallTimer++;
-    const interval = Math.max(14, 46 - Math.floor(score / 300));
+    const interval = Math.max(14, 46 - (level - 1) * 3);
     if (fallTimer >= interval) {
       fallTimer = 0;
       if (canPlace(piece.col, piece.row + 1, piece.rot)) {
@@ -642,6 +707,10 @@ function update() {
     }
   } else if (phase === 'SPAWN_PAUSE') {
     if (--pauseTimer <= 0 && state === 'PLAYING') {
+      if (pendingGarbage > 0) {
+        injectGarbage(pendingGarbage);
+        pendingGarbage = 0;
+      }
       phase = 'FALL';
       trySpawnPiece();
     }
@@ -665,6 +734,8 @@ function startGame() {
   state = 'PLAYING';
   phase = 'FALL';
   score = 0;
+  level = 1;
+  pendingGarbage = 0;
   grid = newGrid();
   particles = [];
   chainCount = 0;
