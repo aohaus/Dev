@@ -23,7 +23,7 @@ body {
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   height: 100vh;
-  max-height: min(900px, calc(100vw * 1.556));
+  max-height: min(950px, calc(100vw * 2.166));
 }
 canvas { display: block; cursor: pointer; height: 100%; width: auto; }
 #hud {
@@ -55,8 +55,8 @@ canvas { display: block; cursor: pointer; height: 100%; width: auto; }
   pointer-events: all;
 }
 #overlay.hidden { display: none; }
-#overlay h1 { color: #fff; font-size: 34px; margin-bottom: 8px; text-shadow: 0 2px 12px rgba(0,0,0,0.5); }
-#overlay p { color: #FFE066; font-size: 17px; margin-bottom: 24px; text-align: center; }
+#overlay h1 { color: #fff; font-size: 30px; margin-bottom: 8px; text-shadow: 0 2px 12px rgba(0,0,0,0.5); text-align: center; }
+#overlay p { color: #FFE066; font-size: 16px; margin-bottom: 24px; text-align: center; }
 #overlay button {
   background: #FF6FA8; color: #fff;
   border: none; border-radius: 30px;
@@ -101,24 +101,34 @@ canvas { display: block; cursor: pointer; height: 100%; width: auto; }
 // ─── CANVAS ───────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
-const W = 360, H = 560;
+const W = 300, H = 650;
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 canvas.width  = W * DPR;
 canvas.height = H * DPR;
 ctx.scale(DPR, DPR);
 
 // ─── CONFIG ───────────────────────────────────────────────────
-const GRAV        = 0.45;
-const WALL        = 12;
-const FLOOR       = 16;
-const FLOOR_Y     = H - FLOOR;
-const DANGER_Y    = 88;
-const DANGER_HOLD = 90;   // frames the stack may poke above the line before game over
-const SPAWN_Y      = 46;
-const DROP_COOLDOWN = 24;
-const WALL_DAMP    = 0.5;
-const GROUND_DAMP  = 0.16;
-const AIR_FRICTION = 0.992;
+const CELL       = 42;
+const GRID_COLS  = 6;
+const GRID_ROWS  = 12;
+const GRID_W     = CELL * GRID_COLS;
+const GRID_H     = CELL * GRID_ROWS;
+const GRID_X0    = (W - GRID_W) / 2;
+const GRID_Y0    = 64;
+const SPAWN_COL  = 2;
+const MATCH_MIN  = 4;
+
+const BTN_Y  = GRID_Y0 + GRID_H + 16;
+const BTN_H  = 52;
+const BTN_W  = 64;
+const BTN_GAP = 8;
+const BTN_X0 = (W - (BTN_W * 4 + BTN_GAP * 3)) / 2;
+const BUTTONS = [
+  { key: 'left',  label: '◀',  x: BTN_X0 },
+  { key: 'rotate',label: '🔄', x: BTN_X0 + (BTN_W + BTN_GAP) },
+  { key: 'down',  label: '▼',  x: BTN_X0 + (BTN_W + BTN_GAP) * 2 },
+  { key: 'right', label: '▶',  x: BTN_X0 + (BTN_W + BTN_GAP) * 3 },
+];
 
 const STAGES = [
   { name: 'たまごモク',   r: 16, color: '#F5E6C8', face: '#8A6A40', pts: 1  },
@@ -128,66 +138,35 @@ const STAGES = [
   { name: 'デカモク',     r: 47, color: '#D48060', face: '#3A1800', pts: 16 },
   { name: '伝説モクモク', r: 58, color: '#FFD25E', face: '#7A4400', pts: 32, legendary: true },
 ];
-const SPAWN_POOL = [0,0,0,1,1,2];
+const SPAWN_POOL = [0,0,0,0,1,1,2];
+
+// Satellite offset (dCol,dRow) relative to the axis cell, per rotation state
+const ROT_OFFSETS = [[0,-1],[1,0],[0,1],[-1,0]]; // up, right, down, left
 
 // ─── STATE ────────────────────────────────────────────────────
 let state = 'TITLE'; // TITLE | PLAYING | GAMEOVER
+let phase = 'FALL';  // FALL | LOCK_PAUSE | RESOLVING | SPAWN_PAUSE
+let pauseTimer = 0;
+let fallTimer = 0;
+let chainCount = 0;
 let score = 0;
 let bestScore = parseInt(localStorage.getItem('moyomoyo-best') || '0', 10);
-let gummies = [];
+let grid = [];        // grid[col][row] = stage number | null
+let piece = null;     // { col, row, rot, s1 (axis stage), s2 (satellite stage) }
+let nextPair = null;  // { s1, s2 } pre-rolled preview
 let particles = [];
-let currentStage = 0;
-let nextStage = 0;
-let dragX = W / 2;
-let dragging = false;
-let dropCooldown = 0;
-let dangerTimer = 0;
-let lastMergeTime = 0;
-let mergeCombo = 0;
 let comboText = '';
 let comboTimer = 0;
 let legendText = '';
 let legendTimer = 0;
 let titleFrame = 0;
 let shakeX = 0, shakeY = 0;
+let activeBtn = null;
 
 function rollStage() { return SPAWN_POOL[Math.floor(Math.random() * SPAWN_POOL.length)]; }
+function newGrid() { return Array.from({ length: GRID_COLS }, () => new Array(GRID_ROWS).fill(null)); }
 
-// ─── CLASSES ──────────────────────────────────────────────────
-
-class Gummy {
-  constructor(x, y, stage) {
-    this.x = x; this.y = y;
-    this.vx = 0; this.vy = 0;
-    this.stage = stage;
-    this.angle = (Math.random() - 0.5) * 0.3;
-    this.angV = 0;
-    this.alive = true;
-    this.mergeGrace = 10;
-    this.popScale = 0;
-  }
-  get r() { return STAGES[this.stage].r; }
-  update() {
-    if (this.popScale < 1) this.popScale = Math.min(1, this.popScale + 0.15);
-    if (this.mergeGrace > 0) this.mergeGrace--;
-    this.vy += GRAV;
-    this.x += this.vx;
-    this.y += this.vy;
-    this.angle += this.angV;
-    this.angV *= 0.9;
-    this.vx *= AIR_FRICTION;
-
-    const r = this.r;
-    if (this.x - r < WALL) { this.x = WALL + r; this.vx *= -WALL_DAMP; this.angV += (Math.random()-0.5)*0.06; }
-    if (this.x + r > W - WALL) { this.x = W - WALL - r; this.vx *= -WALL_DAMP; this.angV += (Math.random()-0.5)*0.06; }
-    if (this.y + r > FLOOR_Y) {
-      this.y = FLOOR_Y - r;
-      this.vy *= -GROUND_DAMP;
-      this.vx *= 0.9;
-      if (Math.abs(this.vy) < 0.6) this.vy = 0;
-    }
-  }
-}
+// ─── PARTICLES ────────────────────────────────────────────────
 
 class Particle {
   constructor(x, y, vx, vy, col, sz, life) {
@@ -221,68 +200,130 @@ function addShake(intensity) {
   shakeY = (Math.random() - 0.5) * intensity * 2;
 }
 
-// ─── PHYSICS / MERGE ──────────────────────────────────────────
+// ─── GRID HELPERS ─────────────────────────────────────────────
 
-function resolveCollisions() {
-  const claimed = new Set();
-  const pendingMerges = [];
-  for (let i = 0; i < gummies.length; i++) {
-    const a = gummies[i];
-    if (!a.alive) continue;
-    for (let j = i + 1; j < gummies.length; j++) {
-      const b = gummies[j];
-      if (!b.alive || claimed.has(a) || claimed.has(b)) continue;
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
-      const minDist = a.r + b.r;
-      if (dist >= minDist) continue;
+function rotOffset(col, row, rot) {
+  const d = ROT_OFFSETS[rot];
+  return { col: col + d[0], row: row + d[1] };
+}
 
-      if (a.stage === b.stage && a.stage < STAGES.length - 1 && a.mergeGrace === 0 && b.mergeGrace === 0) {
-        claimed.add(a); claimed.add(b);
-        pendingMerges.push([a, b]);
-        continue;
+function canPlace(col, row, rot) {
+  if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) return false;
+  if (grid[col][row] !== null) return false;
+  const sat = rotOffset(col, row, rot);
+  if (sat.col < 0 || sat.col >= GRID_COLS || sat.row < 0 || sat.row >= GRID_ROWS) return false;
+  if (grid[sat.col][sat.row] !== null) return false;
+  return true;
+}
+
+function moveLeft()  { if (piece && canPlace(piece.col - 1, piece.row, piece.rot)) piece.col--; }
+function moveRight() { if (piece && canPlace(piece.col + 1, piece.row, piece.rot)) piece.col++; }
+function rotatePiece() {
+  if (!piece) return;
+  const newRot = (piece.rot + 1) % 4;
+  if (canPlace(piece.col, piece.row, newRot)) { piece.rot = newRot; return; }
+  if (canPlace(piece.col - 1, piece.row, newRot)) { piece.col--; piece.rot = newRot; return; }
+  if (canPlace(piece.col + 1, piece.row, newRot)) { piece.col++; piece.rot = newRot; return; }
+}
+function softDrop() {
+  if (!piece) return;
+  if (canPlace(piece.col, piece.row + 1, piece.rot)) { piece.row++; score += 1; updateHUD(); }
+}
+
+function lockPiece() {
+  const sat = rotOffset(piece.col, piece.row, piece.rot);
+  grid[piece.col][piece.row] = piece.s1;
+  grid[sat.col][sat.row] = piece.s2;
+  piece = null;
+  phase = 'LOCK_PAUSE';
+  pauseTimer = 10;
+}
+
+function trySpawnPiece() {
+  if (grid[SPAWN_COL][1] !== null || grid[SPAWN_COL][0] !== null) { gameOver(); return; }
+  piece = { col: SPAWN_COL, row: 1, rot: 0, s1: nextPair.s1, s2: nextPair.s2 };
+  nextPair = { s1: rollStage(), s2: rollStage() };
+  fallTimer = 0;
+}
+
+function findGroups() {
+  const visited = Array.from({ length: GRID_COLS }, () => new Array(GRID_ROWS).fill(false));
+  const groups = [];
+  for (let c = 0; c < GRID_COLS; c++) {
+    for (let r = 0; r < GRID_ROWS; r++) {
+      if (grid[c][r] === null || visited[c][r]) continue;
+      const stage = grid[c][r];
+      const stack = [[c, r]];
+      visited[c][r] = true;
+      const cells = [];
+      while (stack.length) {
+        const [cc, rr] = stack.pop();
+        cells.push([cc, rr]);
+        [[cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]].forEach(([nc, nr]) => {
+          if (nc < 0 || nc >= GRID_COLS || nr < 0 || nr >= GRID_ROWS) return;
+          if (visited[nc][nr] || grid[nc][nr] !== stage) return;
+          visited[nc][nr] = true;
+          stack.push([nc, nr]);
+        });
       }
-      // Push apart + soft velocity exchange
-      const overlap = minDist - dist;
-      const nx = dx / dist, ny = dy / dist;
-      a.x -= nx * overlap * 0.5; a.y -= ny * overlap * 0.5;
-      b.x += nx * overlap * 0.5; b.y += ny * overlap * 0.5;
-      const relVx = b.vx - a.vx, relVy = b.vy - a.vy;
-      a.vx -= nx * 0.06 * relVx; a.vy -= ny * 0.06 * relVy;
-      b.vx += nx * 0.06 * relVx; b.vy += ny * 0.06 * relVy;
-      a.angV += (Math.random()-0.5)*0.05; b.angV += (Math.random()-0.5)*0.05;
+      if (cells.length >= MATCH_MIN) groups.push({ stage, cells });
     }
   }
+  return groups;
+}
 
-  pendingMerges.forEach(([a, b]) => {
-    a.alive = false; b.alive = false;
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    const newStage = a.stage + 1;
-    const merged = new Gummy(mx, my, newStage);
-    merged.vx = (a.vx + b.vx) * 0.2;
-    merged.vy = Math.min(a.vy, b.vy) * 0.2 - 1.5;
-    gummies.push(merged);
+function applyGravity() {
+  for (let c = 0; c < GRID_COLS; c++) {
+    const col = [];
+    for (let r = 0; r < GRID_ROWS; r++) if (grid[c][r] !== null) col.push(grid[c][r]);
+    for (let r = 0; r < GRID_ROWS; r++) grid[c][r] = null;
+    const startRow = GRID_ROWS - col.length;
+    col.forEach((stage, i) => { grid[c][startRow + i] = stage; });
+  }
+}
 
-    const now = Date.now();
-    if (lastMergeTime > 0 && now - lastMergeTime < 1400) mergeCombo++; else mergeCombo = 0;
-    lastMergeTime = now;
-    const mult = 1 + mergeCombo * 0.5;
-    score += Math.round(STAGES[newStage].pts * mult);
-    if (mergeCombo > 0) { comboText = `${mergeCombo + 1}れんさ！ ×${mult.toFixed(1)}`; comboTimer = 90; }
-    addParticles(mx, my, STAGES[newStage].color, 14, 4);
-    addShake(mergeCombo > 1 ? 8 : 4);
+function cellCenter(col, row) {
+  return { x: GRID_X0 + col*CELL + CELL/2, y: GRID_Y0 + row*CELL + CELL/2 };
+}
 
-    if (STAGES[newStage].legendary) {
-      score += 500;
-      legendText = '🎉 伝説モクモク誕生！ +500';
+function resolveStep() {
+  const groups = findGroups();
+  if (groups.length === 0) return false;
+  chainCount++;
+  const mult = 1 + (chainCount - 1) * 0.5;
+  groups.forEach(g => {
+    let anchor = g.cells[0];
+    g.cells.forEach(cell => {
+      if (cell[1] > anchor[1] || (cell[1] === anchor[1] && cell[0] < anchor[0])) anchor = cell;
+    });
+    g.cells.forEach(([c, r]) => { grid[c][r] = null; });
+    const { x: mx, y: my } = cellCenter(anchor[0], anchor[1]);
+    if (g.stage < STAGES.length - 1) {
+      const newStage = g.stage + 1;
+      grid[anchor[0]][anchor[1]] = newStage;
+      score += Math.round(STAGES[newStage].pts * mult);
+      if (STAGES[newStage].legendary) {
+        score += 500;
+        legendText = '🎉 伝説モクモク誕生！ +500';
+        legendTimer = 130;
+        addParticles(mx, my, '#FFD700', 26, 6);
+      }
+    } else {
+      score += Math.round(800 * mult);
+      legendText = '🎉 伝説モクモク大連鎖！ +800';
       legendTimer = 130;
-      addParticles(mx, my, '#FFD700', 30, 6);
-      addShake(14);
+      addParticles(mx, my, '#FFD700', 30, 7);
     }
-    updateHUD();
+    addParticles(mx, my, STAGES[g.stage].color, 10 + g.cells.length * 2, 4);
   });
-
-  gummies = gummies.filter(g => g.alive);
+  addShake(4 + chainCount * 2);
+  if (chainCount > 1) {
+    comboText = `${chainCount}れんさ！ ×${mult.toFixed(1)}`;
+    comboTimer = 90;
+  }
+  updateHUD();
+  applyGravity();
+  return true;
 }
 
 function updateHUD() {
@@ -298,29 +339,23 @@ function drawGummyShape(x, y, r, color, face, angle, scale, legendary) {
   ctx.rotate(angle);
   ctx.scale(scale, scale);
 
-  if (legendary) {
-    ctx.shadowColor = '#FFE080'; ctx.shadowBlur = 18;
-  }
+  if (legendary) { ctx.shadowColor = '#FFE080'; ctx.shadowBlur = 18; }
 
-  // Rounded-square gummy body
-  const s = r * 1.62; // side length so the square reads similarly sized to old circle radius
-  const rad = r * 0.42; // corner rounding
+  const s = r * 1.62;
+  const rad = r * 0.42;
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.roundRect(-s/2, -s/2, s, s, rad);
   ctx.fill();
-  // Glossy highlight
   ctx.fillStyle = 'rgba(255,255,255,0.28)';
   ctx.beginPath();
   ctx.roundRect(-s/2 + s*0.12, -s/2 + s*0.1, s*0.4, s*0.22, rad*0.6);
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  // Mokumoku face patch (cream oval), matching the main character's signature look
   ctx.fillStyle = 'rgba(232,213,176,0.92)';
   ctx.beginPath(); ctx.ellipse(0, r*0.05, r*0.56, r*0.6, 0, 0, Math.PI*2); ctx.fill();
 
-  // Eyes — black with a white highlight dot, same as the main game's owl
   const eyeR = r * 0.13;
   ctx.fillStyle = '#181818';
   ctx.beginPath(); ctx.ellipse(-r*0.27, -r*0.04, eyeR*0.8, eyeR, -0.08, 0, Math.PI*2); ctx.fill();
@@ -329,16 +364,13 @@ function drawGummyShape(x, y, r, color, face, angle, scale, legendary) {
   ctx.beginPath(); ctx.arc(-r*0.22, -r*0.09, eyeR*0.28, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(r*0.31, -r*0.09, eyeR*0.28, 0, Math.PI*2); ctx.fill();
 
-  // Angry eyebrows (fixed brand color, consistent across every evolution stage)
   ctx.strokeStyle = '#4A1800'; ctx.lineWidth = r * 0.075; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(-r*0.42, -r*0.27); ctx.lineTo(-r*0.12, -r*0.15); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(r*0.12, -r*0.15); ctx.lineTo(r*0.42, -r*0.27); ctx.stroke();
 
-  // Beak
   ctx.fillStyle = '#D97818';
   ctx.beginPath(); ctx.ellipse(0, r*0.17, r*0.1, r*0.12, 0, 0, Math.PI*2); ctx.fill();
 
-  // Teal leaf bowtie — the character's signature brand accent
   ctx.fillStyle = '#3DA890';
   ctx.beginPath(); ctx.ellipse(-r*0.18, r*0.44, r*0.16, r*0.085, -0.35, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(r*0.18, r*0.44, r*0.16, r*0.085, 0.35, 0, Math.PI*2); ctx.fill();
@@ -348,37 +380,76 @@ function drawGummyShape(x, y, r, color, face, angle, scale, legendary) {
   ctx.restore();
 }
 
-function drawContainer() {
-  // Background
+function drawGridPanel() {
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, '#3A2050'); bg.addColorStop(1, '#241238');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  // Danger line
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.006);
-  ctx.save();
-  ctx.strokeStyle = `rgba(255,80,110,${0.4 + pulse * 0.3})`;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([6, 6]);
-  ctx.beginPath(); ctx.moveTo(WALL, DANGER_Y); ctx.lineTo(W - WALL, DANGER_Y); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.roundRect(GRID_X0 - 6, GRID_Y0 - 6, GRID_W + 12, GRID_H + 12, 10); ctx.fill();
 
-  // Jar walls
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(0, 0, WALL, H);
-  ctx.fillRect(W - WALL, 0, WALL, H);
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(0, FLOOR_Y, W, FLOOR);
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(WALL, 0); ctx.lineTo(WALL, FLOOR_Y); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(W - WALL, 0); ctx.lineTo(W - WALL, FLOOR_Y); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+  for (let c = 1; c < GRID_COLS; c++) {
+    const x = GRID_X0 + c * CELL;
+    ctx.beginPath(); ctx.moveTo(x, GRID_Y0); ctx.lineTo(x, GRID_Y0 + GRID_H); ctx.stroke();
+  }
+  for (let r = 1; r < GRID_ROWS; r++) {
+    const y = GRID_Y0 + r * CELL;
+    ctx.beginPath(); ctx.moveTo(GRID_X0, y); ctx.lineTo(GRID_X0 + GRID_W, y); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,143,196,0.35)'; ctx.lineWidth = 2;
+  ctx.strokeRect(GRID_X0, GRID_Y0, GRID_W, GRID_H);
 }
 
-function drawGummies() {
-  gummies.forEach(g => {
-    const st = STAGES[g.stage];
-    drawGummyShape(g.x, g.y, st.r, st.color, st.face, g.angle, g.popScale, st.legendary);
+function drawGridCells() {
+  for (let c = 0; c < GRID_COLS; c++) {
+    for (let r = 0; r < GRID_ROWS; r++) {
+      const stage = grid[c][r];
+      if (stage === null) continue;
+      const { x, y } = cellCenter(c, r);
+      const st = STAGES[stage];
+      drawGummyShape(x, y, CELL * 0.42, st.color, st.face, 0, 1, st.legendary);
+    }
+  }
+}
+
+function drawPiece() {
+  if (!piece) return;
+  const sat = rotOffset(piece.col, piece.row, piece.rot);
+  const a = cellCenter(piece.col, piece.row);
+  const b = cellCenter(sat.col, sat.row);
+  const pulse = 1 + 0.04 * Math.sin(Date.now() * 0.012);
+  drawGummyShape(a.x, a.y, CELL * 0.42 * pulse, STAGES[piece.s1].color, STAGES[piece.s1].face, 0, 1, STAGES[piece.s1].legendary);
+  drawGummyShape(b.x, b.y, CELL * 0.42 * pulse, STAGES[piece.s2].color, STAGES[piece.s2].face, 0, 1, STAGES[piece.s2].legendary);
+}
+
+function drawNextPreview() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.roundRect(10, 44, 56, 76, 12); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '10px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('つぎ', 38, 56);
+  ctx.restore();
+  if (nextPair) {
+    const r = 13;
+    drawGummyShape(38, 74, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false);
+    drawGummyShape(38, 102, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false);
+  }
+}
+
+function drawButtons() {
+  BUTTONS.forEach(b => {
+    const pressed = activeBtn === b.key;
+    ctx.save();
+    ctx.fillStyle = pressed ? '#FF8FBC' : 'rgba(255,111,168,0.85)';
+    ctx.beginPath(); ctx.roundRect(b.x, BTN_Y, BTN_W, BTN_H, 14); ctx.fill();
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 22px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(b.label, b.x + BTN_W/2, BTN_Y + BTN_H/2 + 1);
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
   });
 }
 
@@ -391,33 +462,6 @@ function drawParticles() {
   ctx.globalAlpha = 1;
 }
 
-function drawCurrentAndNext() {
-  if (state !== 'PLAYING') return;
-  const st = STAGES[currentStage];
-  const alpha = dropCooldown > 0 ? 0.45 : 1;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  drawGummyShape(dragX, SPAWN_Y, st.r, st.color, st.face, 0, 1, st.legendary);
-  ctx.restore();
-  // Guideline
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2; ctx.setLineDash([4,7]);
-  ctx.beginPath(); ctx.moveTo(dragX, SPAWN_Y + st.r); ctx.lineTo(dragX, FLOOR_Y); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-
-  // Next preview (top-left pill)
-  const nst = STAGES[nextStage];
-  ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.beginPath(); ctx.roundRect(10, 44, 64, 40, 12); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.font = '10px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('つぎ', 42, 56);
-  ctx.restore();
-  drawGummyShape(42, 74, Math.min(nst.r, 16), nst.color, nst.face, 0, 1, false);
-}
-
 function drawComboAnnouncement() {
   if (comboTimer > 0 && comboText) {
     comboTimer--;
@@ -425,7 +469,7 @@ function drawComboAnnouncement() {
     const scale = comboTimer > 75 ? 1 + (90 - comboTimer) * 0.02 : 1;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(W / 2, H * 0.4);
+    ctx.translate(W / 2, GRID_Y0 + GRID_H * 0.35);
     ctx.scale(scale, scale);
     ctx.textAlign = 'center';
     ctx.font = 'bold 22px Arial';
@@ -440,10 +484,10 @@ function drawComboAnnouncement() {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.textAlign = 'center';
-    ctx.font = 'bold 18px Arial';
+    ctx.font = 'bold 16px Arial';
     ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 20;
     ctx.fillStyle = '#FFF3C0';
-    ctx.fillText(legendText, W / 2, H * 0.3);
+    ctx.fillText(legendText, W / 2, GRID_Y0 + GRID_H * 0.22);
     ctx.restore();
   }
 }
@@ -454,8 +498,7 @@ function drawTitleScreen() {
   bg.addColorStop(0, '#5A2E78'); bg.addColorStop(0.55, '#3E1E58'); bg.addColorStop(1, '#241238');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  // Soft candy bokeh dots
-  const dots = [[40,90,10],[300,140,14],[60,420,12],[310,460,9],[180,60,8],[260,320,7],[90,260,10]];
+  const dots = [[35,90,9],[260,140,12],[50,430,11],[255,480,8],[150,60,7],[220,330,6],[75,260,9]];
   dots.forEach(([dx,dy,dr],i) => {
     const a = 0.15 + 0.1 * Math.sin(titleFrame * 0.02 + i);
     ctx.fillStyle = `rgba(255,180,220,${a})`;
@@ -464,44 +507,49 @@ function drawTitleScreen() {
 
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 26;
+  ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 22;
   ctx.fillStyle = '#FFE9F5';
-  ctx.font = 'bold 56px Arial';
-  ctx.fillText('モヨモヨ', W/2, 150);
+  ctx.font = 'bold 46px Arial';
+  ctx.fillText('モヨモヨ', W/2, 140);
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#FFB0DC';
-  ctx.font = '14px Arial';
-  ctx.fillText('M O K U M O K U   M E R G E', W/2, 178);
+  ctx.font = '13px Arial';
+  ctx.fillText('M O K U M O K U   C H A I N', W/2, 165);
   ctx.restore();
 
-  // Bouncing legendary mascot
-  const bob = Math.sin(titleFrame * 0.05) * 8;
+  const bob = Math.sin(titleFrame * 0.05) * 7;
   const tilt = Math.sin(titleFrame * 0.03) * 0.1;
-  drawGummyShape(W/2, 280 + bob, 58, STAGES[5].color, STAGES[5].face, tilt, 1, true);
+  drawGummyShape(W/2, 240 + bob, 50, STAGES[5].color, STAGES[5].face, tilt, 1, true);
 
-  // Evolution chain preview
-  const chainY = 400;
-  const startX = W/2 - 130;
+  const chainY = 335;
+  const startX = W/2 - 108;
   STAGES.forEach((st, i) => {
-    const x = startX + i * 52;
-    drawGummyShape(x, chainY, Math.min(st.r, 18), st.color, st.face, 0, 1, false);
+    const x = startX + i * 44;
+    drawGummyShape(x, chainY, Math.min(st.r, 15), st.color, st.face, 0, 1, false);
     if (i < STAGES.length - 1) {
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.font = '12px Arial'; ctx.textAlign = 'center';
-      ctx.fillText('▶', x + 26, chainY + 4);
+      ctx.font = '11px Arial'; ctx.textAlign = 'center';
+      ctx.fillText('▶', x + 22, chainY + 4);
     }
   });
 
-  // Start button
-  const btnY = 470;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '12px Arial';
+  ctx.fillText('同じ段階を4つ以上つなげて進化させよう', W/2, 375);
+  ctx.fillText('◀▶で移動・🔄で回転・▼で下に落とす', W/2, 393);
+  ctx.restore();
+
+  const btnY = 445;
   const pulse = 0.6 + 0.4 * Math.sin(titleFrame * 0.06);
   ctx.save();
   ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 14 + pulse * 8;
   ctx.fillStyle = '#FF6FA8';
-  ctx.beginPath(); ctx.roundRect(W/2 - 90, btnY - 24, 180, 48, 24); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(W/2 - 85, btnY - 24, 170, 48, 24); ctx.fill();
   ctx.shadowBlur = 0;
   ctx.fillStyle = 'white';
-  ctx.font = 'bold 20px Arial';
+  ctx.font = 'bold 19px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('▶ スタート', W/2, btnY);
   ctx.textBaseline = 'alphabetic';
@@ -510,10 +558,9 @@ function drawTitleScreen() {
   if (bestScore > 0) {
     ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.font = '13px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(`ベストスコア: ${bestScore}`, W/2, btnY + 46);
+    ctx.fillText(`ベストスコア: ${bestScore}`, W/2, btnY + 44);
   }
 
-  // Cross-link to Angry Mokumoku
   ctx.save();
   ctx.textAlign = 'center';
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
@@ -534,10 +581,12 @@ function draw() {
   if (Math.abs(shakeX) < 0.1) shakeX = 0;
   if (Math.abs(shakeY) < 0.1) shakeY = 0;
 
-  drawContainer();
-  drawGummies();
+  drawGridPanel();
+  drawGridCells();
+  if (phase === 'FALL') drawPiece();
   drawParticles();
-  drawCurrentAndNext();
+  drawNextPreview();
+  drawButtons();
   drawComboAnnouncement();
 
   ctx.restore();
@@ -545,38 +594,46 @@ function draw() {
 
 // ─── GAME LOGIC ───────────────────────────────────────────────
 
-function dropCurrent() {
-  if (dropCooldown > 0 || state !== 'PLAYING') return;
-  const r = STAGES[currentStage].r;
-  const x = clamp(dragX, WALL + r, W - WALL - r);
-  const g = new Gummy(x, SPAWN_Y, currentStage);
-  g.vy = 1;
-  gummies.push(g);
-  currentStage = nextStage;
-  nextStage = rollStage();
-  dropCooldown = DROP_COOLDOWN;
-}
-
-function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
 function update() {
-  if (state === 'TITLE' || state === 'GAMEOVER') return;
+  if (state !== 'PLAYING') return;
 
-  if (dropCooldown > 0) dropCooldown--;
-
-  gummies.forEach(g => g.update());
-  resolveCollisions();
   particles.forEach(p => p.update());
   particles = particles.filter(p => p.alive);
 
-  // Danger-line check (settled stack only — the hovering "current" piece is separate)
-  const violating = gummies.some(g => (g.y - g.r) < DANGER_Y && g.mergeGrace === 0);
-  if (violating) dangerTimer++; else dangerTimer = 0;
-  if (dangerTimer > DANGER_HOLD) gameOver();
+  if (phase === 'FALL') {
+    fallTimer++;
+    const interval = Math.max(14, 46 - Math.floor(score / 300));
+    if (fallTimer >= interval) {
+      fallTimer = 0;
+      if (canPlace(piece.col, piece.row + 1, piece.rot)) {
+        piece.row++;
+      } else {
+        lockPiece();
+      }
+    }
+  } else if (phase === 'LOCK_PAUSE') {
+    if (--pauseTimer <= 0) phase = 'RESOLVING';
+  } else if (phase === 'RESOLVING') {
+    if (--pauseTimer <= 0) {
+      if (resolveStep()) {
+        pauseTimer = 18;
+      } else {
+        phase = 'SPAWN_PAUSE';
+        pauseTimer = 12;
+        chainCount = 0;
+      }
+    }
+  } else if (phase === 'SPAWN_PAUSE') {
+    if (--pauseTimer <= 0 && state === 'PLAYING') {
+      phase = 'FALL';
+      trySpawnPiece();
+    }
+  }
 }
 
 function gameOver() {
   state = 'GAMEOVER';
+  piece = null;
   if (score > bestScore) {
     bestScore = score;
     localStorage.setItem('moyomoyo-best', String(bestScore));
@@ -589,19 +646,18 @@ function gameOver() {
 
 function startGame() {
   state = 'PLAYING';
+  phase = 'FALL';
   score = 0;
-  gummies = [];
+  grid = newGrid();
   particles = [];
-  dangerTimer = 0;
-  mergeCombo = 0;
-  lastMergeTime = 0;
-  currentStage = rollStage();
-  nextStage = rollStage();
-  dragX = W / 2;
-  dropCooldown = 0;
+  chainCount = 0;
+  fallTimer = 0;
+  pauseTimer = 0;
+  nextPair = { s1: rollStage(), s2: rollStage() };
   document.getElementById('hud').style.visibility = 'visible';
   document.getElementById('overlay').classList.add('hidden');
   updateHUD();
+  trySpawnPiece();
 }
 
 // ─── INPUT ────────────────────────────────────────────────────
@@ -617,49 +673,52 @@ function getPos(e) {
   };
 }
 
-function onDown(e) {
-  e.preventDefault();
-  if (state === 'TITLE') {
-    const p = getPos(e);
-    if (p.x >= W/2 - 90 && p.x <= W/2 + 90 && p.y >= 446 && p.y <= 494) {
-      startGame(); return;
-    }
-    if (p.y >= H - 34) {
-      window.location.href = 'angry-mokumoku.html';
-      return;
-    }
-    return;
+function hitButton(p) {
+  for (const b of BUTTONS) {
+    if (p.x >= b.x && p.x <= b.x + BTN_W && p.y >= BTN_Y && p.y <= BTN_Y + BTN_H) return b.key;
   }
-  if (state === 'GAMEOVER') return;
-  const p = getPos(e);
-  dragX = clamp(p.x, WALL, W - WALL);
-  dragging = true;
+  return null;
 }
 
-function onMove(e) {
+function onDown(e) {
   e.preventDefault();
-  if (!dragging || state !== 'PLAYING') return;
   const p = getPos(e);
-  dragX = clamp(p.x, WALL, W - WALL);
+  if (state === 'TITLE') {
+    if (p.x >= W/2 - 85 && p.x <= W/2 + 85 && p.y >= 421 && p.y <= 469) { startGame(); return; }
+    if (p.y >= H - 34) { window.location.href = 'angry-mokumoku.html'; return; }
+    return;
+  }
+  if (state !== 'PLAYING' || phase !== 'FALL') return;
+  const key = hitButton(p);
+  if (!key) return;
+  activeBtn = key;
+  if (key === 'left') moveLeft();
+  else if (key === 'right') moveRight();
+  else if (key === 'rotate') rotatePiece();
+  else if (key === 'down') softDrop();
 }
 
 function onUp(e) {
   e.preventDefault();
-  if (!dragging) return;
-  dragging = false;
-  if (state === 'PLAYING') dropCurrent();
+  activeBtn = null;
 }
 
 canvas.addEventListener('mousedown',  onDown, { passive: false });
-canvas.addEventListener('mousemove',  onMove, { passive: false });
 canvas.addEventListener('mouseup',    onUp,   { passive: false });
 canvas.addEventListener('touchstart', onDown, { passive: false });
-canvas.addEventListener('touchmove',  onMove, { passive: false });
 canvas.addEventListener('touchend',   onUp,   { passive: false });
 
 document.getElementById('ov-btn').addEventListener('click', () => {
   document.getElementById('overlay').classList.add('hidden');
   startGame();
+});
+
+document.addEventListener('keydown', e => {
+  if (state !== 'PLAYING' || phase !== 'FALL') return;
+  if (e.key === 'ArrowLeft') moveLeft();
+  else if (e.key === 'ArrowRight') moveRight();
+  else if (e.key === 'ArrowUp' || e.key === ' ') rotatePiece();
+  else if (e.key === 'ArrowDown') softDrop();
 });
 
 // ─── MAIN LOOP ────────────────────────────────────────────────
@@ -673,6 +732,7 @@ function loop() {
 function init() {
   state = 'TITLE';
   titleFrame = 0;
+  grid = newGrid();
   loop();
 }
 
