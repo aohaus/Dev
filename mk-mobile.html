@@ -308,42 +308,62 @@ function drawMokuFace(x, y, r, bodyColor, faceColor, angle) {
   ctx.restore();
 }
 
-// Player token: the pink candy "gummy" mascot from moyomoyo.html, so the
-// player reads as a Moyomoyo character facing off against the CPU's own
-// Mokumoku (which the MK Mobile branding already stands for).
-function drawMoyoFace(x, y, r, color, faceColor, angle) {
+// Mokumoku, ported from angry-mokumoku.html's title mascot (always drawn
+// "neutral" here — MK Mobile has no angry-mood states). Used for both the
+// title screen icon and the player token, so the player reads as the same
+// franchise character shown on the other games' title screens.
+function drawMokumoku(x, y, r, angle) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(angle);
-  const s = r * 1.62, rad = r * 0.42;
-  ctx.fillStyle = color;
-  ctx.beginPath(); ctx.roundRect(-s / 2, -s / 2, s, s, rad); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.28)';
-  ctx.beginPath(); ctx.roundRect(-s / 2 + s * 0.12, -s / 2 + s * 0.1, s * 0.4, s * 0.22, rad * 0.6); ctx.fill();
+  ctx.rotate(angle || 0);
 
-  ctx.fillStyle = faceColor;
-  ctx.beginPath(); ctx.ellipse(0, r * 0.05, r * 0.56, r * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#C8956A';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+  const bodyShade = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
+  bodyShade.addColorStop(0, 'rgba(255,255,255,0.15)');
+  bodyShade.addColorStop(1, 'rgba(0,0,0,0.2)');
+  ctx.fillStyle = bodyShade;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
 
-  const eyeR = r * 0.13;
-  ctx.fillStyle = '#181818';
-  ctx.beginPath(); ctx.ellipse(-r * 0.27, -r * 0.04, eyeR * 0.8, eyeR, -0.08, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(r * 0.27, -r * 0.04, eyeR * 0.8, eyeR, 0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#E8D5B0';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.12, r * 0.66, r * 0.76, 0, 0, Math.PI * 2); ctx.fill();
+
+  const eyeH = r * 0.235, eyeW = r * 0.19;
+  ctx.fillStyle = '#151515';
+  ctx.beginPath(); ctx.ellipse(-r * 0.32, -r * 0.14, eyeW, eyeH, -0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r * 0.32, -r * 0.14, eyeW, eyeH, 0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(-r * 0.32, -r * 0.14, eyeW, eyeH, -0.08, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(r * 0.32, -r * 0.14, eyeW, eyeH, 0.08, 0, Math.PI * 2); ctx.stroke();
+
   ctx.fillStyle = 'white';
-  ctx.beginPath(); ctx.arc(-r * 0.22, -r * 0.09, eyeR * 0.28, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(r * 0.31, -r * 0.09, eyeR * 0.28, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-r * 0.27, -r * 0.2, r * 0.065, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.37, -r * 0.2, r * 0.065, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = '#4A1800'; ctx.lineWidth = r * 0.075; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(-r * 0.42, -r * 0.27); ctx.lineTo(-r * 0.12, -r * 0.15); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(r * 0.12, -r * 0.15); ctx.lineTo(r * 0.42, -r * 0.27); ctx.stroke();
+  ctx.fillStyle = '#E89230';
+  ctx.beginPath(); ctx.ellipse(0, -r * 0.02, r * 0.24, r * 0.115, 0, 0, Math.PI * 2); ctx.fill();
 
-  ctx.fillStyle = '#D97818';
-  ctx.beginPath(); ctx.ellipse(0, r * 0.17, r * 0.1, r * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#D07818';
+  ctx.beginPath(); ctx.ellipse(0, r * 0.12, r * 0.115, r * 0.135, 0, 0, Math.PI); ctx.fill();
 
   ctx.fillStyle = '#3DA890';
-  ctx.beginPath(); ctx.ellipse(-r * 0.18, r * 0.44, r * 0.16, r * 0.085, -0.35, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(r * 0.18, r * 0.44, r * 0.16, r * 0.085, 0.35, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-r * 0.28, r * 0.47, r * 0.24, r * 0.13, -0.35, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r * 0.28, r * 0.47, r * 0.24, r * 0.13, 0.35, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#2A7868';
-  ctx.beginPath(); ctx.arc(0, r * 0.44, r * 0.05, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, r * 0.47, r * 0.07, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#2A7868'; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(-r * 0.04, r * 0.47); ctx.lineTo(-r * 0.48, r * 0.45); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r * 0.04, r * 0.47); ctx.lineTo(r * 0.48, r * 0.45); ctx.stroke();
+
+  ctx.fillStyle = '#E89230';
+  ctx.beginPath(); ctx.ellipse(-r * 0.26, r * 0.88, r * 0.13, r * 0.08, 0.25, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(r * 0.26, r * 0.88, r * 0.13, r * 0.08, -0.25, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#C06810'; ctx.lineWidth = 1.2;
+  [-r * 0.26, r * 0.26].forEach(fx => {
+    ctx.beginPath(); ctx.moveTo(fx - r * 0.07, r * 0.9); ctx.lineTo(fx - r * 0.15, r * 0.96); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(fx, r * 0.92); ctx.lineTo(fx, r * 1.0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(fx + r * 0.07, r * 0.9); ctx.lineTo(fx + r * 0.15, r * 0.96); ctx.stroke();
+  });
 
   ctx.restore();
 }
@@ -589,12 +609,13 @@ function drawTitleScreen() {
   ctx.fillText('M O K U M O K U   K I C K', W/2, 145);
   ctx.restore();
 
-  // Spinning soccer-ball mascot with idle sparkles
+  // Mokumoku mascot with idle sparkles — same bob/tilt idle as its
+  // appearance on angry-mokumoku.html's own title screen.
   const bob = Math.sin(titleFrame * 0.05) * 6;
-  const spin = titleFrame * 0.02;
-  const ballY = 235 + bob;
+  const tilt = Math.sin(titleFrame * 0.028) * 0.07;
+  const mascotY = 235 + bob;
   const sparkT = (titleFrame * 0.04) % (Math.PI * 2);
-  [[W/2-95,ballY-45],[W/2+100,ballY-35],[W/2-80,ballY+55],[W/2+85,ballY+50]].forEach(([sx,sy],i) => {
+  [[W/2-95,mascotY-45],[W/2+100,mascotY-35],[W/2-80,mascotY+55],[W/2+85,mascotY+50]].forEach(([sx,sy],i) => {
     const s = 0.5 + 0.5 * Math.sin(sparkT + i * 1.5);
     ctx.save();
     ctx.globalAlpha = s * 0.85;
@@ -604,32 +625,7 @@ function drawTitleScreen() {
     ctx.fillText('✦', sx, sy);
     ctx.restore();
   });
-  ctx.save();
-  ctx.translate(W/2, ballY);
-  ctx.rotate(spin);
-  ctx.shadowColor = '#FFC94A'; ctx.shadowBlur = 20;
-  ctx.fillStyle = '#F5F5F0';
-  ctx.beginPath(); ctx.arc(0, 0, 42, 0, Math.PI*2); ctx.fill();
-  ctx.shadowBlur = 0;
-  // Classic pentagon-and-seams soccer-ball glyph
-  const pentR = 11;
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  ctx.beginPath();
-  for (let i = 0; i < 5; i++) {
-    const a = -Math.PI/2 + i * (Math.PI*2/5);
-    const px = Math.cos(a)*pentR, py = Math.sin(a)*pentR;
-    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-  }
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
-  for (let i = 0; i < 5; i++) {
-    const a = -Math.PI/2 + i * (Math.PI*2/5);
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a)*pentR, Math.sin(a)*pentR);
-    ctx.lineTo(Math.cos(a)*35, Math.sin(a)*35);
-    ctx.stroke();
-  }
-  ctx.restore();
+  drawMokumoku(W/2, mascotY, 42, tilt);
 
   ctx.save();
   ctx.textAlign = 'center';
@@ -790,7 +786,7 @@ function draw() {
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
   drawPitch();
-  drawMoyoFace(player.x, player.y, PLAYER_R, '#FF5C7A', '#4A2800', 0);
+  drawMokumoku(player.x, player.y, PLAYER_R, 0);
   drawMokuFace(cpu.x, cpu.y, CPU_R, '#3D7DD8', '#F0DFBC', 0);
   drawBall();
   drawParticles();
