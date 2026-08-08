@@ -697,8 +697,11 @@ function drawGummyShape(x, y, r, color, face, angle, scale, legendary, magic) {
 }
 
 function drawGridPanel() {
+  // Same stops as the body's CSS background gradient, so the canvas
+  // blends into the page instead of showing a seam where the narrow
+  // canvas card meets the body background visible in the margins.
   const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, '#3A2050'); bg.addColorStop(1, '#241238');
+  bg.addColorStop(0, '#2A1840'); bg.addColorStop(0.55, '#4A2560'); bg.addColorStop(1, '#331A48');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
@@ -834,8 +837,12 @@ const TITLE_MENU_ITEMS = ['スタート', '🏆 ランキング'];
 
 function drawTitleScreen() {
   titleFrame++;
+  // Same stops as the body's CSS background gradient (and the gameplay
+  // panel's), so the canvas blends into the page instead of showing a
+  // seam where the narrow canvas card meets the body background
+  // visible in the margins.
   const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, '#3E1450'); bg.addColorStop(0.55, '#2C0F3E'); bg.addColorStop(1, '#1A0A28');
+  bg.addColorStop(0, '#2A1840'); bg.addColorStop(0.55, '#4A2560'); bg.addColorStop(1, '#331A48');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
   // Soft scanline texture — the same technique Angry Mokumoku uses for
