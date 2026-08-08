@@ -16,31 +16,72 @@ body {
     radial-gradient(circle, rgba(200,160,255,0.08) 0 4px, transparent 5px) 60px 220px / 260px 260px repeat,
     radial-gradient(circle, rgba(255,210,230,0.06) 0 6px, transparent 7px) 200px 60px / 380px 380px repeat,
     linear-gradient(160deg, #2A1840 0%, #4A2560 55%, #331A48 100%);
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  min-height: 100vh;
-  min-height: 100dvh;
   font-family: 'Helvetica Neue', Arial, sans-serif;
   user-select: none;
   overflow: hidden;
   touch-action: none;
 }
+/* Left/right control columns sit outside the canvas so they can be big
+   and work the same way in portrait or landscape — the canvas no longer
+   reserves its own bottom strip for buttons. */
+#game-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 18px);
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+}
+.side-col {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 2vw, 18px);
+  flex: 0 0 auto;
+  visibility: hidden;
+}
+.ctrl-btn {
+  width: clamp(64px, 15vw, 116px);
+  height: clamp(64px, 15vw, 116px);
+  border-radius: clamp(16px, 4vw, 26px);
+  background: rgba(255,111,168,0.85);
+  border: none;
+  color: white;
+  font-size: clamp(26px, 7vw, 46px);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(255,111,168,0.4);
+  touch-action: manipulation;
+}
+.ctrl-btn:active { background: #FF8FBC; }
 #wrapper {
   position: relative;
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 0;
   border-radius: 18px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-  /* 100dvh (dynamic viewport height) excludes the area mobile Safari's
-     collapsible toolbar can cover — plain 100vh overstates available
-     height while the toolbar is shown, clipping the bottom of the game
-     (the control buttons) in both orientations. */
+  /* No explicit height: the wrapper shrink-wraps to the canvas below it
+     so the HUD (absolutely positioned against this box) sits flush
+     against the grid instead of floating in leftover vertical space. */
+}
+/* Canvas keeps its 426:588 aspect ratio and fills up to the available
+   height (100dvh, mobile-Safari-toolbar-safe), shrinking by width
+   instead whenever the side button columns leave less room than that. */
+canvas {
+  display: block;
+  cursor: pointer;
+  aspect-ratio: 426 / 700;
   height: 100vh;
   height: 100dvh;
-  max-height: min(950px, calc(100vw * 1.526), calc(100vh - 16px));
-  max-height: min(950px, calc(100vw * 1.526), calc(100dvh - 16px));
+  max-height: min(950px, calc(100vh - 16px));
+  max-height: min(950px, calc(100dvh - 16px));
+  max-width: 100%;
+  width: auto;
 }
-canvas { display: block; cursor: pointer; height: 100%; width: auto; }
 #hud {
   position: absolute; top: 0; left: 0; right: 0;
   padding: 12px 14px;
@@ -99,45 +140,41 @@ canvas { display: block; cursor: pointer; height: 100%; width: auto; }
   box-shadow: 0 4px 16px rgba(255,111,168,0.4);
 }
 #overlay button:hover { background: #FF8FBC; transform: scale(1.05); }
-#rotate-hint {
-  display: none;
-  position: fixed; inset: 0; z-index: 999;
-  background: #2A1840;
-  flex-direction: column; align-items: center; justify-content: center;
-  color: white; font-size: 18px; gap: 16px;
-}
-@media (max-width: 400px) and (orientation: landscape) {
-  #rotate-hint { display: flex; }
-}
 </style>
 </head>
 <body>
-<div id="wrapper">
-  <canvas id="c"></canvas>
-  <div id="hud" style="visibility:hidden">
-    <div>
-      <div id="score-display">Lv.1  スコア: 0</div>
-      <div id="best-display">ベスト: 0</div>
-      <div id="time-display">⏱ 0:00</div>
+<div id="game-layout">
+  <div class="side-col" id="left-col">
+    <button class="ctrl-btn" data-action="left" aria-label="左へ">◀</button>
+    <button class="ctrl-btn" data-action="down" aria-label="下へ">▼</button>
+  </div>
+  <div id="wrapper">
+    <canvas id="c"></canvas>
+    <div id="hud" style="visibility:hidden">
+      <div>
+        <div id="score-display">Lv.1  スコア: 0</div>
+        <div id="best-display">ベスト: 0</div>
+        <div id="time-display">⏱ 0:00</div>
+      </div>
+      <button id="pause-btn" title="一時停止">⏸</button>
     </div>
-    <button id="pause-btn" title="一時停止">⏸</button>
+    <div id="overlay" class="hidden">
+      <h1 id="ov-title"></h1>
+      <p id="ov-sub"></p>
+      <button id="ov-btn">もう一度！</button>
+    </div>
   </div>
-  <div id="overlay" class="hidden">
-    <h1 id="ov-title"></h1>
-    <p id="ov-sub"></p>
-    <button id="ov-btn">もう一度！</button>
+  <div class="side-col" id="right-col">
+    <button class="ctrl-btn" data-action="rotate" aria-label="回転">🔄</button>
+    <button class="ctrl-btn" data-action="right" aria-label="右へ">▶</button>
   </div>
-</div>
-<div id="rotate-hint">
-  <span>📱</span>
-  <p>縦向きにしてプレイ！</p>
 </div>
 
 <script>
 // ─── CANVAS ───────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
-const W = 426, H = 650;
+const W = 426, H = 700;
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 canvas.width  = W * DPR;
 canvas.height = H * DPR;
@@ -150,22 +187,12 @@ const GRID_ROWS  = 12;
 const GRID_W     = CELL * GRID_COLS;
 const GRID_H     = CELL * GRID_ROWS;
 const GRID_X0    = (W - GRID_W) / 2;
-const GRID_Y0    = 64;
+const GRID_Y0    = 176; // tall enough to clear the 3-line HTML HUD overlay
 const SPAWN_COL  = 4;
 const MATCH_MIN  = 4;
 const LEVEL_STEP = 200; // score needed per level
+const MAGIC_CHANCE = 0.025; // ~2.5% of spawned pieces are マジックモヨモヨ
 
-const BTN_Y  = GRID_Y0 + GRID_H + 16;
-const BTN_H  = 52;
-const BTN_W  = 74;
-const BTN_GAP = 10;
-const BTN_X0 = (W - (BTN_W * 4 + BTN_GAP * 3)) / 2;
-const BUTTONS = [
-  { key: 'left',  label: '◀',  x: BTN_X0 },
-  { key: 'rotate',label: '🔄', x: BTN_X0 + (BTN_W + BTN_GAP) },
-  { key: 'down',  label: '▼',  x: BTN_X0 + (BTN_W + BTN_GAP) * 2 },
-  { key: 'right', label: '▶',  x: BTN_X0 + (BTN_W + BTN_GAP) * 3 },
-];
 const PAUSE_RESUME_Y = H * 0.48;
 const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 66;
 
@@ -187,7 +214,7 @@ const SPAWN_POOL = [0,1,2]; // even 1:1:1 spread — orange was underrepresented
 const ROT_OFFSETS = [[0,-1],[1,0],[0,1],[-1,0]]; // up, right, down, left
 
 // ─── STATE ────────────────────────────────────────────────────
-let state = 'TITLE'; // TITLE | PLAYING | GAMEOVER
+let state = 'TITLE'; // TITLE | PLAYING | PAUSED | GAMEOVER
 let phase = 'FALL';  // FALL | LOCK_PAUSE | RESOLVING | SPAWN_PAUSE
 let pauseTimer = 0;
 let fallTimer = 0;
@@ -195,8 +222,9 @@ let chainCount = 0;
 let score = 0;
 let bestScore = parseInt(localStorage.getItem('moyomoyo-best') || '0', 10);
 let grid = [];        // grid[col][row] = stage number | null
-let piece = null;     // { col, row, rot, s1 (axis stage), s2 (satellite stage) }
-let nextPair = null;  // { s1, s2 } pre-rolled preview
+let magicGrid = [];   // magicGrid[col][row] = true if that cell is マジックモヨモヨ
+let piece = null;     // { col, row, rot, s1, s2 (stages), m1, m2 (magic flags) }
+let nextPair = null;  // { s1, s2, m1, m2 } pre-rolled preview
 let particles = [];
 let comboText = '';
 let comboTimer = 0;
@@ -204,16 +232,21 @@ let legendText = '';
 let legendTimer = 0;
 let celebrateText = '';
 let celebrateTimer = 0;
+let popTimer = 0;
+let popStage = 0;
 let level = 1;
-let pendingGarbage = 0;
+let pendingLevelPreset = false;
 let titleFrame = 0;
 let shakeX = 0, shakeY = 0;
-let activeBtn = null;
 let flashAlpha = 0;
 let playFrames = 0;
 
 function rollStage() { return SPAWN_POOL[Math.floor(Math.random() * SPAWN_POOL.length)]; }
+function rollPair() {
+  return { s1: rollStage(), s2: rollStage(), m1: Math.random() < MAGIC_CHANCE, m2: Math.random() < MAGIC_CHANCE };
+}
 function newGrid() { return Array.from({ length: GRID_COLS }, () => new Array(GRID_ROWS).fill(null)); }
+function newMagicGrid() { return Array.from({ length: GRID_COLS }, () => new Array(GRID_ROWS).fill(false)); }
 
 // ─── PARTICLES ────────────────────────────────────────────────
 
@@ -282,7 +315,9 @@ function softDrop() {
 function lockPiece() {
   const sat = rotOffset(piece.col, piece.row, piece.rot);
   grid[piece.col][piece.row] = piece.s1;
+  magicGrid[piece.col][piece.row] = !!piece.m1;
   grid[sat.col][sat.row] = piece.s2;
+  magicGrid[sat.col][sat.row] = !!piece.m2;
   piece = null;
   phase = 'LOCK_PAUSE';
   pauseTimer = 10;
@@ -290,8 +325,8 @@ function lockPiece() {
 
 function trySpawnPiece() {
   if (grid[SPAWN_COL][1] !== null || grid[SPAWN_COL][0] !== null) { gameOver(); return; }
-  piece = { col: SPAWN_COL, row: 1, rot: 0, s1: nextPair.s1, s2: nextPair.s2 };
-  nextPair = { s1: rollStage(), s2: rollStage() };
+  piece = { col: SPAWN_COL, row: 1, rot: 0, s1: nextPair.s1, s2: nextPair.s2, m1: nextPair.m1, m2: nextPair.m2 };
+  nextPair = rollPair();
   fallTimer = 0;
 }
 
@@ -322,12 +357,16 @@ function findGroups() {
 }
 
 function applyGravity() {
+  // Moves magicGrid flags in lockstep with grid so a マジックモヨモヨ never
+  // desyncs from its own cell when the column compacts.
   for (let c = 0; c < GRID_COLS; c++) {
-    const col = [];
-    for (let r = 0; r < GRID_ROWS; r++) if (grid[c][r] !== null) col.push(grid[c][r]);
-    for (let r = 0; r < GRID_ROWS; r++) grid[c][r] = null;
-    const startRow = GRID_ROWS - col.length;
-    col.forEach((stage, i) => { grid[c][startRow + i] = stage; });
+    const stages = [], magics = [];
+    for (let r = 0; r < GRID_ROWS; r++) {
+      if (grid[c][r] !== null) { stages.push(grid[c][r]); magics.push(magicGrid[c][r]); }
+    }
+    for (let r = 0; r < GRID_ROWS; r++) { grid[c][r] = null; magicGrid[c][r] = false; }
+    const startRow = GRID_ROWS - stages.length;
+    stages.forEach((stage, i) => { grid[c][startRow + i] = stage; magicGrid[c][startRow + i] = magics[i]; });
   }
 }
 
@@ -340,17 +379,23 @@ function resolveStep() {
   if (groups.length === 0) return false;
   chainCount++;
   const mult = 1 + (chainCount - 1) * 0.5;
+  let topStageThisStep = 0;
+  let magicFired = false;
+
   groups.forEach(g => {
     let anchor = g.cells[0];
     g.cells.forEach(cell => {
       if (cell[1] > anchor[1] || (cell[1] === anchor[1] && cell[0] < anchor[0])) anchor = cell;
     });
-    g.cells.forEach(([c, r]) => { grid[c][r] = null; });
+    // Capture which cells in this group were マジックモヨモヨ before clearing them.
+    const magicCells = g.cells.filter(([c, r]) => magicGrid[c][r]);
+    g.cells.forEach(([c, r]) => { grid[c][r] = null; magicGrid[c][r] = false; });
     const { x: mx, y: my } = cellCenter(anchor[0], anchor[1]);
     if (g.stage < STAGES.length - 1) {
       const newStage = g.stage + 1;
       grid[anchor[0]][anchor[1]] = newStage;
       score += Math.round(STAGES[newStage].pts * mult);
+      topStageThisStep = Math.max(topStageThisStep, newStage);
       if (STAGES[newStage].legendary) {
         score += 100;
         legendText = '🎉 モクモク進化！ +100';
@@ -359,16 +404,44 @@ function resolveStep() {
       }
     } else {
       score += Math.round(150 * mult);
+      topStageThisStep = Math.max(topStageThisStep, g.stage);
       legendText = '🎉 モクモク大連鎖！ +150';
       legendTimer = 130;
       addParticles(mx, my, '#FF5C7A', 30, 7);
     }
     addParticles(mx, my, STAGES[g.stage].color, 10 + g.cells.length * 2, 4);
+
+    // マジックモヨモヨ: wipe out everything directly touching each magic
+    // cell in the cleared group, regardless of its own stage.
+    magicCells.forEach(([mc, mr]) => {
+      magicFired = true;
+      [[mc+1,mr],[mc-1,mr],[mc,mr+1],[mc,mr-1]].forEach(([nc, nr]) => {
+        if (nc < 0 || nc >= GRID_COLS || nr < 0 || nr >= GRID_ROWS) return;
+        if (grid[nc][nr] === null) return;
+        const wipedStage = grid[nc][nr];
+        const { x: wx, y: wy } = cellCenter(nc, nr);
+        score += Math.round(STAGES[wipedStage].pts * 2);
+        addParticles(wx, wy, STAGES[wipedStage].color, 12, 5);
+        grid[nc][nr] = null;
+        magicGrid[nc][nr] = false;
+      });
+    });
   });
+
+  if (magicFired) {
+    legendText = '✨ マジックモヨモヨ炸裂！';
+    legendTimer = 130;
+    addShake(14);
+  }
+
   addShake(4 + chainCount * 2);
   if (chainCount > 1) {
     comboText = `${chainCount}れんさ！ ×${mult.toFixed(1)}`;
     comboTimer = 90;
+  }
+  if (chainCount >= 2) {
+    popStage = topStageThisStep;
+    popTimer = 50;
   }
   if (chainCount >= 3) {
     const isBig = chainCount >= 5;
@@ -393,29 +466,27 @@ function resolveStep() {
 function checkLevelUp() {
   const newLevel = 1 + Math.floor(score / LEVEL_STEP);
   if (newLevel <= level) return;
-  for (let lv = level + 1; lv <= newLevel; lv++) pendingGarbage += (lv - 1);
   level = newLevel;
-  celebrateText = `⬆️ Lv.${level} UP！`;
-  celebrateTimer = 90;
-  flashAlpha = 0.4;
-  addShake(8);
+  pendingLevelPreset = true;
+  celebrateText = `⬆️ Lv.${level} UP！盤面リセット！`;
+  celebrateTimer = 100;
+  flashAlpha = 0.5;
+  addShake(10);
 }
 
-function injectGarbage(count) {
-  // Only the bottom half of the grid, so a level-up never instantly buries
-  // the spawn column near the top.
-  const emptyCells = [];
-  for (let c = 0; c < GRID_COLS; c++) {
-    for (let r = Math.floor(GRID_ROWS / 2); r < GRID_ROWS; r++) {
-      if (grid[c][r] === null) emptyCells.push([c, r]);
+function applyLevelPreset() {
+  // Instead of adding garbage onto the existing board, the level-up wipes
+  // the board and seeds it with a fresh preset — bottom rows fill in as
+  // the level climbs, mirroring how falling-block games raise the floor.
+  grid = newGrid();
+  magicGrid = newMagicGrid();
+  const presetRows = Math.min(level - 1, 5);
+  for (let i = 0; i < presetRows; i++) {
+    const r = GRID_ROWS - 1 - i;
+    for (let c = 0; c < GRID_COLS; c++) {
+      if (Math.random() < 0.78) grid[c][r] = rollStage();
     }
   }
-  for (let i = 0; i < count && emptyCells.length > 0; i++) {
-    const idx = Math.floor(Math.random() * emptyCells.length);
-    const [c, r] = emptyCells.splice(idx, 1)[0];
-    grid[c][r] = rollStage();
-  }
-  applyGravity();
 }
 
 function updateHUD() {
@@ -432,11 +503,21 @@ function updateTimeDisplay() {
 
 // ─── DRAW ─────────────────────────────────────────────────────
 
-function drawGummyShape(x, y, r, color, face, angle, scale, legendary) {
+function drawGummyShape(x, y, r, color, face, angle, scale, legendary, magic) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
   ctx.scale(scale, scale);
+
+  if (magic) {
+    const hue = (Date.now() * 0.25) % 360;
+    ctx.save();
+    ctx.strokeStyle = `hsl(${hue},90%,68%)`;
+    ctx.lineWidth = r * 0.16;
+    ctx.shadowColor = `hsl(${hue},90%,68%)`; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.roundRect(-r*1.0, -r*1.0, r*2.0, r*2.0, r*0.55); ctx.stroke();
+    ctx.restore();
+  }
 
   if (legendary) { ctx.shadowColor = '#FFE080'; ctx.shadowBlur = 18; }
 
@@ -476,6 +557,15 @@ function drawGummyShape(x, y, r, color, face, angle, scale, legendary) {
   ctx.fillStyle = '#2A7868';
   ctx.beginPath(); ctx.arc(0, r*0.44, r*0.05, 0, Math.PI*2); ctx.fill();
 
+  if (magic) {
+    ctx.save();
+    ctx.font = `${Math.round(r*0.55)}px Arial`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('✨', r*0.62, -r*0.62);
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -507,7 +597,7 @@ function drawGridCells() {
       if (stage === null) continue;
       const { x, y } = cellCenter(c, r);
       const st = STAGES[stage];
-      drawGummyShape(x, y, CELL * 0.42, st.color, st.face, 0, 1, st.legendary);
+      drawGummyShape(x, y, CELL * 0.42, st.color, st.face, 0, 1, st.legendary, magicGrid[c][r]);
     }
   }
 }
@@ -518,8 +608,8 @@ function drawPiece() {
   const a = cellCenter(piece.col, piece.row);
   const b = cellCenter(sat.col, sat.row);
   const pulse = 1 + 0.04 * Math.sin(Date.now() * 0.012);
-  drawGummyShape(a.x, a.y, CELL * 0.42 * pulse, STAGES[piece.s1].color, STAGES[piece.s1].face, 0, 1, STAGES[piece.s1].legendary);
-  drawGummyShape(b.x, b.y, CELL * 0.42 * pulse, STAGES[piece.s2].color, STAGES[piece.s2].face, 0, 1, STAGES[piece.s2].legendary);
+  drawGummyShape(a.x, a.y, CELL * 0.42 * pulse, STAGES[piece.s1].color, STAGES[piece.s1].face, 0, 1, STAGES[piece.s1].legendary, piece.m1);
+  drawGummyShape(b.x, b.y, CELL * 0.42 * pulse, STAGES[piece.s2].color, STAGES[piece.s2].face, 0, 1, STAGES[piece.s2].legendary, piece.m2);
 }
 
 function drawNextPreview() {
@@ -536,24 +626,25 @@ function drawNextPreview() {
   ctx.restore();
   if (nextPair) {
     const r = 13;
-    drawGummyShape(bx + 30, by + 34, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false);
-    drawGummyShape(bx + 30, by + 64, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false);
+    drawGummyShape(bx + 30, by + 34, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false, nextPair.m1);
+    drawGummyShape(bx + 30, by + 64, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false, nextPair.m2);
   }
 }
 
-function drawButtons() {
-  BUTTONS.forEach(b => {
-    const pressed = activeBtn === b.key;
-    ctx.save();
-    ctx.fillStyle = pressed ? '#FF8FBC' : 'rgba(255,111,168,0.85)';
-    ctx.beginPath(); ctx.roundRect(b.x, BTN_Y, BTN_W, BTN_H, 14); ctx.fill();
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 22px Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(b.label, b.x + BTN_W/2, BTN_Y + BTN_H/2 + 1);
-    ctx.textBaseline = 'alphabetic';
-    ctx.restore();
-  });
+function drawChainPop() {
+  if (popTimer <= 0) return;
+  popTimer--;
+  const t = popTimer / 50; // 1 -> 0
+  const stage = STAGES[popStage] || STAGES[STAGES.length - 1];
+  const cx = GRID_X0 + GRID_W / 2;
+  const cy = GRID_Y0 + GRID_H / 2;
+  const pop = 1 - Math.pow(1 - Math.min(1, (1 - t) * 3), 2); // fast ease-out over first third
+  const scale = 0.3 + pop * 1.3;
+  const alpha = t < 0.3 ? t / 0.3 : 1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  drawGummyShape(cx, cy, 70, stage.color, stage.face, 0, scale, stage.legendary, false);
+  ctx.restore();
 }
 
 function drawParticles() {
@@ -741,7 +832,7 @@ function draw() {
   if (phase === 'FALL') drawPiece();
   drawParticles();
   drawNextPreview();
-  drawButtons();
+  drawChainPop();
   drawComboAnnouncement();
 
   ctx.restore();
@@ -802,9 +893,9 @@ function update() {
     }
   } else if (phase === 'SPAWN_PAUSE') {
     if (--pauseTimer <= 0 && state === 'PLAYING') {
-      if (pendingGarbage > 0) {
-        injectGarbage(pendingGarbage);
-        pendingGarbage = 0;
+      if (pendingLevelPreset) {
+        applyLevelPreset();
+        pendingLevelPreset = false;
       }
       phase = 'FALL';
       trySpawnPiece();
@@ -815,6 +906,7 @@ function update() {
 function gameOver() {
   state = 'GAMEOVER';
   piece = null;
+  stopBGM();
   if (score > bestScore) {
     bestScore = score;
     localStorage.setItem('moyomoyo-best', String(bestScore));
@@ -827,6 +919,8 @@ function gameOver() {
   document.getElementById('ov-title').textContent = '😵 グミがあふれた！';
   document.getElementById('ov-sub').textContent =
     `Lv.${level}　スコア: ${score}pt　ベスト: ${bestScore}pt\n⏱ ${mm}:${String(ss).padStart(2,'0')}`;
+  document.getElementById('left-col').style.visibility = 'hidden';
+  document.getElementById('right-col').style.visibility = 'hidden';
 }
 
 function startGame() {
@@ -834,9 +928,10 @@ function startGame() {
   phase = 'FALL';
   score = 0;
   level = 1;
-  pendingGarbage = 0;
+  pendingLevelPreset = false;
   playFrames = 0;
   grid = newGrid();
+  magicGrid = newMagicGrid();
   particles = [];
   chainCount = 0;
   fallTimer = 0;
@@ -844,15 +939,104 @@ function startGame() {
   comboText = ''; comboTimer = 0;
   legendText = ''; legendTimer = 0;
   celebrateText = ''; celebrateTimer = 0;
+  popTimer = 0; popStage = 0;
   flashAlpha = 0;
   shakeX = 0; shakeY = 0;
   document.getElementById('pause-btn').textContent = '⏸';
-  nextPair = { s1: rollStage(), s2: rollStage() };
+  nextPair = rollPair();
   document.getElementById('hud').style.visibility = 'visible';
+  document.getElementById('left-col').style.visibility = 'visible';
+  document.getElementById('right-col').style.visibility = 'visible';
   document.getElementById('overlay').classList.add('hidden');
   updateHUD();
   updateTimeDisplay();
+  startBGM();
   trySpawnPiece();
+}
+
+// ─── BGM (soft ambient pad, barely audible) ────────────────────
+
+let audioCtx = null;
+let bgmMaster = null;
+let bgmNodes = null;
+let bgmDucked = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  audioCtx = new AC();
+  bgmMaster = audioCtx.createGain();
+  bgmMaster.gain.value = 0;
+  bgmMaster.connect(audioCtx.destination);
+}
+
+function startBGM() {
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (bgmNodes) return;
+
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 900;
+  filter.Q.value = 0.3;
+  filter.connect(bgmMaster);
+
+  const freqs = [130.81, 164.81, 196.00, 261.63]; // soft C major pad
+  const oscs = freqs.map(f => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.22 / freqs.length;
+    osc.connect(g);
+    g.connect(filter);
+    osc.start();
+    return { osc, g };
+  });
+
+  // Slow filter wobble for a gentle "もよもよ" breathing feel
+  const lfo = audioCtx.createOscillator();
+  lfo.type = 'sine';
+  lfo.frequency.value = 0.07;
+  const lfoGain = audioCtx.createGain();
+  lfoGain.gain.value = 260;
+  lfo.connect(lfoGain);
+  lfoGain.connect(filter.frequency);
+  lfo.start();
+
+  bgmNodes = { filter, oscs, lfo, lfoGain };
+
+  const target = bgmDucked ? 0.012 : 0.035;
+  const now = audioCtx.currentTime;
+  bgmMaster.gain.cancelScheduledValues(now);
+  bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
+  bgmMaster.gain.linearRampToValueAtTime(target, now + 2.5);
+}
+
+function stopBGM() {
+  if (!audioCtx || !bgmNodes) return;
+  const now = audioCtx.currentTime;
+  bgmMaster.gain.cancelScheduledValues(now);
+  bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
+  bgmMaster.gain.linearRampToValueAtTime(0, now + 0.8);
+  const nodes = bgmNodes;
+  bgmNodes = null;
+  setTimeout(() => {
+    nodes.oscs.forEach(({ osc, g }) => { osc.stop(); osc.disconnect(); g.disconnect(); });
+    nodes.lfo.stop(); nodes.lfo.disconnect(); nodes.lfoGain.disconnect();
+    nodes.filter.disconnect();
+  }, 900);
+}
+
+function duckBGM(down) {
+  bgmDucked = down;
+  if (!audioCtx || !bgmMaster) return;
+  const now = audioCtx.currentTime;
+  bgmMaster.gain.cancelScheduledValues(now);
+  bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
+  bgmMaster.gain.linearRampToValueAtTime(down ? 0.012 : 0.035, now + 0.6);
 }
 
 // ─── INPUT ────────────────────────────────────────────────────
@@ -868,28 +1052,26 @@ function getPos(e) {
   };
 }
 
-function hitButton(p) {
-  for (const b of BUTTONS) {
-    if (p.x >= b.x && p.x <= b.x + BTN_W && p.y >= BTN_Y && p.y <= BTN_Y + BTN_H) return b.key;
-  }
-  return null;
-}
-
 function pauseGame() {
   if (state !== 'PLAYING') return;
   state = 'PAUSED';
   document.getElementById('pause-btn').textContent = '▶';
+  duckBGM(true);
 }
 function resumeGame() {
   if (state !== 'PAUSED') return;
   state = 'PLAYING';
   document.getElementById('pause-btn').textContent = '⏸';
+  duckBGM(false);
 }
 function quitToTitle() {
   state = 'TITLE';
   titleFrame = 0;
   document.getElementById('pause-btn').textContent = '⏸';
   document.getElementById('hud').style.visibility = 'hidden';
+  document.getElementById('left-col').style.visibility = 'hidden';
+  document.getElementById('right-col').style.visibility = 'hidden';
+  stopBGM();
 }
 
 function onDown(e) {
@@ -905,25 +1087,31 @@ function onDown(e) {
     if (p.x >= W/2-90 && p.x <= W/2+90 && p.y >= PAUSE_QUIT_Y-22 && p.y <= PAUSE_QUIT_Y+22) { quitToTitle(); return; }
     return;
   }
-  if (state !== 'PLAYING' || phase !== 'FALL') return;
-  const key = hitButton(p);
-  if (!key) return;
-  activeBtn = key;
-  if (key === 'left') moveLeft();
-  else if (key === 'right') moveRight();
-  else if (key === 'rotate') rotatePiece();
-  else if (key === 'down') softDrop();
 }
 
 function onUp(e) {
   e.preventDefault();
-  activeBtn = null;
 }
 
 canvas.addEventListener('mousedown',  onDown, { passive: false });
 canvas.addEventListener('mouseup',    onUp,   { passive: false });
 canvas.addEventListener('touchstart', onDown, { passive: false });
 canvas.addEventListener('touchend',   onUp,   { passive: false });
+
+function ctrlAction(action) {
+  if (state !== 'PLAYING' || phase !== 'FALL') return;
+  if (action === 'left') moveLeft();
+  else if (action === 'right') moveRight();
+  else if (action === 'rotate') rotatePiece();
+  else if (action === 'down') softDrop();
+}
+
+document.querySelectorAll('.ctrl-btn').forEach(btn => {
+  const action = btn.dataset.action;
+  const fire = (e) => { e.preventDefault(); ctrlAction(action); };
+  btn.addEventListener('mousedown', fire, { passive: false });
+  btn.addEventListener('touchstart', fire, { passive: false });
+});
 
 document.getElementById('ov-btn').addEventListener('click', () => {
   document.getElementById('overlay').classList.add('hidden');
