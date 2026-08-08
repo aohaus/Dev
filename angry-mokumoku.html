@@ -3605,11 +3605,11 @@ function onDown(e) {
   if (state === 'TITLE') {
     const p = getPos(e);
     // Cross-links to the sister games (top-right corner, stacked)
-    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 8 && p.y <= 38) {
+    if (p.x >= W - 280 && p.x <= W - 10 && p.y >= 16 && p.y <= 52) {
       window.location.href = 'moyomoyo.html';
       return;
     }
-    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 38 && p.y <= 58) {
+    if (p.x >= W - 280 && p.x <= W - 10 && p.y >= 52 && p.y <= 86) {
       window.location.href = 'mk-mobile.html';
       return;
     }
@@ -4061,16 +4061,19 @@ function drawTitleScreen() {
   ctx.fillText('★  K L  C I T Y  E D I T I O N  ★', W/2, 112);
   ctx.restore();
 
-  // Cross-links to the sister games
+  // Cross-links to the sister games — sized up from the original for
+  // easier tapping. Kept a bit narrower than the other two titles'
+  // links since this game's wide "ANGRY MOKUMOKU" logo shares this
+  // same corner's vertical band and needs the horizontal clearance.
   ctx.save();
   ctx.textAlign = 'right';
-  ctx.font = '12px "Courier New", monospace';
+  ctx.font = 'bold 19px "Courier New", monospace';
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#FF8FC4';
-  ctx.fillText('🍬 モヨモヨへ ▶', W - 20, 28);
+  ctx.fillText('🍬 モヨモヨへ ▶', W - 18, 38);
   ctx.fillStyle = '#FFD37A';
-  ctx.fillText('⚽ MK Mobileへ ▶', W - 20, 48);
+  ctx.fillText('⚽ MK Mobileへ ▶', W - 18, 68);
   ctx.restore();
 
   // Owl character
