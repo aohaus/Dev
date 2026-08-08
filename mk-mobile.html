@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
@@ -163,35 +163,55 @@ canvas {
 }
 #rotate-hint span { font-size: 56px; animation: rotate-hint-spin 1.5s ease-in-out infinite alternate; }
 @keyframes rotate-hint-spin { from { transform: rotate(-30deg); } to { transform: rotate(30deg); } }
+/* Console-style frame spanning the whole viewport on the title screen —
+   shared structure with the other two games' title screens, so the
+   frame always reads as full-screen regardless of this canvas's own
+   aspect ratio. */
+#title-frame {
+  display: block;
+  position: fixed; inset: 14px;
+  border: 3px solid #FFC94A;
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+#title-frame::after {
+  content: '';
+  position: absolute; inset: 5px;
+  border: 1px solid #8A6218;
+  border-radius: 8px;
+}
 @media (max-width: 600px) and (orientation: portrait) {
   #rotate-hint { display: flex; }
   #game-layout { display: none; }
+  #title-frame { display: none; }
 }
 </style>
 </head>
 <body>
+<div id="title-frame"></div>
 <div id="game-layout">
   <div id="wrapper">
     <canvas id="c"></canvas>
     <div id="hud" style="visibility:hidden">
       <div id="score-display">0 - 0</div>
       <div id="time-display">1:00</div>
-      <button id="pause-btn" title="Pause">⏸</button>
+      <button id="pause-btn" title="一時停止">⏸</button>
     </div>
-    <div id="joystick" aria-label="Move stick">
+    <div id="joystick" aria-label="移動スティック">
       <div id="joystick-knob"></div>
     </div>
-    <button id="shoot-btn" aria-label="Shoot">SHOOT</button>
+    <button id="shoot-btn" aria-label="シュート">シュート</button>
     <div id="overlay" class="hidden">
       <h1 id="ov-title"></h1>
       <p id="ov-sub"></p>
-      <button id="ov-btn">Play Again!</button>
+      <button id="ov-btn">もう一度！</button>
     </div>
   </div>
 </div>
 <div id="rotate-hint">
   <span>📱</span>
-  <p>Rotate to play!</p>
+  <p>横向きにしてプレイ！</p>
 </div>
 
 <script>
@@ -232,9 +252,9 @@ const POWER_SHOT_SPEED = 12.5;
 
 const MATCH_DURATIONS = [60, 180, 300]; // 1 / 3 / 5 minutes, in seconds
 const CPU_LEVELS = [
-  { label: 'EASY',   maxSpeed: 4.4, wanderAmp: 0.9, wanderMax: 46 },
-  { label: 'NORMAL', maxSpeed: 5.6, wanderAmp: 0.6, wanderMax: 30 },
-  { label: 'HARD',   maxSpeed: 6.8, wanderAmp: 0.3, wanderMax: 14 },
+  { label: 'かんたん',   accel: 0.55, maxSpeed: 4.4, wanderAmp: 0.9, wanderMax: 46 },
+  { label: 'ふつう',     accel: 0.8,  maxSpeed: 5.6, wanderAmp: 0.6, wanderMax: 30 },
+  { label: 'むずかしい', accel: 1.05, maxSpeed: 6.8, wanderAmp: 0.3, wanderMax: 14 },
 ];
 
 // Time-select screen layout (shared between draw & hit-testing)
@@ -536,7 +556,7 @@ function resolvePaddleHit(entity, radius) {
       if (isPowerShot) {
         addParticles(ball.x, ball.y, '#FF6A3D', 16, 6);
         addShake(9);
-        shotMessage = '⚡ POWER SHOT!';
+        shotMessage = '⚡ 強シュート！';
         shotMessageTimer = 36;
       } else {
         addParticles(ball.x, ball.y, '#FFE9A8', 6, 3);
@@ -577,8 +597,8 @@ function updateBall() {
 }
 
 function scoreGoal(who) {
-  if (who === 'home') { scoreHome++; goalMessage = '⚽ GOAL!'; }
-  else { scoreAway++; goalMessage = '😵 CONCEDED...'; }
+  if (who === 'home') { scoreHome++; goalMessage = '⚽ ゴール！'; }
+  else { scoreAway++; goalMessage = '😵 失点...'; }
   updateHUD();
   addParticles(who === 'home' ? PITCH_X1 : PITCH_X0, PITCH_CY, '#FFC94A', 26, 6);
   addShake(14);
@@ -613,12 +633,9 @@ function drawTitleScreen() {
     ctx.beginPath(); ctx.arc(fx * W, fy * H, dr, 0, Math.PI*2); ctx.fill();
   });
 
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,201,74,0.35)'; ctx.lineWidth = 3;
-  ctx.strokeRect(12, 12, W - 24, H - 24);
-  ctx.strokeStyle = 'rgba(255,201,74,0.16)'; ctx.lineWidth = 1;
-  ctx.strokeRect(17, 17, W - 34, H - 34);
-  ctx.restore();
+  // (Frame border is the full-viewport #title-frame HTML element, not
+  // drawn on the canvas — shared structure with the other two games'
+  // title screens so it always reads as full-screen.)
 
   // Cross-links to the two sister games, stacked top-right — same
   // corner both other titles use for their own "other game" links.
@@ -629,9 +646,9 @@ function drawTitleScreen() {
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#B0D8FF';
-  ctx.fillText('🦉 Angry Mokumoku ▶', W - 26, 44);
+  ctx.fillText('🦉 アングリーモクモクへ ▶', W - 26, 44);
   ctx.fillStyle = '#FF9FCB';
-  ctx.fillText('🍬 Moyomoyo ▶', W - 26, 80);
+  ctx.fillText('🍬 モヨモヨへ ▶', W - 26, 80);
   ctx.restore();
 
   ctx.save();
@@ -668,8 +685,8 @@ function drawTitleScreen() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.font = '13px Arial';
-  ctx.fillText('Score as many goals as you can before time runs out', W/2, 320);
-  ctx.fillText('Stick to move, time your SHOOT for a power strike', W/2, 340);
+  ctx.fillText('制限時間内によりたくさんゴールを決めよう', W/2, 320);
+  ctx.fillText('スティックで移動・シュートでタイミングよく強打！', W/2, 340);
   ctx.restore();
 
   const btnY = 390;
@@ -682,7 +699,7 @@ function drawTitleScreen() {
   ctx.fillStyle = '#201200';
   ctx.font = 'bold 19px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('▶ START', W/2, btnY);
+  ctx.fillText('▶ スタート', W/2, btnY);
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
 
@@ -695,10 +712,16 @@ function drawTitleScreen() {
   ctx.font = '11px Arial';
   ctx.fillText('🦉 × 🍬 × ⚽  M O K U M O K U   S E R I E S', W/2, tagY);
   ctx.restore();
+
+  // Footer instruction line, matching the other two games' title screens.
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('タップ / クリックで選択　・　Enterでスタート', W/2, H - 20);
 }
 
 // ─── TIME SELECT SCREEN ───────────────────────────────────────
-const TIME_LABELS = ['1 MIN', '3 MIN', '5 MIN'];
+const TIME_LABELS = ['1 分', '3 分', '5 分'];
 function drawTimeSelect() {
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, '#0B1330'); bg.addColorStop(1, '#0A1228');
@@ -714,7 +737,7 @@ function drawTimeSelect() {
   ctx.fillStyle = '#EFFFEA';
   ctx.font = 'bold 28px Arial';
   ctx.shadowColor = '#7FE87F'; ctx.shadowBlur = 16;
-  ctx.fillText('CHOOSE MATCH TIME', W/2, 130);
+  ctx.fillText('試合時間をえらぼう', W/2, 130);
   ctx.shadowBlur = 0;
   ctx.restore();
 
@@ -739,7 +762,7 @@ function drawTimeSelect() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   ctx.font = '13px Arial';
-  ctx.fillText('CPU LEVEL', W/2, TS_LVL_Y - 12);
+  ctx.fillText('CPU レベル', W/2, TS_LVL_Y - 12);
   ctx.restore();
 
   const lvlTotalW = TS_LVL_W * 3 + TS_LVL_GAP * 2;
@@ -764,7 +787,7 @@ function drawTimeSelect() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.font = '13px Arial';
-  ctx.fillText('◀ BACK TO TITLE', 70, H - 26);
+  ctx.fillText('◀ タイトルにもどる', 70, H - 26);
   ctx.restore();
 }
 
@@ -780,7 +803,7 @@ function drawPausedOverlay() {
   ctx.fillStyle = '#EFFFEA';
   ctx.font = 'bold 28px Arial';
   ctx.shadowColor = '#7FE87F'; ctx.shadowBlur = 18;
-  ctx.fillText('⏸ PAUSED', W/2, PAUSE_TITLE_Y);
+  ctx.fillText('⏸ 一時停止中', W/2, PAUSE_TITLE_Y);
   ctx.shadowBlur = 0;
   ctx.restore();
 
@@ -790,7 +813,7 @@ function drawPausedOverlay() {
   ctx.fillStyle = '#201200';
   ctx.font = 'bold 18px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('▶ RESUME', W/2, PAUSE_RESUME_Y);
+  ctx.fillText('▶ 再開', W/2, PAUSE_RESUME_Y);
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
 
@@ -802,7 +825,7 @@ function drawPausedOverlay() {
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.font = '15px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🏠 TITLE', W/2, PAUSE_QUIT_Y);
+  ctx.fillText('🏠 タイトルへ', W/2, PAUSE_QUIT_Y);
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
 }
@@ -911,6 +934,7 @@ function startMatch(durationSeconds) {
   document.getElementById('joystick').style.visibility = 'visible';
   document.getElementById('shoot-btn').style.visibility = 'visible';
   document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('title-frame').style.display = 'none';
   document.getElementById('pause-btn').textContent = '⏸';
 }
 
@@ -922,9 +946,9 @@ function endMatch() {
   const ov = document.getElementById('overlay');
   ov.classList.remove('hidden');
   let title;
-  if (scoreHome > scoreAway) title = '🏆 VICTORY!';
-  else if (scoreHome < scoreAway) title = '😢 DEFEAT...';
-  else title = '🤝 DRAW';
+  if (scoreHome > scoreAway) title = '🏆 勝利！';
+  else if (scoreHome < scoreAway) title = '😢 敗北...';
+  else title = '🤝 引き分け';
   document.getElementById('ov-title').textContent = title;
   document.getElementById('ov-sub').textContent = `${scoreHome} - ${scoreAway}`;
 }
@@ -947,6 +971,7 @@ function quitToTitle() {
   document.getElementById('shoot-btn').style.visibility = 'hidden';
   resetStick();
   document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('title-frame').style.display = 'block';
   document.getElementById('pause-btn').textContent = '⏸';
 }
 
@@ -1043,6 +1068,10 @@ shootBtn.addEventListener('pointerdown', e => {
 });
 
 document.addEventListener('keydown', e => {
+  if (state === 'TITLE') {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state = 'TIMESELECT'; }
+    return;
+  }
   if (e.key === 'Escape' && (state === 'PLAYING' || state === 'PAUSED')) {
     if (state === 'PLAYING') pauseGame(); else resumeGame();
     return;

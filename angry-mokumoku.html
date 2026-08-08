@@ -101,12 +101,34 @@ canvas { display: block; cursor: crosshair; width: 100%; height: auto; }
 }
 #rotate-hint span { font-size: 56px; animation: spin 1.5s ease-in-out infinite alternate; }
 @keyframes spin { from { transform: rotate(-30deg); } to { transform: rotate(30deg); } }
+/* Console-style frame spanning the whole viewport on the title screen —
+   shared structure with the other two games' title screens, so the
+   frame always reads as full-screen regardless of any given game's
+   own canvas aspect ratio (this game's canvas is width-capped at
+   1366px, which used to leave the canvas-drawn border short of the
+   edges on very wide screens). */
+#title-frame {
+  display: block;
+  position: fixed; inset: 14px;
+  border: 3px solid #2A7A30;
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+#title-frame::after {
+  content: '';
+  position: absolute; inset: 5px;
+  border: 1px solid #1A5020;
+  border-radius: 8px;
+}
 @media (max-width: 600px) and (orientation: portrait) {
   #rotate-hint { display: flex; }
+  #title-frame { display: none; }
 }
 </style>
 </head>
 <body>
+<div id="title-frame"></div>
 <div id="wrapper">
   <canvas id="c"></canvas>
   <div id="hud" style="visibility:hidden">
@@ -3576,6 +3598,7 @@ function startFromTitle() {
   allClearParticles = [];
   particles = [];
   document.getElementById('hud').style.visibility = 'visible';
+  document.getElementById('title-frame').style.display = 'none';
   setupLevel(currentLevel);
   resetBird();
   updateHUD();
@@ -3600,6 +3623,7 @@ function onDown(e) {
     titleMenuSel = 0; titleFrame = 0;
     allClearParticles = []; shareCopied = false; shareCopiedTimer = 0;
     document.getElementById('hud').style.visibility = 'hidden';
+    document.getElementById('title-frame').style.display = 'block';
     return;
   }
   if (state === 'TITLE') {
@@ -4042,11 +4066,9 @@ function drawTitleScreen() {
   for (let y = 0; y < H; y += 4) {
     ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, y, W, 2);
   }
-  // Border
-  ctx.strokeStyle = '#2A7A30'; ctx.lineWidth = 3;
-  ctx.strokeRect(12, 12, W-24, H-24);
-  ctx.strokeStyle = '#1A5020'; ctx.lineWidth = 1;
-  ctx.strokeRect(17, 17, W-34, H-34);
+  // (Frame border is the full-viewport #title-frame HTML element, not
+  // drawn on the canvas — shared structure with the other two games'
+  // title screens so it always reads as full-screen.)
 
   // Title
   ctx.save();
@@ -4118,6 +4140,18 @@ function drawTitleScreen() {
     ctx.fillText(arrow + item.text, W/2, y);
   });
   ctx.shadowBlur = 0;
+
+  // Franchise footer tag — ties the three games together as one series,
+  // matching the badge the other two title screens show.
+  const tagY = H - 56;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W/2 - 70, tagY - 16); ctx.lineTo(W/2 + 70, tagY - 16); ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#2A6A2A';
+  ctx.font = '11px "Courier New", monospace';
+  ctx.fillText('🦉 × 🍬 × ⚽  M O K U M O K U   S E R I E S', W/2, tagY);
+  ctx.restore();
 
   // Player count
   if (onlinePlayers > 1) {
