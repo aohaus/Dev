@@ -7,7 +7,15 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  background: linear-gradient(160deg, #2A1840 0%, #4A2560 55%, #331A48 100%);
+  /* Soft candy bokeh dots tiled across the full viewport, so on wide
+     screens (e.g. iPad landscape) the margins beside the portrait game
+     read as intentional decoration instead of empty dead space. */
+  background:
+    radial-gradient(circle, rgba(255,180,220,0.09) 0 5px, transparent 6px) 20px 30px / 220px 220px repeat,
+    radial-gradient(circle, rgba(255,180,220,0.07) 0 7px, transparent 8px) 140px 160px / 320px 320px repeat,
+    radial-gradient(circle, rgba(200,160,255,0.08) 0 4px, transparent 5px) 60px 220px / 260px 260px repeat,
+    radial-gradient(circle, rgba(255,210,230,0.06) 0 6px, transparent 7px) 200px 60px / 380px 380px repeat,
+    linear-gradient(160deg, #2A1840 0%, #4A2560 55%, #331A48 100%);
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   min-height: 100vh;
