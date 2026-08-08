@@ -84,31 +84,29 @@ canvas {
   font-size: 17px;
   cursor: pointer;
 }
-#dpad {
+#joystick {
   position: absolute;
-  left: 16px; bottom: 16px;
-  display: grid;
-  grid-template-columns: repeat(3, clamp(46px, 8vw, 76px));
-  grid-template-rows: repeat(3, clamp(46px, 8vw, 76px));
-  gap: 5px;
+  left: 20px; bottom: 20px;
+  width: clamp(110px, 20vw, 160px);
+  height: clamp(110px, 20vw, 160px);
+  border-radius: 50%;
+  background: rgba(255,201,74,0.12);
+  border: 2px solid rgba(255,201,74,0.4);
+  box-shadow: inset 0 0 20px rgba(255,201,74,0.15);
   visibility: hidden;
+  touch-action: none;
+  pointer-events: all;
 }
-.dbtn {
+#joystick-knob {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 44%; height: 44%;
+  border-radius: 50%;
   background: rgba(255,201,74,0.85);
-  border: none;
-  color: #2A1800;
-  font-size: clamp(18px, 3.4vw, 28px);
-  font-weight: 900;
-  border-radius: 12px;
-  cursor: pointer;
-  box-shadow: 0 3px 12px rgba(255,201,74,0.35);
-  touch-action: manipulation;
+  box-shadow: 0 3px 14px rgba(255,201,74,0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
-.dbtn:active { background: #FFDD8F; }
-.dbtn.up    { grid-column: 2; grid-row: 1; }
-.dbtn.left  { grid-column: 1; grid-row: 2; }
-.dbtn.right { grid-column: 3; grid-row: 2; }
-.dbtn.down  { grid-column: 2; grid-row: 3; }
 #overlay {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
@@ -152,11 +150,8 @@ canvas {
       <div id="time-display">1:00</div>
       <button id="pause-btn" title="一時停止">⏸</button>
     </div>
-    <div id="dpad">
-      <button class="dbtn up" data-dir="up" aria-label="上へ">▲</button>
-      <button class="dbtn left" data-dir="left" aria-label="左へ">◀</button>
-      <button class="dbtn right" data-dir="right" aria-label="右へ">▶</button>
-      <button class="dbtn down" data-dir="down" aria-label="下へ">▼</button>
+    <div id="joystick" aria-label="移動スティック">
+      <div id="joystick-knob"></div>
     </div>
     <div id="overlay" class="hidden">
       <h1 id="ov-title"></h1>
@@ -191,7 +186,6 @@ const NET_DEPTH = 22;
 
 const PLAYER_R = 24, CPU_R = 24, BALL_R = 11;
 const PLAYER_MAX_SPEED = 6.6, PLAYER_ACCEL = 0.95;
-const CPU_MAX_SPEED    = 5.6, CPU_ACCEL    = 0.8;
 const MOVE_FRICTION = 0.82;
 const BALL_FRICTION = 0.994;
 const WALL_BOUNCE = 0.85;
@@ -200,12 +194,23 @@ const PADDLE_HIT_BASE_SPEED = 6.2;
 const PADDLE_HIT_MOMENTUM = 0.6;
 
 const MATCH_DURATIONS = [60, 180, 300]; // 1 / 3 / 5 minutes, in seconds
+const CPU_LEVELS = [
+  { label: 'かんたん',   accel: 0.55, maxSpeed: 4.4, wanderAmp: 0.9, wanderMax: 46 },
+  { label: 'ふつう',     accel: 0.8,  maxSpeed: 5.6, wanderAmp: 0.6, wanderMax: 30 },
+  { label: 'むずかしい', accel: 1.05, maxSpeed: 6.8, wanderAmp: 0.3, wanderMax: 14 },
+];
+
+// Time-select screen layout (shared between draw & hit-testing)
+const TS_CARD_W = 170, TS_CARD_H = 140, TS_CARD_GAP = 30, TS_CARD_Y = 178;
+const TS_LVL_W = 140, TS_LVL_H = 46, TS_LVL_GAP = 16;
+const TS_LVL_Y = TS_CARD_Y + TS_CARD_H + 46;
 
 // ─── STATE ────────────────────────────────────────────────────
 let state = 'TITLE'; // TITLE | TIMESELECT | PLAYING | PAUSED | GOAL_PAUSE | GAMEOVER
 let titleFrame = 0;
 let matchFramesTotal = MATCH_DURATIONS[0] * 60;
 let matchFramesLeft = matchFramesTotal;
+let cpuLevel = 1; // index into CPU_LEVELS, chosen on the time-select screen
 let scoreHome = 0, scoreAway = 0;
 let goalPauseTimer = 0;
 let goalMessage = '';
@@ -217,6 +222,7 @@ const player = { x: 0, y: 0, vx: 0, vy: 0 };
 const cpu    = { x: 0, y: 0, vx: 0, vy: 0 };
 const ball   = { x: 0, y: 0, vx: 0, vy: 0 };
 const held = { up: false, down: false, left: false, right: false };
+let stickX = 0, stickY = 0; // analog joystick tilt, each axis in [-1, 1]
 
 function homePositions() {
   player.x = PITCH_X0 + PITCH_W * 0.22; player.y = H / 2; player.vx = 0; player.vy = 0;
@@ -333,10 +339,11 @@ function drawPitch() {
 
 // ─── PLAYER / CPU MOVEMENT ────────────────────────────────────
 function applyMovement(entity, dx, dy, accel, maxSpeed, minX, maxX, minY, maxY) {
-  if (dx || dy) {
-    const len = Math.hypot(dx, dy) || 1;
-    entity.vx += (dx / len) * accel;
-    entity.vy += (dy / len) * accel;
+  const len = Math.hypot(dx, dy);
+  if (len > 0.001) {
+    const pull = Math.min(len, 1); // analog stick tilt scales acceleration; digital input is always full tilt
+    entity.vx += (dx / len) * accel * pull;
+    entity.vy += (dy / len) * accel * pull;
   } else {
     entity.vx *= MOVE_FRICTION;
     entity.vy *= MOVE_FRICTION;
@@ -348,16 +355,17 @@ function applyMovement(entity, dx, dy, accel, maxSpeed, minX, maxX, minY, maxY) 
 }
 
 function updatePlayer() {
-  let dx = (held.right ? 1 : 0) - (held.left ? 1 : 0);
-  let dy = (held.down ? 1 : 0) - (held.up ? 1 : 0);
+  let dx = (held.right ? 1 : 0) - (held.left ? 1 : 0) + stickX;
+  let dy = (held.down ? 1 : 0) - (held.up ? 1 : 0) + stickY;
   applyMovement(player, dx, dy, PLAYER_ACCEL, PLAYER_MAX_SPEED,
     PITCH_X0 + PLAYER_R, HALF_X - PLAYER_R, PITCH_Y0 + PLAYER_R, PITCH_Y1 - PLAYER_R);
 }
 
 let cpuWander = 0;
 function updateCPU() {
-  cpuWander += (Math.random() - 0.5) * 0.6;
-  cpuWander = Math.max(-30, Math.min(30, cpuWander));
+  const lvl = CPU_LEVELS[cpuLevel];
+  cpuWander += (Math.random() - 0.5) * lvl.wanderAmp;
+  cpuWander = Math.max(-lvl.wanderMax, Math.min(lvl.wanderMax, cpuWander));
   const ballInCpuHalf = ball.x > HALF_X;
   const targetX = ballInCpuHalf
     ? Math.min(PITCH_X1 - CPU_R, ball.x + 14)
@@ -366,7 +374,7 @@ function updateCPU() {
   const dx = targetX - cpu.x, dy = targetY - cpu.y;
   const dist = Math.hypot(dx, dy);
   const nx = dist > 4 ? dx / dist : 0, ny = dist > 4 ? dy / dist : 0;
-  applyMovement(cpu, nx, ny, CPU_ACCEL, CPU_MAX_SPEED,
+  applyMovement(cpu, nx, ny, lvl.accel, lvl.maxSpeed,
     HALF_X + CPU_R, PITCH_X1 - CPU_R, PITCH_Y0 + CPU_R, PITCH_Y1 - CPU_R);
 }
 
@@ -524,7 +532,7 @@ function drawTitleScreen() {
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.font = '13px Arial';
   ctx.fillText('制限時間内によりたくさんゴールを決めよう', W/2, 320);
-  ctx.fillText('▲▼◀▶ で移動、体を当ててシュート', W/2, 340);
+  ctx.fillText('スティックで移動、体を当ててシュート', W/2, 340);
   ctx.restore();
 
   const btnY = 390;
@@ -573,22 +581,45 @@ function drawTimeSelect() {
   ctx.shadowBlur = 0;
   ctx.restore();
 
-  const cardW = 170, cardH = 150, gap = 30;
-  const totalW = cardW * 3 + gap * 2;
+  const totalW = TS_CARD_W * 3 + TS_CARD_GAP * 2;
   const startX = W/2 - totalW/2;
-  const cardY = H/2 - cardH/2 + 20;
   TIME_LABELS.forEach((label, i) => {
-    const x = startX + i * (cardW + gap);
+    const x = startX + i * (TS_CARD_W + TS_CARD_GAP);
     ctx.save();
     ctx.fillStyle = 'rgba(255,201,74,0.14)';
     ctx.strokeStyle = 'rgba(255,201,74,0.5)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(x, cardY, cardW, cardH, 20); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(x, TS_CARD_Y, TS_CARD_W, TS_CARD_H, 20); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#FFC94A';
-    ctx.font = '40px Arial'; ctx.textAlign = 'center';
-    ctx.fillText('⏱', x + cardW/2, cardY + 62);
+    ctx.font = '36px Arial'; ctx.textAlign = 'center';
+    ctx.fillText('⏱', x + TS_CARD_W/2, TS_CARD_Y + 56);
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 24px Arial';
-    ctx.fillText(label, x + cardW/2, cardY + 108);
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText(label, x + TS_CARD_W/2, TS_CARD_Y + 100);
+    ctx.restore();
+  });
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.font = '13px Arial';
+  ctx.fillText('CPU レベル', W/2, TS_LVL_Y - 12);
+  ctx.restore();
+
+  const lvlTotalW = TS_LVL_W * 3 + TS_LVL_GAP * 2;
+  const lvlStartX = W/2 - lvlTotalW/2;
+  CPU_LEVELS.forEach((lvl, i) => {
+    const x = lvlStartX + i * (TS_LVL_W + TS_LVL_GAP);
+    const selected = i === cpuLevel;
+    ctx.save();
+    ctx.fillStyle = selected ? 'rgba(255,201,74,0.85)' : 'rgba(255,255,255,0.08)';
+    ctx.strokeStyle = selected ? 'rgba(255,201,74,0.9)' : 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(x, TS_LVL_Y, TS_LVL_W, TS_LVL_H, 23); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = selected ? '#201200' : 'rgba(255,255,255,0.85)';
+    ctx.font = (selected ? 'bold ' : '') + '15px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(lvl.label, x + TS_LVL_W/2, TS_LVL_Y + TS_LVL_H/2);
+    ctx.textBaseline = 'alphabetic';
     ctx.restore();
   });
 
@@ -722,14 +753,15 @@ function startMatch(durationSeconds) {
   updateHUD();
   updateTimeDisplay();
   document.getElementById('hud').style.visibility = 'visible';
-  document.getElementById('dpad').style.visibility = 'visible';
+  document.getElementById('joystick').style.visibility = 'visible';
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('pause-btn').textContent = '⏸';
 }
 
 function endMatch() {
   state = 'GAMEOVER';
-  document.getElementById('dpad').style.visibility = 'hidden';
+  document.getElementById('joystick').style.visibility = 'hidden';
+  resetStick();
   const ov = document.getElementById('overlay');
   ov.classList.remove('hidden');
   let title;
@@ -754,7 +786,8 @@ function quitToTitle() {
   state = 'TITLE';
   titleFrame = 0;
   document.getElementById('hud').style.visibility = 'hidden';
-  document.getElementById('dpad').style.visibility = 'hidden';
+  document.getElementById('joystick').style.visibility = 'hidden';
+  resetStick();
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('pause-btn').textContent = '⏸';
 }
@@ -778,13 +811,17 @@ function onDown(e) {
     return;
   }
   if (state === 'TIMESELECT') {
-    const cardW = 170, cardH = 150, gap = 30;
-    const totalW = cardW * 3 + gap * 2;
+    const totalW = TS_CARD_W * 3 + TS_CARD_GAP * 2;
     const startX = W/2 - totalW/2;
-    const cardY = H/2 - cardH/2 + 20;
     for (let i = 0; i < 3; i++) {
-      const x = startX + i * (cardW + gap);
-      if (p.x >= x && p.x <= x + cardW && p.y >= cardY && p.y <= cardY + cardH) { startMatch(MATCH_DURATIONS[i]); return; }
+      const x = startX + i * (TS_CARD_W + TS_CARD_GAP);
+      if (p.x >= x && p.x <= x + TS_CARD_W && p.y >= TS_CARD_Y && p.y <= TS_CARD_Y + TS_CARD_H) { startMatch(MATCH_DURATIONS[i]); return; }
+    }
+    const lvlTotalW = TS_LVL_W * 3 + TS_LVL_GAP * 2;
+    const lvlStartX = W/2 - lvlTotalW/2;
+    for (let i = 0; i < 3; i++) {
+      const x = lvlStartX + i * (TS_LVL_W + TS_LVL_GAP);
+      if (p.x >= x && p.x <= x + TS_LVL_W && p.y >= TS_LVL_Y && p.y <= TS_LVL_Y + TS_LVL_H) { cpuLevel = i; return; }
     }
     if (p.x < 140 && p.y > H - 46) { state = 'TITLE'; return; }
     return;
@@ -798,17 +835,44 @@ function onDown(e) {
 canvas.addEventListener('mousedown', onDown, { passive: false });
 canvas.addEventListener('touchstart', onDown, { passive: false });
 
-document.querySelectorAll('.dbtn').forEach(btn => {
-  const dir = btn.dataset.dir;
-  const down = (e) => { e.preventDefault(); held[dir] = true; };
-  const up   = (e) => { e.preventDefault(); held[dir] = false; };
-  btn.addEventListener('mousedown', down, { passive: false });
-  btn.addEventListener('touchstart', down, { passive: false });
-  btn.addEventListener('mouseup', up);
-  btn.addEventListener('mouseleave', up);
-  btn.addEventListener('touchend', up);
-  btn.addEventListener('touchcancel', up);
+// ─── JOYSTICK (analog, replaces the old 4-way D-pad) ───────────
+const joystick = document.getElementById('joystick');
+const joystickKnob = document.getElementById('joystick-knob');
+let joyPointerId = null;
+
+function resetStick() {
+  stickX = 0; stickY = 0;
+  joystickKnob.style.transform = 'translate(-50%, -50%)';
+}
+function setStickFromClient(clientX, clientY) {
+  const rect = joystick.getBoundingClientRect();
+  const maxR = rect.width / 2;
+  const dx = clientX - (rect.left + maxR);
+  const dy = clientY - (rect.top + maxR);
+  const dist = Math.min(Math.hypot(dx, dy), maxR);
+  const angle = Math.atan2(dy, dx);
+  const kx = Math.cos(angle) * dist, ky = Math.sin(angle) * dist;
+  joystickKnob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+  stickX = maxR > 0 ? kx / maxR : 0;
+  stickY = maxR > 0 ? ky / maxR : 0;
+}
+joystick.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  joyPointerId = e.pointerId;
+  joystick.setPointerCapture(e.pointerId);
+  setStickFromClient(e.clientX, e.clientY);
 });
+joystick.addEventListener('pointermove', e => {
+  if (e.pointerId !== joyPointerId) return;
+  setStickFromClient(e.clientX, e.clientY);
+});
+function endJoyPointer(e) {
+  if (e.pointerId !== joyPointerId) return;
+  joyPointerId = null;
+  resetStick();
+}
+joystick.addEventListener('pointerup', endJoyPointer);
+joystick.addEventListener('pointercancel', endJoyPointer);
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && (state === 'PLAYING' || state === 'PAUSED')) {
