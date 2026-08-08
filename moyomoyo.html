@@ -140,6 +140,19 @@ canvas {
   box-shadow: 0 4px 16px rgba(255,111,168,0.4);
 }
 #overlay button:hover { background: #FF8FBC; transform: scale(1.05); }
+#rotate-hint {
+  display: none;
+  position: fixed; inset: 0; z-index: 999;
+  background: #241238;
+  flex-direction: column; align-items: center; justify-content: center;
+  color: white; font-size: 18px; gap: 16px;
+}
+#rotate-hint span { font-size: 56px; animation: rotate-hint-spin 1.5s ease-in-out infinite alternate; }
+@keyframes rotate-hint-spin { from { transform: rotate(-30deg); } to { transform: rotate(30deg); } }
+@media (max-width: 600px) and (orientation: portrait) {
+  #rotate-hint { display: flex; }
+  #game-layout { display: none; }
+}
 </style>
 </head>
 <body>
@@ -165,9 +178,13 @@ canvas {
     </div>
   </div>
   <div class="side-col" id="right-col">
-    <button class="ctrl-btn" data-action="rotate" aria-label="回転">🔄</button>
     <button class="ctrl-btn" data-action="right" aria-label="右へ">▶</button>
+    <button class="ctrl-btn" data-action="rotate" aria-label="回転">🔄</button>
   </div>
+</div>
+<div id="rotate-hint">
+  <span>📱</span>
+  <p>横向きにしてプレイ！</p>
 </div>
 
 <script>
