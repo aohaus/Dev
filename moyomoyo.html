@@ -612,7 +612,13 @@ function update() {
       }
     }
   } else if (phase === 'LOCK_PAUSE') {
-    if (--pauseTimer <= 0) phase = 'RESOLVING';
+    if (--pauseTimer <= 0) {
+      // The falling pair locks as a rigid unit, so over uneven column
+      // heights one cell can end up floating with a gap beneath it.
+      // Settle every column before checking for matches.
+      applyGravity();
+      phase = 'RESOLVING';
+    }
   } else if (phase === 'RESOLVING') {
     if (--pauseTimer <= 0) {
       if (resolveStep()) {
