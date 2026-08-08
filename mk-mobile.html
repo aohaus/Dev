@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
@@ -107,6 +107,27 @@ canvas {
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
+#shoot-btn {
+  position: absolute;
+  right: 24px; bottom: 26px;
+  width: clamp(84px, 15vw, 118px);
+  height: clamp(84px, 15vw, 118px);
+  border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.5);
+  background: radial-gradient(circle at 35% 30%, #FF9A52, #E4483A 70%);
+  color: #fff;
+  font-size: clamp(14px, 2.6vw, 18px);
+  font-weight: 900;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 18px rgba(228,72,58,0.55), inset 0 2px 6px rgba(255,255,255,0.35);
+  visibility: hidden;
+  touch-action: none;
+  cursor: pointer;
+}
+#shoot-btn:active {
+  transform: scale(0.9);
+  background: radial-gradient(circle at 35% 30%, #FFB374, #FF6A3D 70%);
+}
 #overlay {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
@@ -148,21 +169,22 @@ canvas {
     <div id="hud" style="visibility:hidden">
       <div id="score-display">0 - 0</div>
       <div id="time-display">1:00</div>
-      <button id="pause-btn" title="一時停止">⏸</button>
+      <button id="pause-btn" title="Pause">⏸</button>
     </div>
-    <div id="joystick" aria-label="移動スティック">
+    <div id="joystick" aria-label="Move stick">
       <div id="joystick-knob"></div>
     </div>
+    <button id="shoot-btn" aria-label="Shoot">SHOOT</button>
     <div id="overlay" class="hidden">
       <h1 id="ov-title"></h1>
       <p id="ov-sub"></p>
-      <button id="ov-btn">もう一度！</button>
+      <button id="ov-btn">Play Again!</button>
     </div>
   </div>
 </div>
 <div id="rotate-hint">
   <span>📱</span>
-  <p>横向きにしてプレイ！</p>
+  <p>Rotate to play!</p>
 </div>
 
 <script>
@@ -192,12 +214,15 @@ const WALL_BOUNCE = 0.85;
 const BALL_MAX_SPEED = 15;
 const PADDLE_HIT_BASE_SPEED = 6.2;
 const PADDLE_HIT_MOMENTUM = 0.6;
+const SHOOT_WINDOW_FRAMES = 9;   // how long a shoot press stays "primed" before a contact
+const SHOOT_COOLDOWN_FRAMES = 18; // min frames between accepted presses, discourages button-mashing
+const POWER_SHOT_SPEED = 12.5;
 
 const MATCH_DURATIONS = [60, 180, 300]; // 1 / 3 / 5 minutes, in seconds
 const CPU_LEVELS = [
-  { label: 'かんたん',   accel: 0.55, maxSpeed: 4.4, wanderAmp: 0.9, wanderMax: 46 },
-  { label: 'ふつう',     accel: 0.8,  maxSpeed: 5.6, wanderAmp: 0.6, wanderMax: 30 },
-  { label: 'むずかしい', accel: 1.05, maxSpeed: 6.8, wanderAmp: 0.3, wanderMax: 14 },
+  { label: 'EASY',   accel: 0.55, maxSpeed: 4.4, wanderAmp: 0.9, wanderMax: 46 },
+  { label: 'NORMAL', accel: 0.8,  maxSpeed: 5.6, wanderAmp: 0.6, wanderMax: 30 },
+  { label: 'HARD',   accel: 1.05, maxSpeed: 6.8, wanderAmp: 0.3, wanderMax: 14 },
 ];
 
 // Time-select screen layout (shared between draw & hit-testing)
@@ -217,9 +242,14 @@ let goalMessage = '';
 let particles = [];
 let shakeX = 0, shakeY = 0;
 let flashAlpha = 0;
+let frameCount = 0;
+let shootPressFrame = -Infinity; // frameCount when the shoot button was last accepted
+let shootReadyFrame = -Infinity; // frameCount after which a new press is accepted (cooldown)
+let shotMessage = '';
+let shotMessageTimer = 0;
 
-const player = { x: 0, y: 0, vx: 0, vy: 0 };
-const cpu    = { x: 0, y: 0, vx: 0, vy: 0 };
+const player = { x: 0, y: 0, vx: 0, vy: 0, touching: false };
+const cpu    = { x: 0, y: 0, vx: 0, vy: 0, touching: false };
 const ball   = { x: 0, y: 0, vx: 0, vy: 0 };
 const held = { up: false, down: false, left: false, right: false };
 let stickX = 0, stickY = 0; // analog joystick tilt, each axis in [-1, 1]
@@ -370,7 +400,7 @@ function updateCPU() {
   const targetX = ballInCpuHalf
     ? Math.min(PITCH_X1 - CPU_R, ball.x + 14)
     : HALF_X + PITCH_W * 0.18;
-  const targetY = ball.y + cpuWander;
+  const targetY = Math.max(PITCH_Y0 + CPU_R, Math.min(PITCH_Y1 - CPU_R, ball.y + cpuWander));
   const dx = targetX - cpu.x, dy = targetY - cpu.y;
   const dist = Math.hypot(dx, dy);
   const nx = dist > 4 ? dx / dist : 0, ny = dist > 4 ? dy / dist : 0;
@@ -387,19 +417,53 @@ function resolvePaddleHit(entity, radius) {
     const nx = dx / dist, ny = dy / dist;
     const overlap = minDist - dist;
     ball.x += nx * overlap; ball.y += ny * overlap;
-    const curSpeed = Math.hypot(ball.vx, ball.vy);
-    const speed = Math.max(PADDLE_HIT_BASE_SPEED, curSpeed);
-    ball.vx = nx * speed + entity.vx * PADDLE_HIT_MOMENTUM;
-    ball.vy = ny * speed + entity.vy * PADDLE_HIT_MOMENTUM;
-    const newSpeed = Math.hypot(ball.vx, ball.vy);
-    if (newSpeed > BALL_MAX_SPEED) { ball.vx = ball.vx / newSpeed * BALL_MAX_SPEED; ball.vy = ball.vy / newSpeed * BALL_MAX_SPEED; }
-    addParticles(ball.x, ball.y, '#FFE9A8', 6, 3);
+    // Only inject a fresh kick on a NEW contact. Against a wall/corner the
+    // push-away direction points straight back into the wall, so without
+    // this guard the ball gets re-floored to full hit speed every frame it
+    // stays pinned there — an infinite-energy loop that (combined with the
+    // paddle also parking at its target) reads as everything freezing solid
+    // in the corner. Sustained overlap just gets separated positionally and
+    // lets normal wall restitution/friction bleed the energy off.
+    if (!entity.touching) {
+      const curSpeed = Math.hypot(ball.vx, ball.vy);
+      let speed = Math.max(PADDLE_HIT_BASE_SPEED, curSpeed);
+      let isPowerShot = false;
+      if (entity === player && frameCount - shootPressFrame <= SHOOT_WINDOW_FRAMES) {
+        speed = Math.max(POWER_SHOT_SPEED, curSpeed * 1.4);
+        isPowerShot = true;
+        shootPressFrame = -Infinity; // consume the buffered press
+      }
+      ball.vx = nx * speed + entity.vx * PADDLE_HIT_MOMENTUM;
+      ball.vy = ny * speed + entity.vy * PADDLE_HIT_MOMENTUM;
+      const newSpeed = Math.hypot(ball.vx, ball.vy);
+      if (newSpeed > BALL_MAX_SPEED) { ball.vx = ball.vx / newSpeed * BALL_MAX_SPEED; ball.vy = ball.vy / newSpeed * BALL_MAX_SPEED; }
+      if (isPowerShot) {
+        addParticles(ball.x, ball.y, '#FF6A3D', 16, 6);
+        addShake(9);
+        shotMessage = '⚡ POWER SHOT!';
+        shotMessageTimer = 36;
+      } else {
+        addParticles(ball.x, ball.y, '#FFE9A8', 6, 3);
+      }
+    }
+    entity.touching = true;
+  } else {
+    entity.touching = false;
   }
 }
 
 function updateBall() {
   ball.x += ball.vx; ball.y += ball.vy;
   ball.vx *= BALL_FRICTION; ball.vy *= BALL_FRICTION;
+
+  // Paddle collisions resolve first; the wall clamp below runs last and is
+  // authoritative, so a paddle push can never leave the ball resting outside
+  // the pitch. (Doing this the other way around let a corner paddle push
+  // shove the ball back past the wall it had just bounced off, which made
+  // the ball + paddle settle into an exact repeating position/velocity each
+  // frame — a permanent freeze whenever the ball got trapped in a corner.)
+  resolvePaddleHit(player, PLAYER_R);
+  resolvePaddleHit(cpu, CPU_R);
 
   if (ball.y - BALL_R < PITCH_Y0) { ball.y = PITCH_Y0 + BALL_R; ball.vy = -ball.vy * WALL_BOUNCE; }
   if (ball.y + BALL_R > PITCH_Y1) { ball.y = PITCH_Y1 - BALL_R; ball.vy = -ball.vy * WALL_BOUNCE; }
@@ -413,14 +477,11 @@ function updateBall() {
     if (inGoalMouth && ball.x > PITCH_X1 + BALL_R * 0.6) { scoreGoal('home'); return; }
     if (!inGoalMouth) { ball.x = PITCH_X1 - BALL_R; ball.vx = -ball.vx * WALL_BOUNCE; }
   }
-
-  resolvePaddleHit(player, PLAYER_R);
-  resolvePaddleHit(cpu, CPU_R);
 }
 
 function scoreGoal(who) {
-  if (who === 'home') { scoreHome++; goalMessage = '⚽ ゴール！'; }
-  else { scoreAway++; goalMessage = '😵 失点...'; }
+  if (who === 'home') { scoreHome++; goalMessage = '⚽ GOAL!'; }
+  else { scoreAway++; goalMessage = '😵 CONCEDED...'; }
   updateHUD();
   addParticles(who === 'home' ? PITCH_X1 : PITCH_X0, H / 2, '#FFC94A', 26, 6);
   addShake(14);
@@ -469,9 +530,9 @@ function drawTitleScreen() {
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#B0D8FF';
-  ctx.fillText('🦉 アングリーモクモクへ ▶', W - 26, 44);
+  ctx.fillText('🦉 Angry Mokumoku ▶', W - 26, 44);
   ctx.fillStyle = '#FF9FCB';
-  ctx.fillText('🍬 モヨモヨへ ▶', W - 26, 80);
+  ctx.fillText('🍬 Moyomoyo ▶', W - 26, 80);
   ctx.restore();
 
   ctx.save();
@@ -532,8 +593,8 @@ function drawTitleScreen() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.font = '13px Arial';
-  ctx.fillText('制限時間内によりたくさんゴールを決めよう', W/2, 320);
-  ctx.fillText('スティックで移動、体を当ててシュート', W/2, 340);
+  ctx.fillText('Score as many goals as you can before time runs out', W/2, 320);
+  ctx.fillText('Stick to move, time your SHOOT for a power strike', W/2, 340);
   ctx.restore();
 
   const btnY = 390;
@@ -546,7 +607,7 @@ function drawTitleScreen() {
   ctx.fillStyle = '#201200';
   ctx.font = 'bold 19px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('▶ スタート', W/2, btnY);
+  ctx.fillText('▶ START', W/2, btnY);
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
 
@@ -562,7 +623,7 @@ function drawTitleScreen() {
 }
 
 // ─── TIME SELECT SCREEN ───────────────────────────────────────
-const TIME_LABELS = ['1 分', '3 分', '5 分'];
+const TIME_LABELS = ['1 MIN', '3 MIN', '5 MIN'];
 function drawTimeSelect() {
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, '#0B1330'); bg.addColorStop(1, '#0A1228');
@@ -578,7 +639,7 @@ function drawTimeSelect() {
   ctx.fillStyle = '#EFFFEA';
   ctx.font = 'bold 28px Arial';
   ctx.shadowColor = '#7FE87F'; ctx.shadowBlur = 16;
-  ctx.fillText('試合時間をえらぼう', W/2, 130);
+  ctx.fillText('CHOOSE MATCH TIME', W/2, 130);
   ctx.shadowBlur = 0;
   ctx.restore();
 
@@ -603,7 +664,7 @@ function drawTimeSelect() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
   ctx.font = '13px Arial';
-  ctx.fillText('CPU レベル', W/2, TS_LVL_Y - 12);
+  ctx.fillText('CPU LEVEL', W/2, TS_LVL_Y - 12);
   ctx.restore();
 
   const lvlTotalW = TS_LVL_W * 3 + TS_LVL_GAP * 2;
@@ -628,7 +689,7 @@ function drawTimeSelect() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.font = '13px Arial';
-  ctx.fillText('◀ タイトルにもどる', 70, H - 26);
+  ctx.fillText('◀ BACK TO TITLE', 70, H - 26);
   ctx.restore();
 }
 
@@ -643,7 +704,7 @@ function drawPausedOverlay() {
   ctx.fillStyle = '#EFFFEA';
   ctx.font = 'bold 28px Arial';
   ctx.shadowColor = '#7FE87F'; ctx.shadowBlur = 18;
-  ctx.fillText('⏸ 一時停止中', W/2, H * 0.32);
+  ctx.fillText('⏸ PAUSED', W/2, H * 0.32);
   ctx.shadowBlur = 0;
   ctx.restore();
 
@@ -653,7 +714,7 @@ function drawPausedOverlay() {
   ctx.fillStyle = '#201200';
   ctx.font = 'bold 18px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('▶ 再開', W/2, PAUSE_RESUME_Y);
+  ctx.fillText('▶ RESUME', W/2, PAUSE_RESUME_Y);
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
 
@@ -665,7 +726,7 @@ function drawPausedOverlay() {
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.font = '15px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('🏠 タイトルへ', W/2, PAUSE_QUIT_Y);
+  ctx.fillText('🏠 TITLE', W/2, PAUSE_QUIT_Y);
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
 }
@@ -702,6 +763,18 @@ function draw() {
     ctx.restore();
   }
 
+  if (shotMessageTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, shotMessageTimer / 12);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 24px Arial';
+    ctx.shadowColor = '#FF6A3D'; ctx.shadowBlur = 20;
+    ctx.fillStyle = '#FFE0A0';
+    const msgX = Math.max(90, Math.min(W - 90, player.x));
+    ctx.fillText(shotMessage, msgX, player.y - PLAYER_R - 16);
+    ctx.restore();
+  }
+
   ctx.restore();
 
   if (flashAlpha > 0.01) {
@@ -719,7 +792,9 @@ function draw() {
 // ─── UPDATE ───────────────────────────────────────────────────
 function update() {
   updateParticles();
+  if (shotMessageTimer > 0) shotMessageTimer--;
   if (state === 'PLAYING') {
+    frameCount++;
     updatePlayer();
     updateCPU();
     updateBall();
@@ -749,12 +824,16 @@ function startMatch(durationSeconds) {
   matchFramesLeft = matchFramesTotal;
   particles = [];
   shakeX = 0; shakeY = 0; flashAlpha = 0;
+  frameCount = 0; shootPressFrame = -Infinity; shootReadyFrame = -Infinity;
+  shotMessage = ''; shotMessageTimer = 0;
+  player.touching = false; cpu.touching = false;
   homePositions();
   centerBall(Math.random() < 0.5 ? -1 : 1);
   updateHUD();
   updateTimeDisplay();
   document.getElementById('hud').style.visibility = 'visible';
   document.getElementById('joystick').style.visibility = 'visible';
+  document.getElementById('shoot-btn').style.visibility = 'visible';
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('pause-btn').textContent = '⏸';
 }
@@ -762,13 +841,14 @@ function startMatch(durationSeconds) {
 function endMatch() {
   state = 'GAMEOVER';
   document.getElementById('joystick').style.visibility = 'hidden';
+  document.getElementById('shoot-btn').style.visibility = 'hidden';
   resetStick();
   const ov = document.getElementById('overlay');
   ov.classList.remove('hidden');
   let title;
-  if (scoreHome > scoreAway) title = '🏆 勝利！';
-  else if (scoreHome < scoreAway) title = '😢 敗北...';
-  else title = '🤝 引き分け';
+  if (scoreHome > scoreAway) title = '🏆 VICTORY!';
+  else if (scoreHome < scoreAway) title = '😢 DEFEAT...';
+  else title = '🤝 DRAW';
   document.getElementById('ov-title').textContent = title;
   document.getElementById('ov-sub').textContent = `${scoreHome} - ${scoreAway}`;
 }
@@ -788,6 +868,7 @@ function quitToTitle() {
   titleFrame = 0;
   document.getElementById('hud').style.visibility = 'hidden';
   document.getElementById('joystick').style.visibility = 'hidden';
+  document.getElementById('shoot-btn').style.visibility = 'hidden';
   resetStick();
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('pause-btn').textContent = '⏸';
@@ -875,6 +956,16 @@ function endJoyPointer(e) {
 joystick.addEventListener('pointerup', endJoyPointer);
 joystick.addEventListener('pointercancel', endJoyPointer);
 
+// ─── SHOOT BUTTON (timed press primes the next paddle contact) ─
+const shootBtn = document.getElementById('shoot-btn');
+shootBtn.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (state !== 'PLAYING') return;
+  if (frameCount < shootReadyFrame) return; // still on cooldown from the last press
+  shootPressFrame = frameCount;
+  shootReadyFrame = frameCount + SHOOT_COOLDOWN_FRAMES;
+});
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && (state === 'PLAYING' || state === 'PAUSED')) {
     if (state === 'PLAYING') pauseGame(); else resumeGame();
@@ -885,6 +976,13 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'ArrowDown' || e.key === 's') held.down = true;
   else if (e.key === 'ArrowLeft' || e.key === 'a') held.left = true;
   else if (e.key === 'ArrowRight' || e.key === 'd') held.right = true;
+  else if (e.key === ' ') {
+    e.preventDefault();
+    if (frameCount >= shootReadyFrame) {
+      shootPressFrame = frameCount;
+      shootReadyFrame = frameCount + SHOOT_COOLDOWN_FRAMES;
+    }
+  }
 });
 document.addEventListener('keyup', e => {
   if (e.key === 'ArrowUp' || e.key === 'w') held.up = false;
