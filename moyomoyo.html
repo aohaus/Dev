@@ -798,12 +798,35 @@ function drawTitleScreen() {
   bg.addColorStop(0, '#5A2E78'); bg.addColorStop(0.55, '#3E1E58'); bg.addColorStop(1, '#241238');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  const dots = [[35,90,9],[260,140,12],[50,430,11],[255,480,8],[150,60,7],[220,330,6],[75,260,9]];
+  const dots = [[35,90,9],[490,70,7],[70,690,11],[470,600,8],[150,60,7],[430,330,6],[75,470,9],
+                [500,780,10],[40,780,8],[260,30,6],[490,470,9],[60,240,7],[420,140,8],[150,760,10]];
   dots.forEach(([dx,dy,dr],i) => {
     const a = 0.15 + 0.1 * Math.sin(titleFrame * 0.02 + i);
     ctx.fillStyle = `rgba(255,180,220,${a})`;
     ctx.beginPath(); ctx.arc(dx, dy, dr, 0, Math.PI*2); ctx.fill();
   });
+
+  // Console-style frame border — a visual family resemblance shared with
+  // Angry Mokumoku's title screen (its own retro double-border), rendered
+  // here in moyomoyo's own pink/gold instead of that game's green.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,176,220,0.35)'; ctx.lineWidth = 3;
+  ctx.strokeRect(12, 12, W - 24, H - 24);
+  ctx.strokeStyle = 'rgba(255,176,220,0.16)'; ctx.lineWidth = 1;
+  ctx.strokeRect(17, 17, W - 34, H - 34);
+  ctx.restore();
+
+  // Cross-link to the sister game — same top-right placement Angry
+  // Mokumoku uses for its own link back here, so the "other game" link
+  // is always in the same spot no matter which title screen you're on.
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.font = '13px Arial';
+  const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
+  ctx.globalAlpha = linkPulse;
+  ctx.fillStyle = '#B0D8FF';
+  ctx.fillText('🦉 アングリーモクモクへ ▶', W - 28, 34);
+  ctx.restore();
 
   ctx.save();
   ctx.textAlign = 'center';
@@ -820,7 +843,23 @@ function drawTitleScreen() {
   const bob = Math.sin(titleFrame * 0.05) * 7;
   const tilt = Math.sin(titleFrame * 0.03) * 0.1;
   const lastStage = STAGES[STAGES.length - 1];
-  drawGummyShape(W/2, 240 + bob, 50, lastStage.color, lastStage.face, tilt, 1, true);
+
+  // Idle sparkles orbiting the mascot — echoes the ✦ stars Angry
+  // Mokumoku floats around its owl on its own title screen.
+  const mascotY = 240 + bob;
+  const sparkT = (titleFrame * 0.04) % (Math.PI * 2);
+  [[W/2-95,mascotY-45],[W/2+100,mascotY-35],[W/2-80,mascotY+55],[W/2+85,mascotY+50]].forEach(([sx,sy],i) => {
+    const s = 0.5 + 0.5 * Math.sin(sparkT + i * 1.5);
+    ctx.save();
+    ctx.globalAlpha = s * 0.85;
+    ctx.fillStyle = '#FFE9A0';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('✦', sx, sy);
+    ctx.restore();
+  });
+
+  drawGummyShape(W/2, mascotY, 50, lastStage.color, lastStage.face, tilt, 1, true);
 
   const chainY = 335;
   const startX = W/2 - 108;
@@ -874,13 +913,16 @@ function drawTitleScreen() {
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
 
+  // Franchise footer tag — ties the two games together as one series,
+  // mirrored by the identical badge Angry Mokumoku shows on its own title.
+  const tagY = boardBtnY + 70;
   ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(W/2 - 70, tagY - 22); ctx.lineTo(W/2 + 70, tagY - 22); ctx.stroke();
   ctx.textAlign = 'center';
-  const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
-  ctx.globalAlpha = linkPulse;
-  ctx.fillStyle = '#B0D8FF';
-  ctx.font = '13px Arial';
-  ctx.fillText('🦉 アングリーモクモクへ ▶', W/2, H - 18);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '11px Arial';
+  ctx.fillText('🍬 × 🦉  M O K U M O K U   S E R I E S', W/2, tagY);
   ctx.restore();
 }
 
@@ -1241,7 +1283,9 @@ function onDown(e) {
   if (state === 'TITLE') {
     if (p.x >= W/2 - 85 && p.x <= W/2 + 85 && p.y >= 421 && p.y <= 469) { startGame(); return; }
     if (p.x >= W/2 - 80 && p.x <= W/2 + 80 && p.y >= 515 && p.y <= 555) { openBoard(); return; }
-    if (p.y >= H - 34) { window.location.href = 'angry-mokumoku.html'; return; }
+    // Cross-link to Angry Mokumoku (top-right corner — same spot that
+    // game uses for its own link back here)
+    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 8 && p.y <= 40) { window.location.href = 'angry-mokumoku.html'; return; }
     return;
   }
   if (state === 'PAUSED') {
