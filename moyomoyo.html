@@ -140,6 +140,65 @@ canvas {
   box-shadow: 0 4px 16px rgba(255,111,168,0.4);
 }
 #overlay button:hover { background: #FF8FBC; transform: scale(1.05); }
+#ov-name-row {
+  display: flex; gap: 8px; margin-bottom: 18px;
+}
+#ov-name-row.hidden { display: none; }
+#ov-name-input {
+  width: 190px;
+  background: rgba(255,255,255,0.12);
+  border: 1.5px solid rgba(255,255,255,0.35);
+  border-radius: 20px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #fff;
+  text-align: center;
+}
+#ov-name-input::placeholder { color: rgba(255,255,255,0.5); }
+.btn-row { display: flex; gap: 10px; }
+#overlay button.secondary {
+  background: rgba(255,255,255,0.15);
+  box-shadow: none;
+  border: 1.5px solid rgba(255,255,255,0.35);
+  font-size: 15px;
+  padding: 12px 22px;
+}
+#overlay button.secondary:hover { background: rgba(255,255,255,0.25); }
+#board-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(20,5,30,0.78);
+  backdrop-filter: blur(4px);
+  pointer-events: all;
+  z-index: 10;
+}
+#board-overlay.hidden { display: none; }
+#board-overlay h1 { color: #fff; font-size: 26px; margin-bottom: 16px; text-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+#board-list {
+  width: min(86%, 340px);
+  max-height: 55%;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+.board-row {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 12px;
+  padding: 9px 14px;
+  margin-bottom: 6px;
+  color: #fff;
+}
+.board-row .rank { width: 26px; font-weight: 900; color: #FFE066; text-align: center; }
+.board-row .name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-row .score { font-variant-numeric: tabular-nums; color: #FFE066; font-weight: 700; }
+.board-row.empty { color: rgba(255,255,255,0.5); justify-content: center; font-size: 14px; }
+#board-close-btn {
+  background: #FF6FA8; color: #fff;
+  border: none; border-radius: 30px;
+  padding: 12px 32px; font-size: 16px; font-weight: 700;
+  cursor: pointer; box-shadow: 0 4px 16px rgba(255,111,168,0.4);
+}
 #rotate-hint {
   display: none;
   position: fixed; inset: 0; z-index: 999;
@@ -174,7 +233,19 @@ canvas {
     <div id="overlay" class="hidden">
       <h1 id="ov-title"></h1>
       <p id="ov-sub"></p>
-      <button id="ov-btn">もう一度！</button>
+      <div id="ov-name-row" class="hidden">
+        <input id="ov-name-input" maxlength="8" placeholder="なまえ（8文字まで）">
+        <button id="ov-register-btn">登録</button>
+      </div>
+      <div class="btn-row">
+        <button id="ov-board-btn" class="secondary">🏆 ランキング</button>
+        <button id="ov-btn">もう一度！</button>
+      </div>
+    </div>
+    <div id="board-overlay" class="hidden">
+      <h1>🏆 ランキング</h1>
+      <div id="board-list"></div>
+      <button id="board-close-btn">とじる</button>
     </div>
   </div>
   <div class="side-col" id="right-col">
@@ -209,6 +280,8 @@ const SPAWN_COL  = 4;
 const MATCH_MIN  = 4;
 const LEVEL_STEP = 200; // score needed per level
 const MAGIC_CHANCE = 0.025; // ~2.5% of spawned pieces are マジックモヨモヨ
+const LEADERBOARD_KEY = 'moyomoyo-leaderboard';
+const LEADERBOARD_MAX = 10;
 
 const PAUSE_RESUME_Y = H * 0.48;
 const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 66;
@@ -789,6 +862,18 @@ function drawTitleScreen() {
     ctx.fillText(`ベストスコア: ${bestScore}`, W/2, btnY + 44);
   }
 
+  const boardBtnY = btnY + 90;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(W/2 - 80, boardBtnY - 20, 160, 40, 20); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = 'bold 15px Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🏆 ランキング', W/2, boardBtnY);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+
   ctx.save();
   ctx.textAlign = 'center';
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
@@ -920,6 +1005,56 @@ function update() {
   }
 }
 
+// ─── LEADERBOARD (device-local, via localStorage) ──────────────
+
+function loadLeaderboard() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LEADERBOARD_KEY) || '[]');
+    if (Array.isArray(raw)) return raw;
+  } catch (e) {}
+  return [];
+}
+function saveLeaderboard(list) {
+  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(list));
+}
+function qualifiesForLeaderboard(s) {
+  const list = loadLeaderboard();
+  if (list.length < LEADERBOARD_MAX) return true;
+  return s > list[list.length - 1].score;
+}
+function registerScore(name, s, lv) {
+  const list = loadLeaderboard();
+  list.push({ name: name || 'モヨラー', score: s, level: lv, date: new Date().toISOString().slice(0, 10) });
+  list.sort((a, b) => b.score - a.score);
+  list.length = Math.min(list.length, LEADERBOARD_MAX);
+  saveLeaderboard(list);
+  renderBoard();
+}
+function renderBoard() {
+  const list = loadLeaderboard();
+  const el = document.getElementById('board-list');
+  if (list.length === 0) {
+    el.innerHTML = '<div class="board-row empty">まだ記録がありません</div>';
+    return;
+  }
+  el.innerHTML = list.map((e, i) => `
+    <div class="board-row">
+      <span class="rank">${i + 1}</span>
+      <span class="name">${escapeHtml(e.name)}</span>
+      <span class="score">${e.score}pt</span>
+    </div>`).join('');
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function openBoard() {
+  renderBoard();
+  document.getElementById('board-overlay').classList.remove('hidden');
+}
+function closeBoard() {
+  document.getElementById('board-overlay').classList.add('hidden');
+}
+
 function gameOver() {
   state = 'GAMEOVER';
   piece = null;
@@ -936,6 +1071,15 @@ function gameOver() {
   document.getElementById('ov-title').textContent = '😵 グミがあふれた！';
   document.getElementById('ov-sub').textContent =
     `Lv.${level}　スコア: ${score}pt　ベスト: ${bestScore}pt\n⏱ ${mm}:${String(ss).padStart(2,'0')}`;
+  const nameRow = document.getElementById('ov-name-row');
+  if (qualifiesForLeaderboard(score)) {
+    nameRow.classList.remove('hidden');
+    document.getElementById('ov-name-input').value = '';
+    document.getElementById('ov-register-btn').disabled = false;
+    document.getElementById('ov-register-btn').textContent = '登録';
+  } else {
+    nameRow.classList.add('hidden');
+  }
   document.getElementById('left-col').style.visibility = 'hidden';
   document.getElementById('right-col').style.visibility = 'hidden';
 }
@@ -1096,6 +1240,7 @@ function onDown(e) {
   const p = getPos(e);
   if (state === 'TITLE') {
     if (p.x >= W/2 - 85 && p.x <= W/2 + 85 && p.y >= 421 && p.y <= 469) { startGame(); return; }
+    if (p.x >= W/2 - 80 && p.x <= W/2 + 80 && p.y >= 515 && p.y <= 555) { openBoard(); return; }
     if (p.y >= H - 34) { window.location.href = 'angry-mokumoku.html'; return; }
     return;
   }
@@ -1157,6 +1302,18 @@ document.getElementById('ov-btn').addEventListener('click', () => {
   document.getElementById('overlay').classList.add('hidden');
   startGame();
 });
+
+document.getElementById('ov-register-btn').addEventListener('click', () => {
+  const btn = document.getElementById('ov-register-btn');
+  if (btn.disabled) return;
+  const name = document.getElementById('ov-name-input').value.trim().slice(0, 8);
+  registerScore(name, score, level);
+  btn.disabled = true;
+  btn.textContent = '登録済み';
+});
+
+document.getElementById('ov-board-btn').addEventListener('click', openBoard);
+document.getElementById('board-close-btn').addEventListener('click', closeBoard);
 
 document.getElementById('pause-btn').addEventListener('click', () => {
   if (state === 'PLAYING') pauseGame();
