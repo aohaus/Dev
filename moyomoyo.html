@@ -820,9 +820,9 @@ function drawTitleScreen() {
   ctx.strokeRect(17, 17, W - 34, H - 34);
   ctx.restore();
 
-  // Cross-link to the sister game — same top-right placement Angry
-  // Mokumoku uses for its own link back here, so the "other game" link
-  // is always in the same spot no matter which title screen you're on.
+  // Cross-links to the sister games — same top-right placement each
+  // title screen uses for its own links back, so "other game" links
+  // are always in the same spot no matter which title you're on.
   ctx.save();
   ctx.textAlign = 'right';
   ctx.font = '13px Arial';
@@ -830,6 +830,8 @@ function drawTitleScreen() {
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#B0D8FF';
   ctx.fillText('🦉 アングリーモクモクへ ▶', W - 28, 34);
+  ctx.fillStyle = '#FFD37A';
+  ctx.fillText('⚽ MK Mobileへ ▶', W - 28, 56);
   ctx.restore();
 
   ctx.save();
@@ -926,7 +928,7 @@ function drawTitleScreen() {
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.font = '11px Arial';
-  ctx.fillText('🍬 × 🦉  M O K U M O K U   S E R I E S', W/2, tagY);
+  ctx.fillText('🍬 × 🦉 × ⚽  M O K U M O K U   S E R I E S', W/2, tagY);
   ctx.restore();
 }
 
@@ -1304,9 +1306,9 @@ function onDown(e) {
   if (state === 'TITLE') {
     if (p.x >= W/2 - 85 && p.x <= W/2 + 85 && p.y >= 421 && p.y <= 469) { startGame(); return; }
     if (p.x >= W/2 - 80 && p.x <= W/2 + 80 && p.y >= 515 && p.y <= 555) { openBoard(); return; }
-    // Cross-link to Angry Mokumoku (top-right corner — same spot that
-    // game uses for its own link back here)
-    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 8 && p.y <= 40) { window.location.href = 'angry-mokumoku.html'; return; }
+    // Cross-links to the sister games (top-right corner, stacked)
+    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 8 && p.y <= 44) { window.location.href = 'angry-mokumoku.html'; return; }
+    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 44 && p.y <= 66) { window.location.href = 'mk-mobile.html'; return; }
     return;
   }
   if (state === 'PAUSED') {

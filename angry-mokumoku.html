@@ -3604,9 +3604,13 @@ function onDown(e) {
   }
   if (state === 'TITLE') {
     const p = getPos(e);
-    // Cross-link to Moyomoyo (top-right corner)
-    if (p.x >= W - 150 && p.x <= W - 10 && p.y >= 8 && p.y <= 36) {
+    // Cross-links to the sister games (top-right corner, stacked)
+    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 8 && p.y <= 38) {
       window.location.href = 'moyomoyo.html';
+      return;
+    }
+    if (p.x >= W - 220 && p.x <= W - 10 && p.y >= 38 && p.y <= 58) {
+      window.location.href = 'mk-mobile.html';
       return;
     }
     const menuY = 345;
@@ -4057,7 +4061,7 @@ function drawTitleScreen() {
   ctx.fillText('★  K L  C I T Y  E D I T I O N  ★', W/2, 112);
   ctx.restore();
 
-  // Cross-link to the sister game
+  // Cross-links to the sister games
   ctx.save();
   ctx.textAlign = 'right';
   ctx.font = '12px "Courier New", monospace';
@@ -4065,6 +4069,8 @@ function drawTitleScreen() {
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#FF8FC4';
   ctx.fillText('🍬 モヨモヨへ ▶', W - 20, 28);
+  ctx.fillStyle = '#FFD37A';
+  ctx.fillText('⚽ MK Mobileへ ▶', W - 20, 48);
   ctx.restore();
 
   // Owl character
