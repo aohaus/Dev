@@ -41,7 +41,7 @@ body {
 canvas {
   display: block;
   cursor: pointer;
-  aspect-ratio: 960 / 574;
+  aspect-ratio: 1260 / 574;
   height: 100vh;
   height: 100dvh;
   max-height: min(900px, calc(100vh - 16px));
@@ -84,16 +84,18 @@ canvas {
   font-size: 17px;
   cursor: pointer;
 }
-/* Sized as a % of #wrapper (which shrink-wraps the canvas 1:1), not vw —
-   vw is relative to the raw viewport and drifts out of sync with the
-   canvas's actual rendered size, which is what determines whether these
-   controls actually land inside the pitch-free margin reserved for them
-   below PITCH_Y1. */
+/* Sized as a % of #wrapper's WIDTH (which shrink-wraps the canvas 1:1),
+   not vw — vw is relative to the raw viewport and drifts out of sync
+   with the canvas's actual rendered size, which is what determines
+   whether these controls actually land inside the pitch-free side
+   margins reserved for them outside PITCH_X0/PITCH_X1. Anchored to the
+   left/right edges and vertically centered, beside the pitch rather
+   than overlapping it. */
 #joystick {
   position: absolute;
-  left: 3%; bottom: 6px;
-  width: clamp(60px, 15%, 140px);
-  height: clamp(60px, 15%, 140px);
+  left: 6px; top: 50%; transform: translateY(-50%);
+  width: clamp(60px, 12%, 140px);
+  height: clamp(60px, 12%, 140px);
   border-radius: 50%;
   background: rgba(255,201,74,0.12);
   border: 2px solid rgba(255,201,74,0.4);
@@ -114,9 +116,9 @@ canvas {
 }
 #shoot-btn {
   position: absolute;
-  right: 3%; bottom: 8px;
-  width: clamp(48px, 11%, 106px);
-  height: clamp(48px, 11%, 106px);
+  right: 6px; top: 50%; transform: translateY(-50%);
+  width: clamp(48px, 9%, 106px);
+  height: clamp(48px, 9%, 106px);
   border-radius: 50%;
   border: 3px solid rgba(255,255,255,0.5);
   background: radial-gradient(circle at 35% 30%, #FF9A52, #E4483A 70%);
@@ -130,7 +132,7 @@ canvas {
   cursor: pointer;
 }
 #shoot-btn:active {
-  transform: scale(0.9);
+  transform: translateY(-50%) scale(0.9);
   background: radial-gradient(circle at 35% 30%, #FFB374, #FF6A3D 70%);
 }
 #overlay {
@@ -196,22 +198,23 @@ canvas {
 // ─── CANVAS ───────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
-const W = 960, H = 574;
+const W = 1260, H = 574;
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 canvas.width  = W * DPR;
 canvas.height = H * DPR;
 ctx.scale(DPR, DPR);
 
 // ─── CONFIG ───────────────────────────────────────────────────
-// The pitch stops well short of the canvas bottom edge, leaving a
-// dedicated off-pitch margin (rendered as plain stadium background) for
-// the joystick and SHOOT button — they used to overlap the grass itself,
-// which put a thumb right over the ball whenever it reached that corner.
-const PITCH_X0 = 30, PITCH_Y0 = 106, PITCH_X1 = W - 30, PITCH_Y1 = H - 140;
+// The pitch itself is full size again (same 900x438 as the original).
+// The canvas is widened instead, leaving dedicated off-pitch margins on
+// the left and right (plain stadium background) for the joystick and
+// SHOOT button — they used to overlap the grass itself, which put a
+// thumb right over the ball whenever it reached that corner.
+const PITCH_X0 = 180, PITCH_Y0 = 106, PITCH_X1 = PITCH_X0 + 900, PITCH_Y1 = H - 30;
 const PITCH_W  = PITCH_X1 - PITCH_X0, PITCH_H = PITCH_Y1 - PITCH_Y0;
 const PITCH_CY = (PITCH_Y0 + PITCH_Y1) / 2;
 const HALF_X   = (PITCH_X0 + PITCH_X1) / 2;
-const GOAL_H   = 105;
+const GOAL_H   = 140;
 const GOAL_Y0  = PITCH_Y0 + (PITCH_H - GOAL_H) / 2;
 const GOAL_Y1  = GOAL_Y0 + GOAL_H;
 const NET_DEPTH = 22;
@@ -603,11 +606,13 @@ function drawTitleScreen() {
   bg.addColorStop(0, '#0B1330'); bg.addColorStop(0.55, '#162454'); bg.addColorStop(1, '#0A1228');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  const dots = [[40,60,7],[900,80,9],[60,470,8],[880,480,10],[480,40,6],[820,260,7],[100,260,9],[500,510,8],[150,420,6],[760,120,8]];
-  dots.forEach(([dx,dy,dr],i) => {
+  // Coordinates as fractions of W/H so the spread stays even regardless
+  // of the canvas's own width (widened to fit the side controls).
+  const dots = [[.042,.105,7],[.938,.139,9],[.063,.819,8],[.917,.836,10],[.5,.07,6],[.854,.453,7],[.104,.453,9],[.521,.889,8],[.156,.732,6],[.792,.209,8]];
+  dots.forEach(([fx,fy,dr],i) => {
     const a = 0.12 + 0.1 * Math.sin(titleFrame * 0.02 + i);
     ctx.fillStyle = `rgba(255,201,74,${a})`;
-    ctx.beginPath(); ctx.arc(dx, dy, dr, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx * W, fy * H, dr, 0, Math.PI*2); ctx.fill();
   });
 
   ctx.save();
