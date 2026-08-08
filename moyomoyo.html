@@ -130,13 +130,16 @@ const BUTTONS = [
   { key: 'right', label: '▶',  x: BTN_X0 + (BTN_W + BTN_GAP) * 3 },
 ];
 
+// Colors are spread across distinct hues (not a same-family gradient) so
+// each stage reads at a glance during fast match play — size/name still
+// carry the growth story, color is purely the "which type is this" cue.
 const STAGES = [
-  { name: 'たまごモク',   r: 16, color: '#F5E6C8', face: '#8A6A40', pts: 1  },
-  { name: 'ひよこモク',   r: 22, color: '#FFE066', face: '#8A6A10', pts: 2  },
-  { name: 'ひなモク',     r: 29, color: '#F0B860', face: '#6A4010', pts: 4  },
-  { name: 'モクモク',     r: 37, color: '#C8956A', face: '#4A2800', pts: 8  },
-  { name: 'デカモク',     r: 47, color: '#D48060', face: '#3A1800', pts: 16 },
-  { name: '伝説モクモク', r: 58, color: '#FFD25E', face: '#7A4400', pts: 32, legendary: true },
+  { name: 'たまごモク',   r: 16, color: '#CFF2C2', face: '#8A6A40', pts: 1  }, // mint
+  { name: 'ひよこモク',   r: 22, color: '#FFE14D', face: '#8A6A10', pts: 2  }, // yellow
+  { name: 'ひなモク',     r: 29, color: '#FF9540', face: '#6A4010', pts: 4  }, // orange
+  { name: 'モクモク',     r: 37, color: '#FF5C7A', face: '#4A2800', pts: 8  }, // pink/red
+  { name: 'デカモク',     r: 47, color: '#4F9DFF', face: '#3A1800', pts: 16 }, // blue
+  { name: '伝説モクモク', r: 58, color: '#FFBF20', face: '#7A4400', pts: 32, legendary: true }, // amber gold
 ];
 const SPAWN_POOL = [0,0,0,0,1,1,2];
 
