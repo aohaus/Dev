@@ -42,9 +42,13 @@ body {
   visibility: hidden;
 }
 .ctrl-btn {
-  width: clamp(64px, 15vw, 116px);
-  height: clamp(64px, 15vw, 116px);
-  border-radius: clamp(16px, 4vw, 26px);
+  /* Sized from both vw and vh (not just vw) so the buttons shrink in
+     step with the canvas — which is height-bound via dvh — instead of
+     staying pinned near their max on wide screens whose real estate
+     (browser chrome, etc.) has eaten into the available height. */
+  width: clamp(52px, min(11vw, 12vh), 96px);
+  height: clamp(52px, min(11vw, 12vh), 96px);
+  border-radius: clamp(14px, 3vw, 22px);
   background: rgba(255,111,168,0.85);
   border: none;
   color: white;
@@ -74,7 +78,7 @@ body {
 canvas {
   display: block;
   cursor: pointer;
-  aspect-ratio: 530 / 828;
+  aspect-ratio: 624 / 918;
   height: 100vh;
   height: 100dvh;
   max-height: min(950px, calc(100vh - 16px));
@@ -262,20 +266,20 @@ canvas {
 // ─── CANVAS ───────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
-const W = 530, H = 828;
+const W = 624, H = 918;
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 canvas.width  = W * DPR;
 canvas.height = H * DPR;
 ctx.scale(DPR, DPR);
 
 // ─── CONFIG ───────────────────────────────────────────────────
-const CELL       = 54;  // bumped up from 42 for bigger, easier-to-read gummies
+const CELL       = 64;  // bumped up again for bigger, easier-to-read gummies
 const GRID_COLS  = 9;   // 150% of the original 6 columns — wider use of the screen
 const GRID_ROWS  = 12;
 const GRID_W     = CELL * GRID_COLS;
 const GRID_H     = CELL * GRID_ROWS;
 const GRID_X0    = (W - GRID_W) / 2;
-const GRID_Y0    = 160; // tall enough to clear the 3-line HTML HUD overlay
+const GRID_Y0    = 130; // tall enough to clear the 3-line HTML HUD overlay
 const SPAWN_COL  = 4;
 const MATCH_MIN  = 4;
 const LEVEL_STEP = 200; // score needed per level
@@ -293,10 +297,10 @@ const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 66;
 // 4+ group of it clears outright instead of "evolving" past the character's
 // own normal form into another color.
 const STAGES = [
-  { name: 'たまごモク', r: 22, color: '#CFF2C2', face: '#8A6A40', pts: 1 }, // mint
-  { name: 'ひよこモク', r: 32, color: '#FFE14D', face: '#8A6A10', pts: 2 }, // yellow
-  { name: 'ひなモク',   r: 42, color: '#FF9540', face: '#6A4010', pts: 4 }, // orange
-  { name: 'モクモク',   r: 54, color: '#FF5C7A', face: '#4A2800', pts: 8, legendary: true }, // pink, final tier
+  { name: 'たまごモク', r: 26, color: '#CFF2C2', face: '#8A6A40', pts: 1 }, // mint
+  { name: 'ひよこモク', r: 38, color: '#FFE14D', face: '#8A6A10', pts: 2 }, // yellow
+  { name: 'ひなモク',   r: 50, color: '#FF9540', face: '#6A4010', pts: 4 }, // orange
+  { name: 'モクモク',   r: 64, color: '#FF5C7A', face: '#4A2800', pts: 8, legendary: true }, // pink, final tier
 ];
 const SPAWN_POOL = [0,1,2]; // even 1:1:1 spread — orange was underrepresented before
 
@@ -705,19 +709,19 @@ function drawPiece() {
 function drawNextPreview() {
   // Top-right of the grid — clear of both the HTML score/best/time text
   // (top-left) and the pause button (above the canvas entirely).
-  const bx = GRID_X0 + GRID_W - 90;
+  const bx = GRID_X0 + GRID_W - 107;
   const by = GRID_Y0 + 10;
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.beginPath(); ctx.roundRect(bx, by, 78, 104, 14); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(bx, by, 92, 123, 16); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.font = '12px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('つぎ', bx + 39, by + 17);
+  ctx.font = '13px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('つぎ', bx + 46, by + 20);
   ctx.restore();
   if (nextPair) {
-    const r = 17;
-    drawGummyShape(bx + 39, by + 44, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false, nextPair.m1);
-    drawGummyShape(bx + 39, by + 82, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false, nextPair.m2);
+    const r = 20;
+    drawGummyShape(bx + 46, by + 52, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false, nextPair.m1);
+    drawGummyShape(bx + 46, by + 97, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false, nextPair.m2);
   }
 }
 
@@ -733,7 +737,7 @@ function drawChainPop() {
   const alpha = t < 0.3 ? t / 0.3 : 1;
   ctx.save();
   ctx.globalAlpha = alpha;
-  drawGummyShape(cx, cy, 90, stage.color, stage.face, 0, scale, stage.legendary, false);
+  drawGummyShape(cx, cy, 107, stage.color, stage.face, 0, scale, stage.legendary, false);
   ctx.restore();
 }
 
@@ -1157,7 +1161,10 @@ function startGame() {
   trySpawnPiece();
 }
 
-// ─── BGM (soft ambient pad, barely audible) ────────────────────
+// ─── BGM (soft ambient pad) ─────────────────────────────────────
+
+const BGM_GAIN = 0.09;        // clearly audible but still soft
+const BGM_GAIN_DUCKED = 0.03; // quieter while paused
 
 let audioCtx = null;
 let bgmMaster = null;
@@ -1173,6 +1180,20 @@ function initAudio() {
   bgmMaster.gain.value = 0;
   bgmMaster.connect(audioCtx.destination);
 }
+
+// iOS Safari only unlocks the audio hardware inside the very first
+// user-gesture handler on the page — unlocking as early as possible
+// (rather than waiting for the "start game" tap) avoids any edge case
+// where a later, indirect call misses that window and the BGM stays
+// silent even though the game logic runs fine.
+function unlockAudioOnce() {
+  initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  document.removeEventListener('touchstart', unlockAudioOnce);
+  document.removeEventListener('mousedown', unlockAudioOnce);
+}
+document.addEventListener('touchstart', unlockAudioOnce, { passive: true });
+document.addEventListener('mousedown', unlockAudioOnce, { passive: true });
 
 function startBGM() {
   initAudio();
@@ -1211,7 +1232,7 @@ function startBGM() {
 
   bgmNodes = { filter, oscs, lfo, lfoGain };
 
-  const target = bgmDucked ? 0.012 : 0.035;
+  const target = bgmDucked ? BGM_GAIN_DUCKED : BGM_GAIN;
   const now = audioCtx.currentTime;
   bgmMaster.gain.cancelScheduledValues(now);
   bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
@@ -1239,7 +1260,7 @@ function duckBGM(down) {
   const now = audioCtx.currentTime;
   bgmMaster.gain.cancelScheduledValues(now);
   bgmMaster.gain.setValueAtTime(bgmMaster.gain.value, now);
-  bgmMaster.gain.linearRampToValueAtTime(down ? 0.012 : 0.035, now + 0.6);
+  bgmMaster.gain.linearRampToValueAtTime(down ? BGM_GAIN_DUCKED : BGM_GAIN, now + 0.6);
 }
 
 // ─── INPUT ────────────────────────────────────────────────────
