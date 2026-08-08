@@ -84,11 +84,16 @@ canvas {
   font-size: 17px;
   cursor: pointer;
 }
+/* Sized as a % of #wrapper (which shrink-wraps the canvas 1:1), not vw —
+   vw is relative to the raw viewport and drifts out of sync with the
+   canvas's actual rendered size, which is what determines whether these
+   controls actually land inside the pitch-free margin reserved for them
+   below PITCH_Y1. */
 #joystick {
   position: absolute;
-  left: 20px; bottom: 20px;
-  width: clamp(110px, 20vw, 160px);
-  height: clamp(110px, 20vw, 160px);
+  left: 3%; bottom: 6px;
+  width: clamp(60px, 15%, 140px);
+  height: clamp(60px, 15%, 140px);
   border-radius: 50%;
   background: rgba(255,201,74,0.12);
   border: 2px solid rgba(255,201,74,0.4);
@@ -109,14 +114,14 @@ canvas {
 }
 #shoot-btn {
   position: absolute;
-  right: 24px; bottom: 26px;
-  width: clamp(84px, 15vw, 118px);
-  height: clamp(84px, 15vw, 118px);
+  right: 3%; bottom: 8px;
+  width: clamp(48px, 11%, 106px);
+  height: clamp(48px, 11%, 106px);
   border-radius: 50%;
   border: 3px solid rgba(255,255,255,0.5);
   background: radial-gradient(circle at 35% 30%, #FF9A52, #E4483A 70%);
   color: #fff;
-  font-size: clamp(14px, 2.6vw, 18px);
+  font-size: clamp(12px, 2vw, 16px);
   font-weight: 900;
   letter-spacing: 1px;
   box-shadow: 0 4px 18px rgba(228,72,58,0.55), inset 0 2px 6px rgba(255,255,255,0.35);
@@ -198,10 +203,15 @@ canvas.height = H * DPR;
 ctx.scale(DPR, DPR);
 
 // ─── CONFIG ───────────────────────────────────────────────────
-const PITCH_X0 = 30, PITCH_Y0 = 106, PITCH_X1 = W - 30, PITCH_Y1 = H - 30;
+// The pitch stops well short of the canvas bottom edge, leaving a
+// dedicated off-pitch margin (rendered as plain stadium background) for
+// the joystick and SHOOT button — they used to overlap the grass itself,
+// which put a thumb right over the ball whenever it reached that corner.
+const PITCH_X0 = 30, PITCH_Y0 = 106, PITCH_X1 = W - 30, PITCH_Y1 = H - 140;
 const PITCH_W  = PITCH_X1 - PITCH_X0, PITCH_H = PITCH_Y1 - PITCH_Y0;
+const PITCH_CY = (PITCH_Y0 + PITCH_Y1) / 2;
 const HALF_X   = (PITCH_X0 + PITCH_X1) / 2;
-const GOAL_H   = 140;
+const GOAL_H   = 105;
 const GOAL_Y0  = PITCH_Y0 + (PITCH_H - GOAL_H) / 2;
 const GOAL_Y1  = GOAL_Y0 + GOAL_H;
 const NET_DEPTH = 22;
@@ -250,16 +260,16 @@ let shotMessageTimer = 0;
 
 const player = { x: 0, y: 0, vx: 0, vy: 0, touching: false };
 const cpu    = { x: 0, y: 0, vx: 0, vy: 0, touching: false };
-const ball   = { x: 0, y: 0, vx: 0, vy: 0 };
+const ball   = { x: 0, y: 0, vx: 0, vy: 0, spin: 0 };
 const held = { up: false, down: false, left: false, right: false };
 let stickX = 0, stickY = 0; // analog joystick tilt, each axis in [-1, 1]
 
 function homePositions() {
-  player.x = PITCH_X0 + PITCH_W * 0.22; player.y = H / 2; player.vx = 0; player.vy = 0;
-  cpu.x    = PITCH_X1 - PITCH_W * 0.22; cpu.y    = H / 2; cpu.vx = 0; cpu.vy = 0;
+  player.x = PITCH_X0 + PITCH_W * 0.22; player.y = PITCH_CY; player.vx = 0; player.vy = 0;
+  cpu.x    = PITCH_X1 - PITCH_W * 0.22; cpu.y    = PITCH_CY; cpu.vx = 0; cpu.vy = 0;
 }
 function centerBall(dir) {
-  ball.x = HALF_X; ball.y = H / 2;
+  ball.x = HALF_X; ball.y = PITCH_CY;
   const angle = (Math.random() * 0.7 - 0.35) + (dir < 0 ? Math.PI : 0);
   const speed = 3 + Math.random() * 1.5;
   ball.vx = Math.cos(angle) * speed;
@@ -369,14 +379,37 @@ function drawMokumoku(x, y, r, angle) {
 }
 
 // ─── BALL ─────────────────────────────────────────────────────
+// Stylized Trionda-esque tri-color pinwheel panels on a white base,
+// rather than a classic black-and-white pentagon ball. Spins with speed.
+const BALL_PANEL_COLORS = ['#2FAE66', '#2C93D6', '#F0632F'];
 function drawBall() {
   ctx.save();
   ctx.translate(ball.x, ball.y);
-  ctx.fillStyle = '#F5F5F0';
+
+  ctx.fillStyle = '#F8F8F2';
   ctx.beginPath(); ctx.arc(0, 0, BALL_R, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(-BALL_R * 0.5, -BALL_R * 0.3); ctx.lineTo(BALL_R * 0.5, -BALL_R * 0.1); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-BALL_R * 0.3, BALL_R * 0.5); ctx.lineTo(BALL_R * 0.2, -BALL_R * 0.2); ctx.stroke();
+
+  ctx.save();
+  ctx.rotate(ball.spin);
+  ctx.beginPath(); ctx.arc(0, 0, BALL_R, 0, Math.PI * 2); ctx.clip();
+  BALL_PANEL_COLORS.forEach((col, i) => {
+    ctx.save();
+    ctx.rotate((i * Math.PI * 2) / 3);
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(BALL_R * 0.85, -BALL_R * 0.5, BALL_R * 1.3, BALL_R * 0.15);
+    ctx.quadraticCurveTo(BALL_R * 0.55, BALL_R * 0.25, 0, 0);
+    ctx.fill();
+    ctx.restore();
+  });
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, 0, BALL_R, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.arc(-BALL_R * 0.32, -BALL_R * 0.38, BALL_R * 0.24, 0, Math.PI * 2); ctx.fill();
+
   ctx.restore();
 }
 
@@ -397,8 +430,8 @@ function drawPitch() {
   ctx.lineWidth = 2.5;
   ctx.strokeRect(PITCH_X0, PITCH_Y0, PITCH_W, PITCH_H);
   ctx.beginPath(); ctx.moveTo(HALF_X, PITCH_Y0); ctx.lineTo(HALF_X, PITCH_Y1); ctx.stroke();
-  ctx.beginPath(); ctx.arc(HALF_X, H / 2, 52, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(HALF_X, H / 2, 3, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
+  ctx.beginPath(); ctx.arc(HALF_X, PITCH_CY, 44, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(HALF_X, PITCH_CY, 3, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
 
   // goal boxes (decorative, crosshatched net)
   [PITCH_X0, PITCH_X1].forEach((gx, side) => {
@@ -517,6 +550,7 @@ function resolvePaddleHit(entity, radius) {
 function updateBall() {
   ball.x += ball.vx; ball.y += ball.vy;
   ball.vx *= BALL_FRICTION; ball.vy *= BALL_FRICTION;
+  ball.spin += Math.hypot(ball.vx, ball.vy) * 0.07;
 
   // Paddle collisions resolve first; the wall clamp below runs last and is
   // authoritative, so a paddle push can never leave the ball resting outside
@@ -545,7 +579,7 @@ function scoreGoal(who) {
   if (who === 'home') { scoreHome++; goalMessage = '⚽ GOAL!'; }
   else { scoreAway++; goalMessage = '😵 CONCEDED...'; }
   updateHUD();
-  addParticles(who === 'home' ? PITCH_X1 : PITCH_X0, H / 2, '#FFC94A', 26, 6);
+  addParticles(who === 'home' ? PITCH_X1 : PITCH_X0, PITCH_CY, '#FFC94A', 26, 6);
   addShake(14);
   flashAlpha = 0.5;
   state = 'GOAL_PAUSE';
@@ -732,7 +766,8 @@ function drawTimeSelect() {
 }
 
 // ─── PAUSE / GAME OVER (canvas) ────────────────────────────────
-const PAUSE_RESUME_Y = H * 0.46;
+const PAUSE_TITLE_Y  = PITCH_CY - 141;
+const PAUSE_RESUME_Y = PITCH_CY - 61;
 const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 64;
 function drawPausedOverlay() {
   ctx.save();
@@ -742,7 +777,7 @@ function drawPausedOverlay() {
   ctx.fillStyle = '#EFFFEA';
   ctx.font = 'bold 28px Arial';
   ctx.shadowColor = '#7FE87F'; ctx.shadowBlur = 18;
-  ctx.fillText('⏸ PAUSED', W/2, H * 0.32);
+  ctx.fillText('⏸ PAUSED', W/2, PAUSE_TITLE_Y);
   ctx.shadowBlur = 0;
   ctx.restore();
 
@@ -797,7 +832,7 @@ function draw() {
     ctx.font = 'bold 40px Arial';
     ctx.shadowColor = '#FFC94A'; ctx.shadowBlur = 26;
     ctx.fillStyle = '#fff';
-    ctx.fillText(goalMessage, W/2, H/2);
+    ctx.fillText(goalMessage, W/2, PITCH_CY);
     ctx.restore();
   }
 
