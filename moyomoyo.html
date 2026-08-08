@@ -37,8 +37,8 @@ body {
      (the control buttons) in both orientations. */
   height: 100vh;
   height: 100dvh;
-  max-height: min(950px, calc(100vw * 2.166), calc(100vh - 16px));
-  max-height: min(950px, calc(100vw * 2.166), calc(100dvh - 16px));
+  max-height: min(950px, calc(100vw * 1.526), calc(100vh - 16px));
+  max-height: min(950px, calc(100vw * 1.526), calc(100dvh - 16px));
 }
 canvas { display: block; cursor: pointer; height: 100%; width: auto; }
 #hud {
@@ -48,18 +48,37 @@ canvas { display: block; cursor: pointer; height: 100%; width: auto; }
   pointer-events: none;
 }
 #score-display {
-  background: rgba(40,15,55,0.55);
+  background: linear-gradient(135deg, rgba(255,111,168,0.30), rgba(79,157,255,0.25));
   color: #FFE066;
-  font-size: 16px; font-weight: 700;
-  padding: 6px 14px; border-radius: 20px;
-  letter-spacing: 0.3px;
+  font-size: 27px; font-weight: 900;
+  padding: 8px 20px; border-radius: 16px;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 14px rgba(255,224,102,0.75), 0 2px 4px rgba(0,0,0,0.5);
+  border: 1.5px solid rgba(255,224,102,0.35);
 }
 #best-display {
   background: rgba(40,15,55,0.4);
   color: rgba(255,255,255,0.75);
-  font-size: 12px;
+  font-size: 13px;
+  padding: 5px 12px; border-radius: 20px;
+  margin-top: 8px;
+}
+#time-display {
+  background: rgba(40,15,55,0.4);
+  color: rgba(255,255,255,0.75);
+  font-size: 13px;
   padding: 5px 12px; border-radius: 20px;
   margin-top: 6px;
+}
+#pause-btn {
+  pointer-events: all;
+  background: rgba(40,15,55,0.55);
+  color: white;
+  border: 1.5px solid rgba(255,255,255,0.25);
+  border-radius: 50%;
+  width: 44px; height: 44px;
+  font-size: 18px;
+  cursor: pointer;
 }
 #overlay {
   position: absolute; inset: 0;
@@ -71,7 +90,7 @@ canvas { display: block; cursor: pointer; height: 100%; width: auto; }
 }
 #overlay.hidden { display: none; }
 #overlay h1 { color: #fff; font-size: 30px; margin-bottom: 8px; text-shadow: 0 2px 12px rgba(0,0,0,0.5); text-align: center; }
-#overlay p { color: #FFE066; font-size: 16px; margin-bottom: 24px; text-align: center; }
+#overlay p { color: #FFE066; font-size: 16px; margin-bottom: 24px; text-align: center; white-space: pre-line; }
 #overlay button {
   background: #FF6FA8; color: #fff;
   border: none; border-radius: 30px;
@@ -97,9 +116,11 @@ canvas { display: block; cursor: pointer; height: 100%; width: auto; }
   <canvas id="c"></canvas>
   <div id="hud" style="visibility:hidden">
     <div>
-      <div id="score-display">スコア: 0</div>
+      <div id="score-display">Lv.1  スコア: 0</div>
       <div id="best-display">ベスト: 0</div>
+      <div id="time-display">⏱ 0:00</div>
     </div>
+    <button id="pause-btn" title="一時停止">⏸</button>
   </div>
   <div id="overlay" class="hidden">
     <h1 id="ov-title"></h1>
@@ -116,7 +137,7 @@ canvas { display: block; cursor: pointer; height: 100%; width: auto; }
 // ─── CANVAS ───────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
-const W = 300, H = 650;
+const W = 426, H = 650;
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 canvas.width  = W * DPR;
 canvas.height = H * DPR;
@@ -124,19 +145,20 @@ ctx.scale(DPR, DPR);
 
 // ─── CONFIG ───────────────────────────────────────────────────
 const CELL       = 42;
-const GRID_COLS  = 6;
+const GRID_COLS  = 9;   // 150% of the original 6 columns — wider use of the screen
 const GRID_ROWS  = 12;
 const GRID_W     = CELL * GRID_COLS;
 const GRID_H     = CELL * GRID_ROWS;
 const GRID_X0    = (W - GRID_W) / 2;
 const GRID_Y0    = 64;
-const SPAWN_COL  = 2;
+const SPAWN_COL  = 4;
 const MATCH_MIN  = 4;
+const LEVEL_STEP = 200; // score needed per level
 
 const BTN_Y  = GRID_Y0 + GRID_H + 16;
 const BTN_H  = 52;
-const BTN_W  = 64;
-const BTN_GAP = 8;
+const BTN_W  = 74;
+const BTN_GAP = 10;
 const BTN_X0 = (W - (BTN_W * 4 + BTN_GAP * 3)) / 2;
 const BUTTONS = [
   { key: 'left',  label: '◀',  x: BTN_X0 },
@@ -144,19 +166,22 @@ const BUTTONS = [
   { key: 'down',  label: '▼',  x: BTN_X0 + (BTN_W + BTN_GAP) * 2 },
   { key: 'right', label: '▶',  x: BTN_X0 + (BTN_W + BTN_GAP) * 3 },
 ];
+const PAUSE_RESUME_Y = H * 0.48;
+const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 66;
 
 // Colors are spread across distinct hues (not a same-family gradient) so
 // each stage reads at a glance during fast match play — size/name still
 // carry the growth story, color is purely the "which type is this" cue.
+// Chain shortened to 4 stages: モクモク (pink) is now the final tier — a
+// 4+ group of it clears outright instead of "evolving" past the character's
+// own normal form into another color.
 const STAGES = [
-  { name: 'たまごモク',   r: 16, color: '#CFF2C2', face: '#8A6A40', pts: 1  }, // mint
-  { name: 'ひよこモク',   r: 22, color: '#FFE14D', face: '#8A6A10', pts: 2  }, // yellow
-  { name: 'ひなモク',     r: 29, color: '#FF9540', face: '#6A4010', pts: 4  }, // orange
-  { name: 'モクモク',     r: 37, color: '#FF5C7A', face: '#4A2800', pts: 8  }, // pink/red
-  { name: 'デカモク',     r: 47, color: '#4F9DFF', face: '#3A1800', pts: 16 }, // blue
-  { name: '伝説モクモク', r: 58, color: '#FFBF20', face: '#7A4400', pts: 32, legendary: true }, // amber gold
+  { name: 'たまごモク', r: 17, color: '#CFF2C2', face: '#8A6A40', pts: 1 }, // mint
+  { name: 'ひよこモク', r: 25, color: '#FFE14D', face: '#8A6A10', pts: 2 }, // yellow
+  { name: 'ひなモク',   r: 33, color: '#FF9540', face: '#6A4010', pts: 4 }, // orange
+  { name: 'モクモク',   r: 42, color: '#FF5C7A', face: '#4A2800', pts: 8, legendary: true }, // pink, final tier
 ];
-const SPAWN_POOL = [0,0,0,0,1,1,2];
+const SPAWN_POOL = [0,1,2]; // even 1:1:1 spread — orange was underrepresented before
 
 // Satellite offset (dCol,dRow) relative to the axis cell, per rotation state
 const ROT_OFFSETS = [[0,-1],[1,0],[0,1],[-1,0]]; // up, right, down, left
@@ -184,6 +209,8 @@ let pendingGarbage = 0;
 let titleFrame = 0;
 let shakeX = 0, shakeY = 0;
 let activeBtn = null;
+let flashAlpha = 0;
+let playFrames = 0;
 
 function rollStage() { return SPAWN_POOL[Math.floor(Math.random() * SPAWN_POOL.length)]; }
 function newGrid() { return Array.from({ length: GRID_COLS }, () => new Array(GRID_ROWS).fill(null)); }
@@ -325,16 +352,16 @@ function resolveStep() {
       grid[anchor[0]][anchor[1]] = newStage;
       score += Math.round(STAGES[newStage].pts * mult);
       if (STAGES[newStage].legendary) {
-        score += 500;
-        legendText = '🎉 伝説モクモク誕生！ +500';
+        score += 100;
+        legendText = '🎉 モクモク進化！ +100';
         legendTimer = 130;
-        addParticles(mx, my, '#FFD700', 26, 6);
+        addParticles(mx, my, '#FF5C7A', 26, 6);
       }
     } else {
-      score += Math.round(800 * mult);
-      legendText = '🎉 伝説モクモク大連鎖！ +800';
+      score += Math.round(150 * mult);
+      legendText = '🎉 モクモク大連鎖！ +150';
       legendTimer = 130;
-      addParticles(mx, my, '#FFD700', 30, 7);
+      addParticles(mx, my, '#FF5C7A', 30, 7);
     }
     addParticles(mx, my, STAGES[g.stage].color, 10 + g.cells.length * 2, 4);
   });
@@ -344,15 +371,18 @@ function resolveStep() {
     comboTimer = 90;
   }
   if (chainCount >= 3) {
-    celebrateText = chainCount >= 5 ? '🎉🎉 大連鎖！！ 🎉🎉' : '🎉 3連鎖ボーナス！';
-    celebrateTimer = 85;
-    const burstCols = ['#FFD700', '#FF6FA8', '#4F9DFF', '#FFE14D', '#CFF2C2'];
-    for (let i = 0; i < 3; i++) {
+    const isBig = chainCount >= 5;
+    celebrateText = isBig ? '🎉🎉 大連鎖！！ 🎉🎉' : '🎉 3連鎖ボーナス！';
+    celebrateTimer = 110;
+    flashAlpha = isBig ? 0.7 : 0.5;
+    const burstCols = ['#FFD700', '#FF6FA8', '#4F9DFF', '#FFE14D', '#CFF2C2', '#FF9540'];
+    const burstCount = isBig ? 10 : 6;
+    for (let i = 0; i < burstCount; i++) {
       const bx = GRID_X0 + Math.random() * GRID_W;
-      const by = GRID_Y0 + Math.random() * GRID_H * 0.5;
-      addParticles(bx, by, burstCols[Math.floor(Math.random() * burstCols.length)], 16, 5);
+      const by = GRID_Y0 + Math.random() * GRID_H * 0.7;
+      addParticles(bx, by, burstCols[Math.floor(Math.random() * burstCols.length)], 24, 6);
     }
-    addShake(10);
+    addShake(16 + chainCount * 2);
   }
   checkLevelUp();
   updateHUD();
@@ -361,13 +391,14 @@ function resolveStep() {
 }
 
 function checkLevelUp() {
-  const newLevel = 1 + Math.floor(score / 500);
+  const newLevel = 1 + Math.floor(score / LEVEL_STEP);
   if (newLevel <= level) return;
   for (let lv = level + 1; lv <= newLevel; lv++) pendingGarbage += (lv - 1);
   level = newLevel;
   celebrateText = `⬆️ Lv.${level} UP！`;
-  celebrateTimer = 85;
-  addShake(6);
+  celebrateTimer = 90;
+  flashAlpha = 0.4;
+  addShake(8);
 }
 
 function injectGarbage(count) {
@@ -390,6 +421,13 @@ function injectGarbage(count) {
 function updateHUD() {
   document.getElementById('score-display').textContent = `Lv.${level}  スコア: ${score}`;
   document.getElementById('best-display').textContent = `ベスト: ${Math.max(score, bestScore)}`;
+}
+
+function updateTimeDisplay() {
+  const secs = Math.floor(playFrames / 60);
+  const mm = Math.floor(secs / 60);
+  const ss = secs % 60;
+  document.getElementById('time-display').textContent = `⏱ ${mm}:${String(ss).padStart(2, '0')}`;
 }
 
 // ─── DRAW ─────────────────────────────────────────────────────
@@ -485,17 +523,21 @@ function drawPiece() {
 }
 
 function drawNextPreview() {
+  // Top-right of the grid — clear of both the HTML score/best/time text
+  // (top-left) and the pause button (above the canvas entirely).
+  const bx = GRID_X0 + GRID_W - 70;
+  const by = GRID_Y0 + 10;
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.beginPath(); ctx.roundRect(10, 44, 56, 76, 12); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(bx, by, 60, 80, 12); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.font = '10px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('つぎ', 38, 56);
+  ctx.fillText('つぎ', bx + 30, by + 14);
   ctx.restore();
   if (nextPair) {
     const r = 13;
-    drawGummyShape(38, 74, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false);
-    drawGummyShape(38, 102, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false);
+    drawGummyShape(bx + 30, by + 34, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false);
+    drawGummyShape(bx + 30, by + 64, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false);
   }
 }
 
@@ -553,15 +595,16 @@ function drawComboAnnouncement() {
   }
   if (celebrateTimer > 0 && celebrateText) {
     celebrateTimer--;
-    const alpha = celebrateTimer > 55 ? 1 : celebrateTimer / 55;
-    const scale = celebrateTimer > 65 ? 1 + (85 - celebrateTimer) * 0.025 : 1;
+    const alpha = celebrateTimer > 75 ? 1 : celebrateTimer / 75;
+    const scale = celebrateTimer > 100 ? 1 + (110 - celebrateTimer) * 0.05
+                : 1 + Math.sin(celebrateTimer * 0.35) * 0.05;
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(W / 2, GRID_Y0 + GRID_H * 0.46);
     ctx.scale(scale, scale);
     ctx.textAlign = 'center';
-    ctx.font = 'bold 24px Arial';
-    ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 22;
+    ctx.font = 'bold 34px Arial';
+    ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 34;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(celebrateText, 0, 0);
     ctx.restore();
@@ -595,7 +638,8 @@ function drawTitleScreen() {
 
   const bob = Math.sin(titleFrame * 0.05) * 7;
   const tilt = Math.sin(titleFrame * 0.03) * 0.1;
-  drawGummyShape(W/2, 240 + bob, 50, STAGES[5].color, STAGES[5].face, tilt, 1, true);
+  const lastStage = STAGES[STAGES.length - 1];
+  drawGummyShape(W/2, 240 + bob, 50, lastStage.color, lastStage.face, tilt, 1, true);
 
   const chainY = 335;
   const startX = W/2 - 108;
@@ -647,6 +691,41 @@ function drawTitleScreen() {
   ctx.restore();
 }
 
+function drawPausedOverlay() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,5,30,0.72)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFE9F5';
+  ctx.font = 'bold 30px Arial';
+  ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 20;
+  ctx.fillText('⏸ 一時停止中', W/2, H * 0.36);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = '#FF6FA8';
+  ctx.beginPath(); ctx.roundRect(W/2 - 90, PAUSE_RESUME_Y - 24, 180, 48, 24); ctx.fill();
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 19px Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('▶ 再開', W/2, PAUSE_RESUME_Y);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.beginPath(); ctx.roundRect(W/2 - 90, PAUSE_QUIT_Y - 22, 180, 44, 22); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(W/2 - 90, PAUSE_QUIT_Y - 22, 180, 44, 22); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = '16px Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🏠 タイトルへ', W/2, PAUSE_QUIT_Y);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, W, H);
   if (state === 'TITLE') { drawTitleScreen(); return; }
@@ -666,12 +745,28 @@ function draw() {
   drawComboAnnouncement();
 
   ctx.restore();
+
+  if (flashAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillStyle = '#FFE9A0';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+    flashAlpha *= 0.82;
+  } else {
+    flashAlpha = 0;
+  }
+
+  if (state === 'PAUSED') drawPausedOverlay();
 }
 
 // ─── GAME LOGIC ───────────────────────────────────────────────
 
 function update() {
   if (state !== 'PLAYING') return;
+
+  playFrames++;
+  if (playFrames % 60 === 0) updateTimeDisplay();
 
   particles.forEach(p => p.update());
   particles = particles.filter(p => p.alive);
@@ -724,10 +819,14 @@ function gameOver() {
     bestScore = score;
     localStorage.setItem('moyomoyo-best', String(bestScore));
   }
+  const secs = Math.floor(playFrames / 60);
+  const mm = Math.floor(secs / 60);
+  const ss = secs % 60;
   const ov = document.getElementById('overlay');
   ov.classList.remove('hidden');
   document.getElementById('ov-title').textContent = '😵 グミがあふれた！';
-  document.getElementById('ov-sub').textContent = `スコア: ${score}pt　ベスト: ${bestScore}pt`;
+  document.getElementById('ov-sub').textContent =
+    `Lv.${level}　スコア: ${score}pt　ベスト: ${bestScore}pt\n⏱ ${mm}:${String(ss).padStart(2,'0')}`;
 }
 
 function startGame() {
@@ -736,15 +835,23 @@ function startGame() {
   score = 0;
   level = 1;
   pendingGarbage = 0;
+  playFrames = 0;
   grid = newGrid();
   particles = [];
   chainCount = 0;
   fallTimer = 0;
   pauseTimer = 0;
+  comboText = ''; comboTimer = 0;
+  legendText = ''; legendTimer = 0;
+  celebrateText = ''; celebrateTimer = 0;
+  flashAlpha = 0;
+  shakeX = 0; shakeY = 0;
+  document.getElementById('pause-btn').textContent = '⏸';
   nextPair = { s1: rollStage(), s2: rollStage() };
   document.getElementById('hud').style.visibility = 'visible';
   document.getElementById('overlay').classList.add('hidden');
   updateHUD();
+  updateTimeDisplay();
   trySpawnPiece();
 }
 
@@ -768,12 +875,34 @@ function hitButton(p) {
   return null;
 }
 
+function pauseGame() {
+  if (state !== 'PLAYING') return;
+  state = 'PAUSED';
+  document.getElementById('pause-btn').textContent = '▶';
+}
+function resumeGame() {
+  if (state !== 'PAUSED') return;
+  state = 'PLAYING';
+  document.getElementById('pause-btn').textContent = '⏸';
+}
+function quitToTitle() {
+  state = 'TITLE';
+  titleFrame = 0;
+  document.getElementById('pause-btn').textContent = '⏸';
+  document.getElementById('hud').style.visibility = 'hidden';
+}
+
 function onDown(e) {
   e.preventDefault();
   const p = getPos(e);
   if (state === 'TITLE') {
     if (p.x >= W/2 - 85 && p.x <= W/2 + 85 && p.y >= 421 && p.y <= 469) { startGame(); return; }
     if (p.y >= H - 34) { window.location.href = 'angry-mokumoku.html'; return; }
+    return;
+  }
+  if (state === 'PAUSED') {
+    if (p.x >= W/2-90 && p.x <= W/2+90 && p.y >= PAUSE_RESUME_Y-24 && p.y <= PAUSE_RESUME_Y+24) { resumeGame(); return; }
+    if (p.x >= W/2-90 && p.x <= W/2+90 && p.y >= PAUSE_QUIT_Y-22 && p.y <= PAUSE_QUIT_Y+22) { quitToTitle(); return; }
     return;
   }
   if (state !== 'PLAYING' || phase !== 'FALL') return;
@@ -801,7 +930,16 @@ document.getElementById('ov-btn').addEventListener('click', () => {
   startGame();
 });
 
+document.getElementById('pause-btn').addEventListener('click', () => {
+  if (state === 'PLAYING') pauseGame();
+  else if (state === 'PAUSED') resumeGame();
+});
+
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && (state === 'PLAYING' || state === 'PAUSED')) {
+    if (state === 'PLAYING') pauseGame(); else resumeGame();
+    return;
+  }
   if (state !== 'PLAYING' || phase !== 'FALL') return;
   if (e.key === 'ArrowLeft') moveLeft();
   else if (e.key === 'ArrowRight') moveRight();
