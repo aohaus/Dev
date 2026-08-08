@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>モヨモヨ - Moyomoyo</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: linear-gradient(160deg, #2A1840 0%, #4A2560 55%, #331A48 100%);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 100vh;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  user-select: none;
+  overflow: hidden;
+  touch-action: none;
+}
+#wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  height: 100vh;
+  max-height: min(900px, calc(100vw * 1.556));
+}
+canvas { display: block; cursor: pointer; height: 100%; width: auto; }
+#hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 12px 14px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  pointer-events: none;
+}
+#score-display {
+  background: rgba(40,15,55,0.55);
+  color: #FFE066;
+  font-size: 16px; font-weight: 700;
+  padding: 6px 14px; border-radius: 20px;
+  letter-spacing: 0.3px;
+}
+#best-display {
+  background: rgba(40,15,55,0.4);
+  color: rgba(255,255,255,0.75);
+  font-size: 12px;
+  padding: 5px 12px; border-radius: 20px;
+  margin-top: 6px;
+}
+#overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(20,5,30,0.6);
+  backdrop-filter: blur(4px);
+  pointer-events: all;
+}
+#overlay.hidden { display: none; }
+#overlay h1 { color: #fff; font-size: 34px; margin-bottom: 8px; text-shadow: 0 2px 12px rgba(0,0,0,0.5); }
+#overlay p { color: #FFE066; font-size: 17px; margin-bottom: 24px; text-align: center; }
+#overlay button {
+  background: #FF6FA8; color: #fff;
+  border: none; border-radius: 30px;
+  padding: 12px 32px; font-size: 18px; font-weight: 700;
+  cursor: pointer; transition: transform 0.15s, background 0.15s;
+  box-shadow: 0 4px 16px rgba(255,111,168,0.4);
+}
+#overlay button:hover { background: #FF8FBC; transform: scale(1.05); }
+#rotate-hint {
+  display: none;
+  position: fixed; inset: 0; z-index: 999;
+  background: #2A1840;
+  flex-direction: column; align-items: center; justify-content: center;
+  color: white; font-size: 18px; gap: 16px;
+}
+@media (max-width: 400px) and (orientation: landscape) {
+  #rotate-hint { display: flex; }
+}
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <canvas id="c"></canvas>
+  <div id="hud" style="visibility:hidden">
+    <div>
+      <div id="score-display">スコア: 0</div>
+      <div id="best-display">ベスト: 0</div>
+    </div>
+  </div>
+  <div id="overlay" class="hidden">
+    <h1 id="ov-title"></h1>
+    <p id="ov-sub"></p>
+    <button id="ov-btn">もう一度！</button>
+  </div>
+</div>
+<div id="rotate-hint">
+  <span>📱</span>
+  <p>縦向きにしてプレイ！</p>
+</div>
+
+<script>
+// ─── CANVAS ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = 360, H = 560;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width  = W * DPR;
+canvas.height = H * DPR;
+ctx.scale(DPR, DPR);
+
+// ─── CONFIG ───────────────────────────────────────────────────
+const GRAV        = 0.45;
+const WALL        = 12;
+const FLOOR       = 16;
+const FLOOR_Y     = H - FLOOR;
+const DANGER_Y    = 88;
+const DANGER_HOLD = 90;   // frames the stack may poke above the line before game over
+const SPAWN_Y      = 46;
+const DROP_COOLDOWN = 24;
+const WALL_DAMP    = 0.5;
+const GROUND_DAMP  = 0.16;
+const AIR_FRICTION = 0.992;
+
+const STAGES = [
+  { name: 'たまごモク',   r: 16, color: '#F5E6C8', face: '#8A6A40', pts: 1  },
+  { name: 'ひよこモク',   r: 22, color: '#FFE066', face: '#8A6A10', pts: 2  },
+  { name: 'ひなモク',     r: 29, color: '#F0B860', face: '#6A4010', pts: 4  },
+  { name: 'モクモク',     r: 37, color: '#C8956A', face: '#4A2800', pts: 8  },
+  { name: 'デカモク',     r: 47, color: '#D48060', face: '#3A1800', pts: 16 },
+  { name: '伝説モクモク', r: 58, color: '#FFD25E', face: '#7A4400', pts: 32, legendary: true },
+];
+const SPAWN_POOL = [0,0,0,1,1,2];
+
+// ─── STATE ────────────────────────────────────────────────────
+let state = 'TITLE'; // TITLE | PLAYING | GAMEOVER
+let score = 0;
+let bestScore = parseInt(localStorage.getItem('moyomoyo-best') || '0', 10);
+let gummies = [];
+let particles = [];
+let currentStage = 0;
+let nextStage = 0;
+let dragX = W / 2;
+let dragging = false;
+let dropCooldown = 0;
+let dangerTimer = 0;
+let lastMergeTime = 0;
+let mergeCombo = 0;
+let comboText = '';
+let comboTimer = 0;
+let legendText = '';
+let legendTimer = 0;
+let titleFrame = 0;
+let shakeX = 0, shakeY = 0;
+
+function rollStage() { return SPAWN_POOL[Math.floor(Math.random() * SPAWN_POOL.length)]; }
+
+// ─── CLASSES ──────────────────────────────────────────────────
+
+class Gummy {
+  constructor(x, y, stage) {
+    this.x = x; this.y = y;
+    this.vx = 0; this.vy = 0;
+    this.stage = stage;
+    this.angle = (Math.random() - 0.5) * 0.3;
+    this.angV = 0;
+    this.alive = true;
+    this.mergeGrace = 10;
+    this.popScale = 0;
+  }
+  get r() { return STAGES[this.stage].r; }
+  update() {
+    if (this.popScale < 1) this.popScale = Math.min(1, this.popScale + 0.15);
+    if (this.mergeGrace > 0) this.mergeGrace--;
+    this.vy += GRAV;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.angle += this.angV;
+    this.angV *= 0.9;
+    this.vx *= AIR_FRICTION;
+
+    const r = this.r;
+    if (this.x - r < WALL) { this.x = WALL + r; this.vx *= -WALL_DAMP; this.angV += (Math.random()-0.5)*0.06; }
+    if (this.x + r > W - WALL) { this.x = W - WALL - r; this.vx *= -WALL_DAMP; this.angV += (Math.random()-0.5)*0.06; }
+    if (this.y + r > FLOOR_Y) {
+      this.y = FLOOR_Y - r;
+      this.vy *= -GROUND_DAMP;
+      this.vx *= 0.9;
+      if (Math.abs(this.vy) < 0.6) this.vy = 0;
+    }
+  }
+}
+
+class Particle {
+  constructor(x, y, vx, vy, col, sz, life) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.col = col; this.sz = sz;
+    this.alpha = 1;
+    this.life = life || 30;
+    this.age = 0;
+  }
+  update() {
+    this.vy += 0.15;
+    this.x += this.vx; this.y += this.vy;
+    this.age++;
+    this.alpha = 1 - this.age / this.life;
+    this.sz *= 0.94;
+  }
+  get alive() { return this.age < this.life; }
+}
+
+function addParticles(x, y, col, count, sz) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.PI * 2 * i / count + Math.random() * 0.5;
+    const sp = 1.5 + Math.random() * 4;
+    particles.push(new Particle(x, y, Math.cos(a)*sp, Math.sin(a)*sp - 1.5, col, sz || 4));
+  }
+}
+
+function addShake(intensity) {
+  shakeX = (Math.random() - 0.5) * intensity * 2;
+  shakeY = (Math.random() - 0.5) * intensity * 2;
+}
+
+// ─── PHYSICS / MERGE ──────────────────────────────────────────
+
+function resolveCollisions() {
+  const claimed = new Set();
+  const pendingMerges = [];
+  for (let i = 0; i < gummies.length; i++) {
+    const a = gummies[i];
+    if (!a.alive) continue;
+    for (let j = i + 1; j < gummies.length; j++) {
+      const b = gummies[j];
+      if (!b.alive || claimed.has(a) || claimed.has(b)) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
+      const minDist = a.r + b.r;
+      if (dist >= minDist) continue;
+
+      if (a.stage === b.stage && a.stage < STAGES.length - 1 && a.mergeGrace === 0 && b.mergeGrace === 0) {
+        claimed.add(a); claimed.add(b);
+        pendingMerges.push([a, b]);
+        continue;
+      }
+      // Push apart + soft velocity exchange
+      const overlap = minDist - dist;
+      const nx = dx / dist, ny = dy / dist;
+      a.x -= nx * overlap * 0.5; a.y -= ny * overlap * 0.5;
+      b.x += nx * overlap * 0.5; b.y += ny * overlap * 0.5;
+      const relVx = b.vx - a.vx, relVy = b.vy - a.vy;
+      a.vx -= nx * 0.06 * relVx; a.vy -= ny * 0.06 * relVy;
+      b.vx += nx * 0.06 * relVx; b.vy += ny * 0.06 * relVy;
+      a.angV += (Math.random()-0.5)*0.05; b.angV += (Math.random()-0.5)*0.05;
+    }
+  }
+
+  pendingMerges.forEach(([a, b]) => {
+    a.alive = false; b.alive = false;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const newStage = a.stage + 1;
+    const merged = new Gummy(mx, my, newStage);
+    merged.vx = (a.vx + b.vx) * 0.2;
+    merged.vy = Math.min(a.vy, b.vy) * 0.2 - 1.5;
+    gummies.push(merged);
+
+    const now = Date.now();
+    if (lastMergeTime > 0 && now - lastMergeTime < 1400) mergeCombo++; else mergeCombo = 0;
+    lastMergeTime = now;
+    const mult = 1 + mergeCombo * 0.5;
+    score += Math.round(STAGES[newStage].pts * mult);
+    if (mergeCombo > 0) { comboText = `${mergeCombo + 1}れんさ！ ×${mult.toFixed(1)}`; comboTimer = 90; }
+    addParticles(mx, my, STAGES[newStage].color, 14, 4);
+    addShake(mergeCombo > 1 ? 8 : 4);
+
+    if (STAGES[newStage].legendary) {
+      score += 500;
+      legendText = '🎉 伝説モクモク誕生！ +500';
+      legendTimer = 130;
+      addParticles(mx, my, '#FFD700', 30, 6);
+      addShake(14);
+    }
+    updateHUD();
+  });
+
+  gummies = gummies.filter(g => g.alive);
+}
+
+function updateHUD() {
+  document.getElementById('score-display').textContent = `スコア: ${score}`;
+  document.getElementById('best-display').textContent = `ベスト: ${Math.max(score, bestScore)}`;
+}
+
+// ─── DRAW ─────────────────────────────────────────────────────
+
+function drawGummyShape(x, y, r, color, face, angle, scale, legendary) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(scale, scale);
+
+  if (legendary) {
+    ctx.shadowColor = '#FFE080'; ctx.shadowBlur = 18;
+  }
+
+  // Rounded-square gummy body
+  const s = r * 1.62; // side length so the square reads similarly sized to old circle radius
+  const rad = r * 0.42; // corner rounding
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.roundRect(-s/2, -s/2, s, s, rad);
+  ctx.fill();
+  // Glossy highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.beginPath();
+  ctx.roundRect(-s/2 + s*0.12, -s/2 + s*0.1, s*0.4, s*0.22, rad*0.6);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Simplified mokumoku face
+  ctx.fillStyle = face;
+  const eyeR = r * 0.09;
+  ctx.beginPath(); ctx.arc(-r*0.26, -r*0.05, eyeR, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r*0.26, -r*0.05, eyeR, 0, Math.PI*2); ctx.fill();
+  // Angry brows
+  ctx.strokeStyle = face; ctx.lineWidth = r * 0.06; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-r*0.4, -r*0.22); ctx.lineTo(-r*0.14, -r*0.14); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(r*0.14, -r*0.14); ctx.lineTo(r*0.4, -r*0.22); ctx.stroke();
+  // Beak
+  ctx.fillStyle = '#E89230';
+  ctx.beginPath(); ctx.ellipse(0, r*0.14, r*0.1, r*0.12, 0, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawContainer() {
+  // Background
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#3A2050'); bg.addColorStop(1, '#241238');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Danger line
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.006);
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,80,110,${0.4 + pulse * 0.3})`;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath(); ctx.moveTo(WALL, DANGER_Y); ctx.lineTo(W - WALL, DANGER_Y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Jar walls
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(0, 0, WALL, H);
+  ctx.fillRect(W - WALL, 0, WALL, H);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(0, FLOOR_Y, W, FLOOR);
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(WALL, 0); ctx.lineTo(WALL, FLOOR_Y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W - WALL, 0); ctx.lineTo(W - WALL, FLOOR_Y); ctx.stroke();
+}
+
+function drawGummies() {
+  gummies.forEach(g => {
+    const st = STAGES[g.stage];
+    drawGummyShape(g.x, g.y, st.r, st.color, st.face, g.angle, g.popScale, st.legendary);
+  });
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawCurrentAndNext() {
+  if (state !== 'PLAYING') return;
+  const st = STAGES[currentStage];
+  const alpha = dropCooldown > 0 ? 0.45 : 1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  drawGummyShape(dragX, SPAWN_Y, st.r, st.color, st.face, 0, 1, st.legendary);
+  ctx.restore();
+  // Guideline
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2; ctx.setLineDash([4,7]);
+  ctx.beginPath(); ctx.moveTo(dragX, SPAWN_Y + st.r); ctx.lineTo(dragX, FLOOR_Y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Next preview (top-left pill)
+  const nst = STAGES[nextStage];
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.roundRect(10, 44, 64, 40, 12); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '10px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('つぎ', 42, 56);
+  ctx.restore();
+  drawGummyShape(42, 74, Math.min(nst.r, 16), nst.color, nst.face, 0, 1, false);
+}
+
+function drawComboAnnouncement() {
+  if (comboTimer > 0 && comboText) {
+    comboTimer--;
+    const alpha = comboTimer > 60 ? 1 : comboTimer / 60;
+    const scale = comboTimer > 75 ? 1 + (90 - comboTimer) * 0.02 : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(W / 2, H * 0.4);
+    ctx.scale(scale, scale);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 22px Arial';
+    ctx.shadowColor = '#FF6600'; ctx.shadowBlur = 16;
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText(comboText, 0, 0);
+    ctx.restore();
+  }
+  if (legendTimer > 0 && legendText) {
+    legendTimer--;
+    const alpha = legendTimer > 90 ? 1 : legendTimer / 90;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 18px Arial';
+    ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 20;
+    ctx.fillStyle = '#FFF3C0';
+    ctx.fillText(legendText, W / 2, H * 0.3);
+    ctx.restore();
+  }
+}
+
+function drawTitleScreen() {
+  titleFrame++;
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#5A2E78'); bg.addColorStop(0.55, '#3E1E58'); bg.addColorStop(1, '#241238');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Soft candy bokeh dots
+  const dots = [[40,90,10],[300,140,14],[60,420,12],[310,460,9],[180,60,8],[260,320,7],[90,260,10]];
+  dots.forEach(([dx,dy,dr],i) => {
+    const a = 0.15 + 0.1 * Math.sin(titleFrame * 0.02 + i);
+    ctx.fillStyle = `rgba(255,180,220,${a})`;
+    ctx.beginPath(); ctx.arc(dx, dy, dr, 0, Math.PI*2); ctx.fill();
+  });
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 26;
+  ctx.fillStyle = '#FFE9F5';
+  ctx.font = 'bold 56px Arial';
+  ctx.fillText('モヨモヨ', W/2, 150);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#FFB0DC';
+  ctx.font = '14px Arial';
+  ctx.fillText('M O K U M O K U   M E R G E', W/2, 178);
+  ctx.restore();
+
+  // Bouncing legendary mascot
+  const bob = Math.sin(titleFrame * 0.05) * 8;
+  const tilt = Math.sin(titleFrame * 0.03) * 0.1;
+  drawGummyShape(W/2, 280 + bob, 58, STAGES[5].color, STAGES[5].face, tilt, 1, true);
+
+  // Evolution chain preview
+  const chainY = 400;
+  const startX = W/2 - 130;
+  STAGES.forEach((st, i) => {
+    const x = startX + i * 52;
+    drawGummyShape(x, chainY, Math.min(st.r, 18), st.color, st.face, 0, 1, false);
+    if (i < STAGES.length - 1) {
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.font = '12px Arial'; ctx.textAlign = 'center';
+      ctx.fillText('▶', x + 26, chainY + 4);
+    }
+  });
+
+  // Start button
+  const btnY = 470;
+  const pulse = 0.6 + 0.4 * Math.sin(titleFrame * 0.06);
+  ctx.save();
+  ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 14 + pulse * 8;
+  ctx.fillStyle = '#FF6FA8';
+  ctx.beginPath(); ctx.roundRect(W/2 - 90, btnY - 24, 180, 48, 24); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 20px Arial';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('▶ スタート', W/2, btnY);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+
+  if (bestScore > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '13px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(`ベストスコア: ${bestScore}`, W/2, btnY + 46);
+  }
+
+  // Cross-link to Angry Mokumoku
+  ctx.save();
+  ctx.textAlign = 'center';
+  const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
+  ctx.globalAlpha = linkPulse;
+  ctx.fillStyle = '#B0D8FF';
+  ctx.font = '13px Arial';
+  ctx.fillText('🦉 アングリーモクモクへ ▶', W/2, H - 18);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (state === 'TITLE') { drawTitleScreen(); return; }
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+  shakeX *= 0.7; shakeY *= 0.7;
+  if (Math.abs(shakeX) < 0.1) shakeX = 0;
+  if (Math.abs(shakeY) < 0.1) shakeY = 0;
+
+  drawContainer();
+  drawGummies();
+  drawParticles();
+  drawCurrentAndNext();
+  drawComboAnnouncement();
+
+  ctx.restore();
+}
+
+// ─── GAME LOGIC ───────────────────────────────────────────────
+
+function dropCurrent() {
+  if (dropCooldown > 0 || state !== 'PLAYING') return;
+  const r = STAGES[currentStage].r;
+  const x = clamp(dragX, WALL + r, W - WALL - r);
+  const g = new Gummy(x, SPAWN_Y, currentStage);
+  g.vy = 1;
+  gummies.push(g);
+  currentStage = nextStage;
+  nextStage = rollStage();
+  dropCooldown = DROP_COOLDOWN;
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function update() {
+  if (state === 'TITLE' || state === 'GAMEOVER') return;
+
+  if (dropCooldown > 0) dropCooldown--;
+
+  gummies.forEach(g => g.update());
+  resolveCollisions();
+  particles.forEach(p => p.update());
+  particles = particles.filter(p => p.alive);
+
+  // Danger-line check (settled stack only — the hovering "current" piece is separate)
+  const violating = gummies.some(g => (g.y - g.r) < DANGER_Y && g.mergeGrace === 0);
+  if (violating) dangerTimer++; else dangerTimer = 0;
+  if (dangerTimer > DANGER_HOLD) gameOver();
+}
+
+function gameOver() {
+  state = 'GAMEOVER';
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('moyomoyo-best', String(bestScore));
+  }
+  const ov = document.getElementById('overlay');
+  ov.classList.remove('hidden');
+  document.getElementById('ov-title').textContent = '😵 グミがあふれた！';
+  document.getElementById('ov-sub').textContent = `スコア: ${score}pt　ベスト: ${bestScore}pt`;
+}
+
+function startGame() {
+  state = 'PLAYING';
+  score = 0;
+  gummies = [];
+  particles = [];
+  dangerTimer = 0;
+  mergeCombo = 0;
+  lastMergeTime = 0;
+  currentStage = rollStage();
+  nextStage = rollStage();
+  dragX = W / 2;
+  dropCooldown = 0;
+  document.getElementById('hud').style.visibility = 'visible';
+  document.getElementById('overlay').classList.add('hidden');
+  updateHUD();
+}
+
+// ─── INPUT ────────────────────────────────────────────────────
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * scaleX,
+    y: (src.clientY - rect.top)  * scaleY,
+  };
+}
+
+function onDown(e) {
+  e.preventDefault();
+  if (state === 'TITLE') {
+    const p = getPos(e);
+    if (p.x >= W/2 - 90 && p.x <= W/2 + 90 && p.y >= 446 && p.y <= 494) {
+      startGame(); return;
+    }
+    if (p.y >= H - 34) {
+      window.location.href = 'angry-mokumoku.html';
+      return;
+    }
+    return;
+  }
+  if (state === 'GAMEOVER') return;
+  const p = getPos(e);
+  dragX = clamp(p.x, WALL, W - WALL);
+  dragging = true;
+}
+
+function onMove(e) {
+  e.preventDefault();
+  if (!dragging || state !== 'PLAYING') return;
+  const p = getPos(e);
+  dragX = clamp(p.x, WALL, W - WALL);
+}
+
+function onUp(e) {
+  e.preventDefault();
+  if (!dragging) return;
+  dragging = false;
+  if (state === 'PLAYING') dropCurrent();
+}
+
+canvas.addEventListener('mousedown',  onDown, { passive: false });
+canvas.addEventListener('mousemove',  onMove, { passive: false });
+canvas.addEventListener('mouseup',    onUp,   { passive: false });
+canvas.addEventListener('touchstart', onDown, { passive: false });
+canvas.addEventListener('touchmove',  onMove, { passive: false });
+canvas.addEventListener('touchend',   onUp,   { passive: false });
+
+document.getElementById('ov-btn').addEventListener('click', () => {
+  document.getElementById('overlay').classList.add('hidden');
+  startGame();
+});
+
+// ─── MAIN LOOP ────────────────────────────────────────────────
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function init() {
+  state = 'TITLE';
+  titleFrame = 0;
+  loop();
+}
+
+init();
+</script>
+</body>
+</html>

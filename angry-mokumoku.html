@@ -3604,6 +3604,11 @@ function onDown(e) {
   }
   if (state === 'TITLE') {
     const p = getPos(e);
+    // Cross-link to Moyomoyo (top-right corner)
+    if (p.x >= W - 150 && p.x <= W - 10 && p.y >= 8 && p.y <= 36) {
+      window.location.href = 'moyomoyo.html';
+      return;
+    }
     const menuY = 345;
     if (p.y >= menuY - 24 && p.y < menuY + 30) { titleMenuSel = 0; startFromTitle(); return; }
     if (p.y >= menuY + 22) {
@@ -4050,6 +4055,16 @@ function drawTitleScreen() {
   ctx.fillStyle = '#3A9040';
   ctx.font = '16px "Courier New", monospace';
   ctx.fillText('★  K L  C I T Y  E D I T I O N  ★', W/2, 112);
+  ctx.restore();
+
+  // Cross-link to the sister game
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.font = '12px "Courier New", monospace';
+  const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
+  ctx.globalAlpha = linkPulse;
+  ctx.fillStyle = '#FF8FC4';
+  ctx.fillText('🍬 モヨモヨへ ▶', W - 20, 28);
   ctx.restore();
 
   // Owl character
