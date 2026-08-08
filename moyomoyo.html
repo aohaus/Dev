@@ -217,13 +217,34 @@ canvas {
 }
 #rotate-hint span { font-size: 56px; animation: rotate-hint-spin 1.5s ease-in-out infinite alternate; }
 @keyframes rotate-hint-spin { from { transform: rotate(-30deg); } to { transform: rotate(30deg); } }
+/* Console-style frame spanning the whole viewport on the title screen —
+   moyomoyo's canvas itself is tall/narrow (built for the puzzle grid),
+   so a border drawn inside it alone reads as a small floating card
+   with dead space on either side. Framing the full window instead
+   matches how Angry Mokumoku's own wide canvas fills its screen. */
+#title-frame {
+  display: block;
+  position: fixed; inset: 14px;
+  border: 3px solid #D96FB0;
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+#title-frame::after {
+  content: '';
+  position: absolute; inset: 5px;
+  border: 1px solid #7A3D63;
+  border-radius: 8px;
+}
 @media (max-width: 600px) and (orientation: portrait) {
   #rotate-hint { display: flex; }
   #game-layout { display: none; }
+  #title-frame { display: none; }
 }
 </style>
 </head>
 <body>
+<div id="title-frame"></div>
 <div id="game-layout">
   <div class="side-col" id="left-col">
     <button class="ctrl-btn" data-action="left" aria-label="左へ">◀</button>
@@ -808,7 +829,7 @@ function drawComboAnnouncement() {
   }
 }
 
-const TITLE_MENU_Y = 630, TITLE_MENU_GAP = 52;
+const TITLE_MENU_Y = 685, TITLE_MENU_GAP = 68;
 const TITLE_MENU_ITEMS = ['スタート', '🏆 ランキング'];
 
 function drawTitleScreen() {
@@ -833,95 +854,99 @@ function drawTitleScreen() {
     ctx.beginPath(); ctx.arc(dx, dy, dr, 0, Math.PI*2); ctx.fill();
   });
 
-  // Console-style frame border — solid two-tone like Angry Mokumoku's
-  // own double-border, in moyomoyo's pink/gold instead of that game's
-  // green.
-  ctx.save();
-  ctx.strokeStyle = '#D96FB0'; ctx.lineWidth = 3;
-  ctx.strokeRect(12, 12, W - 24, H - 24);
-  ctx.strokeStyle = '#7A3D63'; ctx.lineWidth = 1;
-  ctx.strokeRect(17, 17, W - 34, H - 34);
-  ctx.restore();
+  // (Frame border is now the full-viewport #title-frame HTML element,
+  // not drawn on the canvas — this canvas is narrow/tall for the
+  // puzzle grid, so a border drawn inside it alone read as a small
+  // floating card instead of framing the whole screen like Angry
+  // Mokumoku's own wide canvas naturally does.)
 
   // Cross-links to the sister games — same top-right placement each
   // title screen uses for its own links back, so "other game" links
   // are always in the same spot no matter which title you're on.
+  // moyomoyo's canvas is internally tall (H=918, for the 12-row puzzle
+  // grid) versus Angry Mokumoku's wide, short one (H=500) — on a
+  // landscape screen that gives moyomoyo a noticeably smaller px-per-
+  // canvas-unit scale factor, so matching numbers render physically
+  // smaller. Every element below is sized up (~1.4-1.5x its old value)
+  // to compensate and land at a comparable on-screen size, while Y
+  // positions stay close to where they were since this taller canvas
+  // already had the room to spread content across its full height.
   ctx.save();
   ctx.textAlign = 'right';
-  ctx.font = 'bold 24px Arial';
+  ctx.font = 'bold 32px Arial';
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#B0D8FF';
-  ctx.fillText('🦉 アングリーモクモクへ ▶', W - 26, 46);
+  ctx.fillText('🦉 アングリーモクモクへ ▶', W - 24, 50);
   ctx.fillStyle = '#FFD37A';
-  ctx.fillText('⚽ MK Mobileへ ▶', W - 26, 84);
+  ctx.fillText('⚽ MK Mobileへ ▶', W - 24, 94);
   ctx.restore();
 
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 26;
+  ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 30;
   ctx.fillStyle = '#FFE9F5';
-  ctx.font = 'bold 60px "Hiragino Sans", "Yu Gothic", Meiryo, Arial, sans-serif';
-  ctx.fillText('モヨモヨ', W/2, 165);
+  ctx.font = 'bold 92px "Hiragino Sans", "Yu Gothic", Meiryo, Arial, sans-serif';
+  ctx.fillText('モヨモヨ', W/2, 178);
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#FFB0DC';
-  ctx.font = '13px Arial';
-  ctx.fillText('M O K U M O K U   C H A I N', W/2, 195);
+  ctx.font = '18px Arial';
+  ctx.fillText('M O K U M O K U   C H A I N', W/2, 210);
   ctx.restore();
 
-  const bob = Math.sin(titleFrame * 0.05) * 7;
+  const bob = Math.sin(titleFrame * 0.05) * 8;
   const tilt = Math.sin(titleFrame * 0.03) * 0.1;
   const lastStage = STAGES[STAGES.length - 1];
 
   // Idle sparkles orbiting the mascot — echoes the ✦ stars Angry
   // Mokumoku floats around its owl on its own title screen.
-  const mascotY = 330 + bob;
+  const mascotY = 355 + bob;
   const sparkT = (titleFrame * 0.04) % (Math.PI * 2);
-  [[W/2-110,mascotY-52],[W/2+116,mascotY-41],[W/2-93,mascotY+64],[W/2+99,mascotY+58]].forEach(([sx,sy],i) => {
+  [[W/2-163,mascotY-77],[W/2+172,mascotY-61],[W/2-138,mascotY+95],[W/2+147,mascotY+86]].forEach(([sx,sy],i) => {
     const s = 0.5 + 0.5 * Math.sin(sparkT + i * 1.5);
     ctx.save();
     ctx.globalAlpha = s * 0.85;
     ctx.fillStyle = '#FFE9A0';
-    ctx.font = '18px Arial';
+    ctx.font = '24px Arial';
     ctx.textAlign = 'center';
     ctx.fillText('✦', sx, sy);
     ctx.restore();
   });
 
-  drawGummyShape(W/2, mascotY, 58, lastStage.color, lastStage.face, tilt, 1, true);
+  drawGummyShape(W/2, mascotY, 86, lastStage.color, lastStage.face, tilt, 1, true);
 
-  const chainY = 480;
-  const startX = W/2 - 108;
+  const chainY = 555;
+  const startX = W/2 - 93;
   STAGES.forEach((st, i) => {
-    const x = startX + i * 44;
-    drawGummyShape(x, chainY, Math.min(st.r, 15), st.color, st.face, 0, 1, false);
+    const x = startX + i * 62;
+    drawGummyShape(x, chainY, Math.min(st.r, 22), st.color, st.face, 0, 1, false);
     if (i < STAGES.length - 1) {
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.font = '11px Arial'; ctx.textAlign = 'center';
-      ctx.fillText('▶', x + 22, chainY + 4);
+      ctx.font = '16px Arial'; ctx.textAlign = 'center';
+      ctx.fillText('▶', x + 31, chainY + 5);
     }
   });
 
   ctx.save();
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.font = '12px Arial';
-  ctx.fillText('同じ段階を4つ以上つなげて進化させよう', W/2, 520);
-  ctx.fillText('◀▶で移動・🔄で回転・▼で下に落とす', W/2, 538);
+  ctx.font = '17px Arial';
+  ctx.fillText('同じ段階を4つ以上つなげて進化させよう', W/2, 605);
+  ctx.fillText('◀▶で移動・🔄で回転・▼で下に落とす', W/2, 630);
   ctx.restore();
 
   // Menu — a selectable list like Angry Mokumoku's own title menu
   // (glowing highlight + ▶ prefix on the active item, ArrowUp/Down to
   // move, Enter/Space to activate) instead of moyomoyo's old separate
   // pill buttons.
-  ctx.font = 'bold 23px Arial';
+  ctx.font = 'bold 34px Arial';
   TITLE_MENU_ITEMS.forEach((label, i) => {
     const sel = titleMenuSel === i;
     const y = TITLE_MENU_Y + i * TITLE_MENU_GAP;
     ctx.textAlign = 'center';
     if (sel) {
       ctx.fillStyle = '#FFE9F5';
-      ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 16;
+      ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 20;
     } else {
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
       ctx.shadowBlur = 0;
@@ -932,27 +957,27 @@ function drawTitleScreen() {
 
   if (bestScore > 0) {
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.font = '13px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(`ベストスコア: ${bestScore}`, W/2, TITLE_MENU_Y + TITLE_MENU_GAP + 40);
+    ctx.font = '17px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(`ベストスコア: ${bestScore}`, W/2, TITLE_MENU_Y + TITLE_MENU_GAP + 44);
   }
 
   // Franchise footer tag — ties the three games together as one series.
-  const tagY = 810;
+  const tagY = 838;
   ctx.save();
   ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(W/2 - 70, tagY - 22); ctx.lineTo(W/2 + 70, tagY - 22); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W/2 - 90, tagY - 26); ctx.lineTo(W/2 + 90, tagY - 26); ctx.stroke();
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.font = '11px Arial';
+  ctx.font = '14px Arial';
   ctx.fillText('🍬 × 🦉 × ⚽  M O K U M O K U   S E R I E S', W/2, tagY);
   ctx.restore();
 
   // Footer instruction line, mirroring Angry Mokumoku's own utilitarian
   // footer at the very bottom of its title screen.
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.font = '12px Arial';
+  ctx.font = '15px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText('タップ / クリックで選択　・　↑↓キーで移動', W/2, H - 30);
+  ctx.fillText('タップ / クリックで選択　・　↑↓キーで移動', W/2, H - 26);
 }
 
 function drawPausedOverlay() {
@@ -1180,6 +1205,7 @@ function startGame() {
   document.getElementById('left-col').style.visibility = 'visible';
   document.getElementById('right-col').style.visibility = 'visible';
   document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('title-frame').style.display = 'none';
   updateHUD();
   updateTimeDisplay();
   trySpawnPiece();
@@ -1304,22 +1330,23 @@ function quitToTitle() {
   document.getElementById('hud').style.visibility = 'hidden';
   document.getElementById('left-col').style.visibility = 'hidden';
   document.getElementById('right-col').style.visibility = 'hidden';
+  document.getElementById('title-frame').style.display = 'block';
 }
 
 function onDown(e) {
   e.preventDefault();
   const p = getPos(e);
   if (state === 'TITLE') {
-    if (p.x >= W/2 - 150 && p.x <= W/2 + 150 && p.y >= TITLE_MENU_Y - 26 && p.y <= TITLE_MENU_Y + 26) {
+    if (p.x >= W/2 - 180 && p.x <= W/2 + 180 && p.y >= TITLE_MENU_Y - 30 && p.y <= TITLE_MENU_Y + 30) {
       titleMenuSel = 0; startGame(); return;
     }
     const item2Y = TITLE_MENU_Y + TITLE_MENU_GAP;
-    if (p.x >= W/2 - 150 && p.x <= W/2 + 150 && p.y >= item2Y - 26 && p.y <= item2Y + 26) {
+    if (p.x >= W/2 - 180 && p.x <= W/2 + 180 && p.y >= item2Y - 30 && p.y <= item2Y + 30) {
       titleMenuSel = 1; openBoard(); return;
     }
     // Cross-links to the sister games (top-right corner, stacked)
-    if (p.x >= W - 340 && p.x <= W - 10 && p.y >= 18 && p.y <= 62) { window.location.href = 'angry-mokumoku.html'; return; }
-    if (p.x >= W - 340 && p.x <= W - 10 && p.y >= 62 && p.y <= 100) { window.location.href = 'mk-mobile.html'; return; }
+    if (p.x >= W - 360 && p.x <= W - 10 && p.y >= 22 && p.y <= 72) { window.location.href = 'angry-mokumoku.html'; return; }
+    if (p.x >= W - 360 && p.x <= W - 10 && p.y >= 72 && p.y <= 118) { window.location.href = 'mk-mobile.html'; return; }
     return;
   }
   if (state === 'PAUSED') {
