@@ -39,18 +39,23 @@ body {
      clipped by a notch/rounded-corner safe area. */
   padding: 0 clamp(16px, 3vw, 40px);
 }
+/* Anchored inside #wrapper (the rounded card that holds the HUD and
+   canvas) rather than as flex columns outside it — sitting outside
+   the card put them past its visible edge in the plain page
+   background, which read as "stuck to the outside" even after giving
+   them clearance from the physical viewport edge. Positioned below
+   the score/best/time readout so they land inside the card's own
+   left/right margin instead of overlapping the puzzle grid. */
 .side-col {
   display: flex;
   flex-direction: column;
   gap: clamp(8px, 2vw, 18px);
-  flex: 0 0 auto;
-  /* Bottom-aligned rather than vertically centered — centered buttons
-     sit right where a landscape front camera often is, which both
-     covers it and makes that area less reliable to tap. */
-  align-self: flex-end;
-  margin-bottom: clamp(16px, 6vh, 64px);
+  position: absolute;
+  top: 140px;
   visibility: hidden;
 }
+#left-col { left: clamp(14px, 3vw, 32px); }
+#right-col { right: clamp(14px, 3vw, 32px); }
 .ctrl-btn {
   /* Sized from both vw and vh (not just vw) so the buttons shrink in
      step with the canvas — which is height-bound via dvh — instead of
@@ -291,10 +296,6 @@ canvas {
   <a href="mk-mobile.html">⚽ MK Mobileへ ▶</a>
 </div>
 <div id="game-layout">
-  <div class="side-col" id="left-col">
-    <button class="ctrl-btn" data-action="left" aria-label="左へ">◀</button>
-    <button class="ctrl-btn" data-action="down" aria-label="下へ">▼</button>
-  </div>
   <div id="wrapper">
     <canvas id="c"></canvas>
     <div id="hud" style="visibility:hidden">
@@ -304,6 +305,14 @@ canvas {
         <div id="time-display">⏱ 0:00</div>
       </div>
       <button id="pause-btn" title="一時停止">⏸</button>
+    </div>
+    <div class="side-col" id="left-col">
+      <button class="ctrl-btn" data-action="left" aria-label="左へ">◀</button>
+      <button class="ctrl-btn" data-action="down" aria-label="下へ">▼</button>
+    </div>
+    <div class="side-col" id="right-col">
+      <button class="ctrl-btn" data-action="right" aria-label="右へ">▶</button>
+      <button class="ctrl-btn" data-action="rotate" aria-label="回転">🔄</button>
     </div>
     <div id="overlay" class="hidden">
       <h1 id="ov-title"></h1>
@@ -322,10 +331,6 @@ canvas {
       <div id="board-list"></div>
       <button id="board-close-btn">とじる</button>
     </div>
-  </div>
-  <div class="side-col" id="right-col">
-    <button class="ctrl-btn" data-action="right" aria-label="右へ">▶</button>
-    <button class="ctrl-btn" data-action="rotate" aria-label="回転">🔄</button>
   </div>
 </div>
 <div id="rotate-hint">
