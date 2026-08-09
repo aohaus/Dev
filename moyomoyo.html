@@ -884,7 +884,7 @@ function drawTitleScreen() {
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#B0D8FF';
-  ctx.fillText('🦉 アングリーモクモクへ ▶', W - 24, 50);
+  ctx.fillText('🦉 アングリーモクモクへ ▶', W - 24, 58);
   ctx.fillStyle = '#FFD37A';
   ctx.fillText('⚽ MK Mobileへ ▶', W - 24, 94);
   ctx.restore();
@@ -1351,9 +1351,12 @@ function onDown(e) {
     if (p.x >= W/2 - 180 && p.x <= W/2 + 180 && p.y >= item2Y - 30 && p.y <= item2Y + 30) {
       titleMenuSel = 1; openBoard(); return;
     }
-    // Cross-links to the sister games (top-right corner, stacked)
-    if (p.x >= W - 360 && p.x <= W - 10 && p.y >= 22 && p.y <= 72) { window.location.href = 'angry-mokumoku.html'; return; }
-    if (p.x >= W - 360 && p.x <= W - 10 && p.y >= 72 && p.y <= 118) { window.location.href = 'mk-mobile.html'; return; }
+    // Cross-links to the sister games (top-right corner, stacked). Pushed
+    // down from the very top edge (was y:22) so they clear the frame
+    // border with a comfortable tap margin instead of sitting flush
+    // against it.
+    if (p.x >= W - 360 && p.x <= W - 10 && p.y >= 32 && p.y <= 76) { window.location.href = 'angry-mokumoku.html'; return; }
+    if (p.x >= W - 360 && p.x <= W - 10 && p.y >= 76 && p.y <= 118) { window.location.href = 'mk-mobile.html'; return; }
     return;
   }
   if (state === 'PAUSED') {

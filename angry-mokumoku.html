@@ -3628,12 +3628,15 @@ function onDown(e) {
   }
   if (state === 'TITLE') {
     const p = getPos(e);
-    // Cross-links to the sister games (top-right corner, stacked)
-    if (p.x >= W - 280 && p.x <= W - 10 && p.y >= 16 && p.y <= 52) {
+    // Cross-links to the sister games (top-right corner, stacked). Pushed
+    // down from the very top edge (was y:16) so they clear the frame
+    // border with a comfortable tap margin instead of sitting flush
+    // against it.
+    if (p.x >= W - 280 && p.x <= W - 10 && p.y >= 30 && p.y <= 70) {
       window.location.href = 'moyomoyo.html';
       return;
     }
-    if (p.x >= W - 280 && p.x <= W - 10 && p.y >= 52 && p.y <= 86) {
+    if (p.x >= W - 280 && p.x <= W - 10 && p.y >= 70 && p.y <= 110) {
       window.location.href = 'mk-mobile.html';
       return;
     }
@@ -4093,9 +4096,9 @@ function drawTitleScreen() {
   const linkPulse = 0.7 + 0.3 * Math.sin(titleFrame * 0.05);
   ctx.globalAlpha = linkPulse;
   ctx.fillStyle = '#FF8FC4';
-  ctx.fillText('🍬 モヨモヨへ ▶', W - 18, 38);
+  ctx.fillText('🍬 モヨモヨへ ▶', W - 18, 54);
   ctx.fillStyle = '#FFD37A';
-  ctx.fillText('⚽ MK Mobileへ ▶', W - 18, 68);
+  ctx.fillText('⚽ MK Mobileへ ▶', W - 18, 92);
   ctx.restore();
 
   // Owl character
