@@ -364,7 +364,14 @@ canvas.width  = W * DPR;
 canvas.height = H * DPR;
 ctx.scale(DPR, DPR);
 const MATCH_MIN  = 4;
-const LEVEL_STEP = 200; // score needed per level
+// Retuned from 200 for a finite Lv1-10 run with a real ending (MAX_LEVEL
+// below) instead of endless play — the old value's quadratic cumulative
+// cost (LEVEL_STEP*L*(L+1)/2) would need 9000pts to reach Lv10, an
+// unreasonably long grind for a run that's now meant to actually finish.
+// At 120, Lv10 needs a cumulative 5400pts (120,360,720,1200,1800,2520,
+// 3360,4320,5400 through Lv2-10), still a real climb but a completable one.
+const LEVEL_STEP = 120;
+const MAX_LEVEL  = 10; // reaching this triggers 全面クリア instead of another preset
 const MAGIC_CHANCE = 0.025; // ~2.5% of spawned pieces are マジックモヨモヨ
 const LEADERBOARD_KEY = 'moyomoyo-leaderboard';
 const LEADERBOARD_MAX = 10;
@@ -375,18 +382,29 @@ const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 79;
 // Colors are spread across distinct hues (not a same-family gradient) so
 // each stage reads at a glance during fast match play — size/name still
 // carry the growth story, color is purely the "which type is this" cue.
-// Chain shortened to 4 stages: モクモク (pink) is now the final tier — a
-// 4+ group of it clears outright instead of "evolving" past the character's
-// own normal form into another color.
+// デカモク (blue) is back as the 5th and final tier — a 4+ group of it
+// clears outright instead of evolving further. モクモク (pink) is no
+// longer the ceiling: it now merges up into デカモク like every other
+// stage, and (from Lv3) spawns directly instead of only being reachable
+// by merging orange.
 // Radii scaled up with CELL (78/64 ≈ 1.22x) so each stage still fills its
 // cell the same way it did before, just bigger.
 const STAGES = [
-  { name: 'たまごモク', r: 32, color: '#CFF2C2', face: '#8A6A40', pts: 1 }, // mint
-  { name: 'ひよこモク', r: 46, color: '#FFE14D', face: '#8A6A10', pts: 2 }, // yellow
-  { name: 'ひなモク',   r: 61, color: '#FF9540', face: '#6A4010', pts: 4 }, // orange
-  { name: 'モクモク',   r: 78, color: '#FF5C7A', face: '#4A2800', pts: 8, legendary: true }, // pink, final tier
+  { name: 'たまごモク', r: 32, color: '#CFF2C2', face: '#8A6A40', pts: 1 },  // mint
+  { name: 'ひよこモク', r: 46, color: '#FFE14D', face: '#8A6A10', pts: 2 },  // yellow
+  { name: 'ひなモク',   r: 61, color: '#FF9540', face: '#6A4010', pts: 4 },  // orange
+  { name: 'モクモク',   r: 78, color: '#FF5C7A', face: '#4A2800', pts: 8 },  // pink
+  { name: 'デカモク',   r: 98, color: '#4F9DFF', face: '#3A1800', pts: 16, legendary: true }, // blue, final tier
 ];
-const SPAWN_POOL = [0,1,2]; // even 1:1:1 spread — orange was underrepresented before
+// Which stages can drop directly, gated by level — colors climb in as the
+// board gets harder (Lv1-2: 3 colors, Lv3-4: +pink, Lv5+: +デカモク) so
+// the increasing variety itself is what raises the difficulty, on top of
+// the fall-speed and preset changes.
+function getSpawnPool(lv) {
+  if (lv >= 5) return [0, 1, 2, 3, 4];
+  if (lv >= 3) return [0, 1, 2, 3];
+  return [0, 1, 2];
+}
 
 // Satellite offset (dCol,dRow) relative to the axis cell, per rotation state
 const ROT_OFFSETS = [[0,-1],[1,0],[0,1],[-1,0]]; // up, right, down, left
@@ -421,7 +439,10 @@ let shakeX = 0, shakeY = 0;
 let flashAlpha = 0;
 let playFrames = 0;
 
-function rollStage() { return SPAWN_POOL[Math.floor(Math.random() * SPAWN_POOL.length)]; }
+function rollStage() {
+  const pool = getSpawnPool(level);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 function rollPair() {
   return { s1: rollStage(), s2: rollStage(), m1: Math.random() < MAGIC_CHANCE, m2: Math.random() < MAGIC_CHANCE };
 }
@@ -591,16 +612,16 @@ function resolveStep() {
       topStageThisStep = Math.max(topStageThisStep, newStage);
       if (STAGES[newStage].legendary) {
         score += 100;
-        legendText = '🎉 モクモク進化！ +100';
+        legendText = `🎉 ${STAGES[newStage].name}進化！ +100`;
         legendTimer = 130;
-        addParticles(mx, my, '#FF5C7A', 26, 6);
+        addParticles(mx, my, STAGES[newStage].color, 26, 6);
       }
     } else {
       score += Math.round(150 * mult);
       topStageThisStep = Math.max(topStageThisStep, g.stage);
-      legendText = '🎉 モクモク大連鎖！ +150';
+      legendText = `🎉 ${STAGES[g.stage].name}大連鎖！ +150`;
       legendTimer = 130;
-      addParticles(mx, my, '#FF5C7A', 30, 7);
+      addParticles(mx, my, STAGES[g.stage].color, 30, 7);
     }
     addParticles(mx, my, STAGES[g.stage].color, 10 + g.cells.length * 2, 4);
 
@@ -664,13 +685,16 @@ function resolveStep() {
 function checkLevelUp() {
   // Cumulative score needed to reach level L+1 is LEVEL_STEP*(1+2+...+L),
   // so each level takes progressively more score than the last instead
-  // of a flat 200 every time — 1→2 still takes 200 (unchanged pacing
-  // early on), but 2→3 takes 400 more, 3→4 takes 600 more, and so on.
-  const newLevel = 1 + Math.floor((-1 + Math.sqrt(1 + 8 * score / LEVEL_STEP)) / 2);
+  // of a flat amount every time. Capped at MAX_LEVEL so a single huge
+  // chain can't overshoot past the 全面クリア level.
+  const rawLevel = 1 + Math.floor((-1 + Math.sqrt(1 + 8 * score / LEVEL_STEP)) / 2);
+  const newLevel = Math.min(rawLevel, MAX_LEVEL);
   if (newLevel <= level) return;
   level = newLevel;
   pendingLevelPreset = true;
-  celebrateText = `⬆️ Lv.${level} UP！盤面リセット！`;
+  celebrateText = level >= MAX_LEVEL
+    ? `⬆️ Lv.${level} UP！ラスト！`
+    : `⬆️ Lv.${level} UP！盤面リセット！`;
   celebrateTimer = 100;
   flashAlpha = 0.5;
   addShake(10);
@@ -967,7 +991,11 @@ function drawTitleScreen() {
 
   const bob = Math.sin(titleFrame * 0.05) * 8;
   const tilt = Math.sin(titleFrame * 0.03) * 0.1;
-  const lastStage = STAGES[STAGES.length - 1];
+  // Pinned to モクモク (pink) specifically, not "whichever stage is the
+  // current ceiling" — the game's whole brand (name, frame, buttons) is
+  // pink, and デカモク taking over as the new final tier shouldn't change
+  // the mascot's color out from under it.
+  const lastStage = STAGES[3];
 
   // Idle sparkles orbiting the mascot — echoes the ✦ stars Angry
   // Mokumoku floats around its owl on its own title screen.
@@ -1173,8 +1201,9 @@ function update() {
   } else if (phase === 'SPAWN_PAUSE') {
     if (--pauseTimer <= 0 && state === 'PLAYING') {
       if (pendingLevelPreset) {
-        applyLevelPreset();
         pendingLevelPreset = false;
+        if (level >= MAX_LEVEL) { winClear(); return; }
+        applyLevelPreset();
       }
       phase = 'FALL';
       trySpawnPiece();
@@ -1232,10 +1261,13 @@ function closeBoard() {
   document.getElementById('board-overlay').classList.add('hidden');
 }
 
-function gameOver() {
+// Shared by both endings — a run stops either by overflowing (gameOver)
+// or by clearing all the way to MAX_LEVEL (winClear). Same overlay,
+// same leaderboard rules, just a different headline and sound.
+function endRun(title, sfxKind) {
   state = 'GAMEOVER';
   piece = null;
-  playSfx('gameover');
+  playSfx(sfxKind);
   if (score > bestScore) {
     bestScore = score;
     localStorage.setItem('moyomoyo-best', String(bestScore));
@@ -1245,7 +1277,7 @@ function gameOver() {
   const ss = secs % 60;
   const ov = document.getElementById('overlay');
   ov.classList.remove('hidden');
-  document.getElementById('ov-title').textContent = '😵 モヨモヨがあふれた！';
+  document.getElementById('ov-title').textContent = title;
   document.getElementById('ov-sub').textContent =
     `Lv.${level}　スコア: ${score}pt　ベスト: ${bestScore}pt\n⏱ ${mm}:${String(ss).padStart(2,'0')}`;
   const nameRow = document.getElementById('ov-name-row');
@@ -1259,6 +1291,22 @@ function gameOver() {
   }
   document.getElementById('left-col').style.visibility = 'hidden';
   document.getElementById('right-col').style.visibility = 'hidden';
+}
+
+function gameOver() {
+  endRun('😵 モヨモヨがあふれた！', 'gameover');
+}
+
+function winClear() {
+  addShake(20);
+  flashAlpha = 0.8;
+  const burstCols = ['#4F9DFF', '#FFD700', '#FF6FA8', '#FFE14D', '#CFF2C2', '#FF9540'];
+  for (let i = 0; i < 20; i++) {
+    const bx = GRID_X0 + Math.random() * GRID_W;
+    const by = GRID_Y0 + Math.random() * GRID_H;
+    addParticles(bx, by, burstCols[Math.floor(Math.random() * burstCols.length)], 30, 7);
+  }
+  endRun('🎉 全面クリア！おめでとう！', 'magic');
 }
 
 function startGame() {
