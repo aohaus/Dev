@@ -385,17 +385,25 @@ const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 79;
 // Colors are spread across distinct hues (not a same-family gradient) so
 // each stage reads at a glance during fast match play — size/name still
 // carry the growth story, color is purely the "which type is this" cue.
+// The old yellow/orange/pink trio all sat within ~60° of hue (23-38°
+// apart from each other), clustered enough to be hard to tell apart at
+// a glance — especially during fast play. Replaced yellow and orange
+// with teal and violet, evenly spread ~60-80° apart from every
+// neighboring stage around the wheel (mint/teal/violet/pink/blue), while
+// keeping mint, pink, and blue untouched — pink stays because the title
+// mascot below is deliberately pinned to it for brand consistency (see
+// its own comment), and mint/blue were never part of the complaint.
 // デカモク (blue) is back as the 5th and final tier — a 4+ group of it
 // clears outright instead of evolving further. モクモク (pink) is no
 // longer the ceiling: it now merges up into デカモク like every other
 // stage, and (from Lv3) spawns directly instead of only being reachable
-// by merging orange.
+// by merging the stage below it.
 // Radii scaled up with CELL (78/64 ≈ 1.22x) so each stage still fills its
 // cell the same way it did before, just bigger.
 const STAGES = [
   { name: 'たまごモク', r: 32, color: '#CFF2C2', face: '#8A6A40', pts: 1 },  // mint
-  { name: 'ひよこモク', r: 46, color: '#FFE14D', face: '#8A6A10', pts: 2 },  // yellow
-  { name: 'ひなモク',   r: 61, color: '#FF9540', face: '#6A4010', pts: 4 },  // orange
+  { name: 'ひよこモク', r: 46, color: '#2DD4A8', face: '#0A4A3E', pts: 2 },  // teal
+  { name: 'ひなモク',   r: 61, color: '#9B5DE5', face: '#3A1060', pts: 4 },  // violet
   { name: 'モクモク',   r: 78, color: '#FF5C7A', face: '#4A2800', pts: 8 },  // pink
   { name: 'デカモク',   r: 98, color: '#4F9DFF', face: '#3A1800', pts: 16, legendary: true }, // blue, final tier
 ];
@@ -716,7 +724,7 @@ function resolveStep() {
     celebrateText = isBig ? '🎉🎉 大連鎖！！ 🎉🎉' : '🎉 3連鎖ボーナス！';
     celebrateTimer = 110;
     flashAlpha = isBig ? 0.7 : 0.5;
-    const burstCols = ['#FFD700', '#FF6FA8', '#4F9DFF', '#FFE14D', '#CFF2C2', '#FF9540'];
+    const burstCols = [...STAGES.map(s => s.color), '#FFD700', '#FF6FA8'];
     const burstCount = isBig ? 10 : 6;
     for (let i = 0; i < burstCount; i++) {
       const bx = GRID_X0 + Math.random() * GRID_W;
@@ -1361,7 +1369,7 @@ function gameOver() {
 function winClear() {
   addShake(20);
   flashAlpha = 0.8;
-  const burstCols = ['#4F9DFF', '#FFD700', '#FF6FA8', '#FFE14D', '#CFF2C2', '#FF9540'];
+  const burstCols = [...STAGES.map(s => s.color), '#FFD700', '#FF6FA8'];
   for (let i = 0; i < 20; i++) {
     const bx = GRID_X0 + Math.random() * GRID_W;
     const by = GRID_Y0 + Math.random() * GRID_H;
