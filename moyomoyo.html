@@ -87,7 +87,7 @@ body {
      so the HUD (absolutely positioned against this box) sits flush
      against the grid instead of floating in leftover vertical space. */
 }
-/* Canvas keeps its 426:588 aspect ratio and fills up to the available
+/* Canvas keeps its 828:852 aspect ratio and fills up to the available
    height (100dvh, mobile-Safari-toolbar-safe), shrinking by width
    instead whenever the side button columns leave less room than that.
    No fixed px cap on the height (previously capped at 950px, which
@@ -99,7 +99,7 @@ body {
 canvas {
   display: block;
   cursor: pointer;
-  aspect-ratio: 624 / 918;
+  aspect-ratio: 828 / 852; /* must match the canvas's internal W:H below */
   height: 100vh;
   height: 100dvh;
   max-height: calc(100vh - 24px);
@@ -342,21 +342,27 @@ canvas {
 // ─── CANVAS ───────────────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
-const W = 624, H = 918;
+
+// ─── CONFIG ───────────────────────────────────────────────────
+// Board reshaped from a tall 9x12 grid to a more compact 10x9 one so the
+// same viewport-height budget (the canvas is height:100dvh-bound, so its
+// on-screen physical size doesn't change just from scaling internal
+// units — only a less-tall aspect ratio actually grows the display
+// scale) buys noticeably bigger cells instead of just more of them.
+const CELL       = 78;  // up from 64 — bigger, easier-to-read gummies
+const GRID_COLS  = 10;  // up from 9
+const GRID_ROWS  = 9;   // down from 12 — trades some vertical buffer for cell size
+const GRID_W     = CELL * GRID_COLS;
+const GRID_H     = CELL * GRID_ROWS;
+const GRID_MARGIN_X = 24; // same side margin the old 624-wide board used
+const GRID_X0    = GRID_MARGIN_X;
+const GRID_Y0    = 130; // tall enough to clear the 3-line HTML HUD overlay
+const SPAWN_COL  = 5;   // re-centered for the wider 10-column board
+const W = GRID_W + GRID_MARGIN_X * 2, H = GRID_Y0 + GRID_H + 20;
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 canvas.width  = W * DPR;
 canvas.height = H * DPR;
 ctx.scale(DPR, DPR);
-
-// ─── CONFIG ───────────────────────────────────────────────────
-const CELL       = 64;  // bumped up again for bigger, easier-to-read gummies
-const GRID_COLS  = 9;   // 150% of the original 6 columns — wider use of the screen
-const GRID_ROWS  = 12;
-const GRID_W     = CELL * GRID_COLS;
-const GRID_H     = CELL * GRID_ROWS;
-const GRID_X0    = (W - GRID_W) / 2;
-const GRID_Y0    = 130; // tall enough to clear the 3-line HTML HUD overlay
-const SPAWN_COL  = 4;
 const MATCH_MIN  = 4;
 const LEVEL_STEP = 200; // score needed per level
 const MAGIC_CHANCE = 0.025; // ~2.5% of spawned pieces are マジックモヨモヨ
@@ -364,7 +370,7 @@ const LEADERBOARD_KEY = 'moyomoyo-leaderboard';
 const LEADERBOARD_MAX = 10;
 
 const PAUSE_RESUME_Y = H * 0.48;
-const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 66;
+const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 79;
 
 // Colors are spread across distinct hues (not a same-family gradient) so
 // each stage reads at a glance during fast match play — size/name still
@@ -372,11 +378,13 @@ const PAUSE_QUIT_Y   = PAUSE_RESUME_Y + 66;
 // Chain shortened to 4 stages: モクモク (pink) is now the final tier — a
 // 4+ group of it clears outright instead of "evolving" past the character's
 // own normal form into another color.
+// Radii scaled up with CELL (78/64 ≈ 1.22x) so each stage still fills its
+// cell the same way it did before, just bigger.
 const STAGES = [
-  { name: 'たまごモク', r: 26, color: '#CFF2C2', face: '#8A6A40', pts: 1 }, // mint
-  { name: 'ひよこモク', r: 38, color: '#FFE14D', face: '#8A6A10', pts: 2 }, // yellow
-  { name: 'ひなモク',   r: 50, color: '#FF9540', face: '#6A4010', pts: 4 }, // orange
-  { name: 'モクモク',   r: 64, color: '#FF5C7A', face: '#4A2800', pts: 8, legendary: true }, // pink, final tier
+  { name: 'たまごモク', r: 32, color: '#CFF2C2', face: '#8A6A40', pts: 1 }, // mint
+  { name: 'ひよこモク', r: 46, color: '#FFE14D', face: '#8A6A10', pts: 2 }, // yellow
+  { name: 'ひなモク',   r: 61, color: '#FF9540', face: '#6A4010', pts: 4 }, // orange
+  { name: 'モクモク',   r: 78, color: '#FF5C7A', face: '#4A2800', pts: 8, legendary: true }, // pink, final tier
 ];
 const SPAWN_POOL = [0,1,2]; // even 1:1:1 spread — orange was underrepresented before
 
@@ -675,7 +683,10 @@ function applyLevelPreset() {
   // the level climbs, mirroring how falling-block games raise the floor.
   grid = newGrid();
   magicGrid = newMagicGrid();
-  const presetRows = Math.min(level - 1, 5);
+  // Capped at ~42% of the board's height (same proportion as the old
+  // 5-of-12-row cap) now that the board is a shorter 9 rows, so a
+  // maxed-out preset doesn't eat nearly all the player's headroom.
+  const presetRows = Math.min(level - 1, 4);
   for (let i = 0; i < presetRows; i++) {
     const r = GRID_ROWS - 1 - i;
     for (let c = 0; c < GRID_COLS; c++) {
@@ -812,20 +823,21 @@ function drawPiece() {
 
 function drawNextPreview() {
   // Top-right of the grid — clear of both the HTML score/best/time text
-  // (top-left) and the pause button (above the canvas entirely).
-  const bx = GRID_X0 + GRID_W - 107;
+  // (top-left) and the pause button (above the canvas entirely). Sized
+  // up with CELL (78/64 ≈ 1.22x) to match the bigger board.
+  const bx = GRID_X0 + GRID_W - 130;
   const by = GRID_Y0 + 10;
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.beginPath(); ctx.roundRect(bx, by, 92, 123, 16); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(bx, by, 112, 150, 20); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.font = '13px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('つぎ', bx + 46, by + 20);
+  ctx.font = '16px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('つぎ', bx + 56, by + 24);
   ctx.restore();
   if (nextPair) {
-    const r = 20;
-    drawGummyShape(bx + 46, by + 52, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false, nextPair.m1);
-    drawGummyShape(bx + 46, by + 97, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false, nextPair.m2);
+    const r = 24;
+    drawGummyShape(bx + 56, by + 63, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false, nextPair.m1);
+    drawGummyShape(bx + 56, by + 118, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false, nextPair.m2);
   }
 }
 
@@ -864,7 +876,7 @@ function drawComboAnnouncement() {
     ctx.translate(W / 2, GRID_Y0 + GRID_H * 0.35);
     ctx.scale(scale, scale);
     ctx.textAlign = 'center';
-    ctx.font = 'bold 22px Arial';
+    ctx.font = 'bold 26px Arial';
     ctx.shadowColor = '#FF6600'; ctx.shadowBlur = 16;
     ctx.fillStyle = '#FFD700';
     ctx.fillText(comboText, 0, 0);
@@ -876,7 +888,7 @@ function drawComboAnnouncement() {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.textAlign = 'center';
-    ctx.font = 'bold 16px Arial';
+    ctx.font = 'bold 19px Arial';
     ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 20;
     ctx.fillStyle = '#FFF3C0';
     ctx.fillText(legendText, W / 2, GRID_Y0 + GRID_H * 0.22);
@@ -892,7 +904,7 @@ function drawComboAnnouncement() {
     ctx.translate(W / 2, GRID_Y0 + GRID_H * 0.46);
     ctx.scale(scale, scale);
     ctx.textAlign = 'center';
-    ctx.font = 'bold 34px Arial';
+    ctx.font = 'bold 41px Arial';
     ctx.shadowColor = '#FF6FA8'; ctx.shadowBlur = 34;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(celebrateText, 0, 0);
@@ -900,7 +912,7 @@ function drawComboAnnouncement() {
   }
 }
 
-const TITLE_MENU_Y = 685, TITLE_MENU_GAP = 68;
+const TITLE_MENU_Y = 636, TITLE_MENU_GAP = 63;
 const TITLE_MENU_ITEMS = ['スタート', '🏆 ランキング'];
 
 function drawTitleScreen() {
@@ -945,12 +957,12 @@ function drawTitleScreen() {
   ctx.textAlign = 'center';
   ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 30;
   ctx.fillStyle = '#FFE9F5';
-  ctx.font = 'bold 92px "Hiragino Sans", "Yu Gothic", Meiryo, Arial, sans-serif';
-  ctx.fillText('モヨモヨ', W/2, 178);
+  ctx.font = 'bold 110px "Hiragino Sans", "Yu Gothic", Meiryo, Arial, sans-serif';
+  ctx.fillText('モヨモヨ', W/2, 165);
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#FFB0DC';
-  ctx.font = '18px Arial';
-  ctx.fillText('M O K U M O K U   C H A I N', W/2, 210);
+  ctx.font = '22px Arial';
+  ctx.fillText('M O K U M O K U   C H A I N', W/2, 195);
   ctx.restore();
 
   const bob = Math.sin(titleFrame * 0.05) * 8;
@@ -959,39 +971,39 @@ function drawTitleScreen() {
 
   // Idle sparkles orbiting the mascot — echoes the ✦ stars Angry
   // Mokumoku floats around its owl on its own title screen.
-  const mascotY = 355 + bob;
+  const mascotY = 330 + bob;
   const sparkT = (titleFrame * 0.04) % (Math.PI * 2);
-  [[W/2-163,mascotY-77],[W/2+172,mascotY-61],[W/2-138,mascotY+95],[W/2+147,mascotY+86]].forEach(([sx,sy],i) => {
+  [[W/2-216,mascotY-71],[W/2+228,mascotY-57],[W/2-183,mascotY+88],[W/2+195,mascotY+80]].forEach(([sx,sy],i) => {
     const s = 0.5 + 0.5 * Math.sin(sparkT + i * 1.5);
     ctx.save();
     ctx.globalAlpha = s * 0.85;
     ctx.fillStyle = '#FFE9A0';
-    ctx.font = '24px Arial';
+    ctx.font = '29px Arial';
     ctx.textAlign = 'center';
     ctx.fillText('✦', sx, sy);
     ctx.restore();
   });
 
-  drawGummyShape(W/2, mascotY, 86, lastStage.color, lastStage.face, tilt, 1, true);
+  drawGummyShape(W/2, mascotY, 105, lastStage.color, lastStage.face, tilt, 1, true);
 
-  const chainY = 555;
-  const startX = W/2 - 93;
+  const chainY = 515;
+  const startX = W/2 - 123;
   STAGES.forEach((st, i) => {
-    const x = startX + i * 62;
-    drawGummyShape(x, chainY, Math.min(st.r, 22), st.color, st.face, 0, 1, false);
+    const x = startX + i * 82;
+    drawGummyShape(x, chainY, Math.min(st.r, 27), st.color, st.face, 0, 1, false);
     if (i < STAGES.length - 1) {
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.font = '16px Arial'; ctx.textAlign = 'center';
-      ctx.fillText('▶', x + 31, chainY + 5);
+      ctx.font = '19px Arial'; ctx.textAlign = 'center';
+      ctx.fillText('▶', x + 41, chainY + 5);
     }
   });
 
   ctx.save();
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.font = '17px Arial';
-  ctx.fillText('同じ段階を4つ以上つなげて進化させよう', W/2, 605);
-  ctx.fillText('◀▶で移動・🔄で回転・▼で下に落とす', W/2, 630);
+  ctx.font = '20px Arial';
+  ctx.fillText('同じ段階を4つ以上つなげて進化させよう', W/2, 562);
+  ctx.fillText('◀▶で移動・🔄で回転・▼で下に落とす', W/2, 585);
   ctx.restore();
 
   // Menu — a selectable list like Angry Mokumoku's own title menu
@@ -1003,7 +1015,7 @@ function drawTitleScreen() {
   // option" role instead, folded inline under the スタート item the
   // way Angry Mokumoku folds its saved level into つづきから, rather
   // than floating as a separate line below the whole menu.
-  ctx.font = 'bold 34px Arial';
+  ctx.font = 'bold 41px Arial';
   TITLE_MENU_ITEMS.forEach((label, i) => {
     const sel = titleMenuSel === i;
     const y = TITLE_MENU_Y + i * TITLE_MENU_GAP;
@@ -1020,30 +1032,30 @@ function drawTitleScreen() {
       ctx.save();
       ctx.shadowBlur = 0;
       ctx.fillStyle = sel ? 'rgba(255,233,245,0.75)' : 'rgba(255,255,255,0.45)';
-      ctx.font = '16px Arial';
-      ctx.fillText(`ベスト ${bestScore}pt`, W/2, y + 26);
+      ctx.font = '19px Arial';
+      ctx.fillText(`ベスト ${bestScore}pt`, W/2, y + 24);
       ctx.restore();
     }
   });
   ctx.shadowBlur = 0;
 
   // Franchise footer tag — ties the three games together as one series.
-  const tagY = 838;
+  const tagY = 778;
   ctx.save();
   ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(W/2 - 90, tagY - 26); ctx.lineTo(W/2 + 90, tagY - 26); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W/2 - 119, tagY - 24) ; ctx.lineTo(W/2 + 119, tagY - 24); ctx.stroke();
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.font = '14px Arial';
+  ctx.font = '17px Arial';
   ctx.fillText('🍬 × 🦉 × ⚽  M O K U M O K U   S E R I E S', W/2, tagY);
   ctx.restore();
 
   // Footer instruction line, mirroring Angry Mokumoku's own utilitarian
   // footer at the very bottom of its title screen.
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.font = '15px Arial';
+  ctx.font = '18px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText('タップ / クリックで選択　・　↑↓キーで移動', W/2, H - 26);
+  ctx.fillText('タップ / クリックで選択　・　↑↓キーで移動', W/2, H - 24);
 }
 
 function drawPausedOverlay() {
@@ -1052,7 +1064,7 @@ function drawPausedOverlay() {
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#FFE9F5';
-  ctx.font = 'bold 30px Arial';
+  ctx.font = 'bold 36px Arial';
   ctx.shadowColor = '#FF7FC0'; ctx.shadowBlur = 20;
   ctx.fillText('⏸ 一時停止中', W/2, H * 0.36);
   ctx.shadowBlur = 0;
@@ -1060,9 +1072,9 @@ function drawPausedOverlay() {
 
   ctx.save();
   ctx.fillStyle = '#FF6FA8';
-  ctx.beginPath(); ctx.roundRect(W/2 - 90, PAUSE_RESUME_Y - 24, 180, 48, 24); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(W/2 - 108, PAUSE_RESUME_Y - 29, 216, 58, 29); ctx.fill();
   ctx.fillStyle = 'white';
-  ctx.font = 'bold 19px Arial';
+  ctx.font = 'bold 23px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('▶ 再開', W/2, PAUSE_RESUME_Y);
   ctx.textBaseline = 'alphabetic';
@@ -1070,11 +1082,11 @@ function drawPausedOverlay() {
 
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.beginPath(); ctx.roundRect(W/2 - 90, PAUSE_QUIT_Y - 22, 180, 44, 22); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(W/2 - 108, PAUSE_QUIT_Y - 26, 216, 53, 26); ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(W/2 - 90, PAUSE_QUIT_Y - 22, 180, 44, 22); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(W/2 - 108, PAUSE_QUIT_Y - 26, 216, 53, 26); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.font = '16px Arial';
+  ctx.font = '19px Arial';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('🏠 タイトルへ', W/2, PAUSE_QUIT_Y);
   ctx.textBaseline = 'alphabetic';
@@ -1408,11 +1420,11 @@ function onDown(e) {
   e.preventDefault();
   const p = getPos(e);
   if (state === 'TITLE') {
-    if (p.x >= W/2 - 180 && p.x <= W/2 + 180 && p.y >= TITLE_MENU_Y - 30 && p.y <= TITLE_MENU_Y + 30) {
+    if (p.x >= W/2 - 239 && p.x <= W/2 + 239 && p.y >= TITLE_MENU_Y - 28 && p.y <= TITLE_MENU_Y + 28) {
       titleMenuSel = 0; startGame(); return;
     }
     const item2Y = TITLE_MENU_Y + TITLE_MENU_GAP;
-    if (p.x >= W/2 - 180 && p.x <= W/2 + 180 && p.y >= item2Y - 30 && p.y <= item2Y + 30) {
+    if (p.x >= W/2 - 239 && p.x <= W/2 + 239 && p.y >= item2Y - 28 && p.y <= item2Y + 28) {
       titleMenuSel = 1; openBoard(); return;
     }
     // (Cross-links are now the #cross-links HTML anchors, not hit-tested
@@ -1420,8 +1432,8 @@ function onDown(e) {
     return;
   }
   if (state === 'PAUSED') {
-    if (p.x >= W/2-90 && p.x <= W/2+90 && p.y >= PAUSE_RESUME_Y-24 && p.y <= PAUSE_RESUME_Y+24) { resumeGame(); return; }
-    if (p.x >= W/2-90 && p.x <= W/2+90 && p.y >= PAUSE_QUIT_Y-22 && p.y <= PAUSE_QUIT_Y+22) { quitToTitle(); return; }
+    if (p.x >= W/2-108 && p.x <= W/2+108 && p.y >= PAUSE_RESUME_Y-29 && p.y <= PAUSE_RESUME_Y+29) { resumeGame(); return; }
+    if (p.x >= W/2-108 && p.x <= W/2+108 && p.y >= PAUSE_QUIT_Y-26 && p.y <= PAUSE_QUIT_Y+26) { quitToTitle(); return; }
     return;
   }
 }
