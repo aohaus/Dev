@@ -49,7 +49,9 @@ body {
 .side-col {
   display: flex;
   flex-direction: column;
-  gap: clamp(8px, 2vw, 18px);
+  /* Wider gap than before (was 8-18px) — that little clearance made the
+     bottom button an easy mis-tap right after the top one. */
+  gap: clamp(20px, 5vw, 44px);
   position: absolute;
   top: 140px;
   visibility: hidden;
@@ -372,7 +374,8 @@ const MATCH_MIN  = 4;
 // 3360,4320,5400 through Lv2-10), still a real climb but a completable one.
 const LEVEL_STEP = 120;
 const MAX_LEVEL  = 10; // reaching this triggers 全面クリア instead of another preset
-const MAGIC_CHANCE = 0.025; // ~2.5% of spawned pieces are マジックモヨモヨ
+const MAGIC_CHANCE = 0.025; // ~2.5% of spawned pieces are レインボーモクモク instead of a normal stage
+const RAINBOW = -1; // sentinel grid value — not a STAGES index, never merges/matches on its own
 const LEADERBOARD_KEY = 'moyomoyo-leaderboard';
 const LEADERBOARD_MAX = 10;
 
@@ -405,6 +408,14 @@ function getSpawnPool(lv) {
   if (lv >= 3) return [0, 1, 2, 3];
   return [0, 1, 2];
 }
+// レインボーモクモク's own body color — cycles through the hue wheel so it
+// always reads as "not one of the 5 regular colors" at a glance, instead
+// of looking like a normal gummy with a decorative ring on top.
+function rainbowColor(offset) {
+  const hue = (Date.now() * 0.25 + (offset || 0)) % 360;
+  return `hsl(${hue}, 82%, 66%)`;
+}
+const RAINBOW_FACE = '#3A1848';
 
 // Satellite offset (dCol,dRow) relative to the axis cell, per rotation state
 const ROT_OFFSETS = [[0,-1],[1,0],[0,1],[-1,0]]; // up, right, down, left
@@ -417,11 +428,10 @@ let fallTimer = 0;
 let chainCount = 0;
 let score = 0;
 let bestScore = parseInt(localStorage.getItem('moyomoyo-best') || '0', 10);
-let grid = [];        // grid[col][row] = stage number | null
-let magicGrid = [];   // magicGrid[col][row] = true if that cell is マジックモヨモヨ
-let piece = null;     // { col, row, rot, s1, s2 (stages), m1, m2 (magic flags) }
+let grid = [];        // grid[col][row] = stage number | RAINBOW | null
+let piece = null;     // { col, row, rot, s1, s2 } — s1/s2 may be RAINBOW
 let lockedCols = [];  // columns the most recently locked piece occupied
-let nextPair = null;  // { s1, s2, m1, m2 } pre-rolled preview
+let nextPair = null;  // { s1, s2 } pre-rolled preview
 let particles = [];
 let comboText = '';
 let comboTimer = 0;
@@ -440,14 +450,14 @@ let flashAlpha = 0;
 let playFrames = 0;
 
 function rollStage() {
+  if (Math.random() < MAGIC_CHANCE) return RAINBOW;
   const pool = getSpawnPool(level);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 function rollPair() {
-  return { s1: rollStage(), s2: rollStage(), m1: Math.random() < MAGIC_CHANCE, m2: Math.random() < MAGIC_CHANCE };
+  return { s1: rollStage(), s2: rollStage() };
 }
 function newGrid() { return Array.from({ length: GRID_COLS }, () => new Array(GRID_ROWS).fill(null)); }
-function newMagicGrid() { return Array.from({ length: GRID_COLS }, () => new Array(GRID_ROWS).fill(false)); }
 
 // ─── PARTICLES ────────────────────────────────────────────────
 
@@ -516,9 +526,7 @@ function softDrop() {
 function lockPiece() {
   const sat = rotOffset(piece.col, piece.row, piece.rot);
   grid[piece.col][piece.row] = piece.s1;
-  magicGrid[piece.col][piece.row] = !!piece.m1;
   grid[sat.col][sat.row] = piece.s2;
-  magicGrid[sat.col][sat.row] = !!piece.m2;
   lockedCols = [piece.col, sat.col];
   piece = null;
   phase = 'LOCK_PAUSE';
@@ -528,7 +536,7 @@ function lockPiece() {
 
 function trySpawnPiece() {
   if (grid[SPAWN_COL][1] !== null || grid[SPAWN_COL][0] !== null) { gameOver(); return; }
-  piece = { col: SPAWN_COL, row: 1, rot: 0, s1: nextPair.s1, s2: nextPair.s2, m1: nextPair.m1, m2: nextPair.m2 };
+  piece = { col: SPAWN_COL, row: 1, rot: 0, s1: nextPair.s1, s2: nextPair.s2 };
   nextPair = rollPair();
   fallTimer = 0;
 }
@@ -538,7 +546,7 @@ function findGroups() {
   const groups = [];
   for (let c = 0; c < GRID_COLS; c++) {
     for (let r = 0; r < GRID_ROWS; r++) {
-      if (grid[c][r] === null || visited[c][r]) continue;
+      if (grid[c][r] === null || grid[c][r] === RAINBOW || visited[c][r]) continue;
       const stage = grid[c][r];
       const stack = [[c, r]];
       visited[c][r] = true;
@@ -560,8 +568,6 @@ function findGroups() {
 }
 
 function applyGravity(cols) {
-  // Moves magicGrid flags in lockstep with grid so a マジックモヨモヨ never
-  // desyncs from its own cell when the column compacts.
   // Accepts an optional list of columns to settle — omitting it settles
   // the whole grid (used after a match clears cells, since anything
   // above the gap needs to fall). Passing the touched columns instead
@@ -570,18 +576,79 @@ function applyGravity(cols) {
   // because some other piece happened to land elsewhere on the board.
   const targets = cols || Array.from({ length: GRID_COLS }, (_, i) => i);
   for (const c of targets) {
-    const stages = [], magics = [];
+    const stages = [];
     for (let r = 0; r < GRID_ROWS; r++) {
-      if (grid[c][r] !== null) { stages.push(grid[c][r]); magics.push(magicGrid[c][r]); }
+      if (grid[c][r] !== null) stages.push(grid[c][r]);
     }
-    for (let r = 0; r < GRID_ROWS; r++) { grid[c][r] = null; magicGrid[c][r] = false; }
+    for (let r = 0; r < GRID_ROWS; r++) grid[c][r] = null;
     const startRow = GRID_ROWS - stages.length;
-    stages.forEach((stage, i) => { grid[c][startRow + i] = stage; magicGrid[c][startRow + i] = magics[i]; });
+    stages.forEach((stage, i) => { grid[c][startRow + i] = stage; });
   }
 }
 
 function cellCenter(col, row) {
   return { x: GRID_X0 + col*CELL + CELL/2, y: GRID_Y0 + row*CELL + CELL/2 };
+}
+
+// レインボーモクモク doesn't join matches itself — instead, whenever a
+// piece next to it disappears (from a match, or from another rainbow's
+// own blast), it detonates: clears its own 8 surrounding cells and is
+// cleared itself. A rainbow caught in another's blast detonates too, so
+// several close together chain into one bigger burst. `seedCells` is
+// where this step's normal matches were cleared; `affectedCols` is
+// mutated so the caller's gravity pass also resettles anything this
+// touches.
+function triggerRainbows(seedCells, affectedCols) {
+  const triggered = new Set();
+  const queue = seedCells.slice();
+  let fired = false;
+
+  function detonate(c, r) {
+    const key = c + ',' + r;
+    if (triggered.has(key)) return;
+    triggered.add(key);
+    fired = true;
+    const { x, y } = cellCenter(c, r);
+    addParticles(x, y, rainbowColor(0), 20, 6);
+    score += 30;
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (dc === 0 && dr === 0) continue;
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nc >= GRID_COLS || nr < 0 || nr >= GRID_ROWS) continue;
+        if (grid[nc][nr] === null) continue;
+        const stage = grid[nc][nr];
+        if (stage === RAINBOW) {
+          grid[nc][nr] = null;
+          affectedCols.add(nc);
+          detonate(nc, nr); // chain — this neighbor rainbow detonates too
+        } else {
+          const { x: ex, y: ey } = cellCenter(nc, nr);
+          score += Math.round(STAGES[stage].pts * 2);
+          addParticles(ex, ey, STAGES[stage].color, 12, 5);
+          grid[nc][nr] = null;
+          affectedCols.add(nc);
+          queue.push([nc, nr]); // its own neighbors might include another rainbow
+        }
+      }
+    }
+  }
+
+  while (queue.length) {
+    const [c, r] = queue.pop();
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (dc === 0 && dr === 0) continue;
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nc >= GRID_COLS || nr < 0 || nr >= GRID_ROWS) continue;
+        if (grid[nc][nr] !== RAINBOW) continue;
+        grid[nc][nr] = null;
+        affectedCols.add(nc);
+        detonate(nc, nr);
+      }
+    }
+  }
+  return fired;
 }
 
 function resolveStep() {
@@ -590,20 +657,18 @@ function resolveStep() {
   chainCount++;
   const mult = 1 + (chainCount - 1) * 0.5;
   let topStageThisStep = 0;
-  let magicFired = false;
   // Columns actually touched by a clear this step — gravity below only
   // resettles these, so an untouched preset column elsewhere on the
   // board never gets swept just because a match happened somewhere else.
   const affectedCols = new Set();
+  const clearedCells = [];
 
   groups.forEach(g => {
     let anchor = g.cells[0];
     g.cells.forEach(cell => {
       if (cell[1] > anchor[1] || (cell[1] === anchor[1] && cell[0] < anchor[0])) anchor = cell;
     });
-    // Capture which cells in this group were マジックモヨモヨ before clearing them.
-    const magicCells = g.cells.filter(([c, r]) => magicGrid[c][r]);
-    g.cells.forEach(([c, r]) => { grid[c][r] = null; magicGrid[c][r] = false; affectedCols.add(c); });
+    g.cells.forEach(([c, r]) => { grid[c][r] = null; affectedCols.add(c); clearedCells.push([c, r]); });
     const { x: mx, y: my } = cellCenter(anchor[0], anchor[1]);
     if (g.stage < STAGES.length - 1) {
       const newStage = g.stage + 1;
@@ -624,27 +689,12 @@ function resolveStep() {
       addParticles(mx, my, STAGES[g.stage].color, 30, 7);
     }
     addParticles(mx, my, STAGES[g.stage].color, 10 + g.cells.length * 2, 4);
-
-    // マジックモヨモヨ: wipe out everything directly touching each magic
-    // cell in the cleared group, regardless of its own stage.
-    magicCells.forEach(([mc, mr]) => {
-      magicFired = true;
-      [[mc+1,mr],[mc-1,mr],[mc,mr+1],[mc,mr-1]].forEach(([nc, nr]) => {
-        if (nc < 0 || nc >= GRID_COLS || nr < 0 || nr >= GRID_ROWS) return;
-        if (grid[nc][nr] === null) return;
-        const wipedStage = grid[nc][nr];
-        const { x: wx, y: wy } = cellCenter(nc, nr);
-        score += Math.round(STAGES[wipedStage].pts * 2);
-        addParticles(wx, wy, STAGES[wipedStage].color, 12, 5);
-        grid[nc][nr] = null;
-        magicGrid[nc][nr] = false;
-        affectedCols.add(nc);
-      });
-    });
   });
 
-  if (magicFired) {
-    legendText = '✨ マジックモヨモヨ炸裂！';
+  const rainbowFired = triggerRainbows(clearedCells, affectedCols);
+
+  if (rainbowFired) {
+    legendText = '🌈 レインボーモクモク発動！';
     legendTimer = 130;
     addShake(14);
     playSfx('magic');
@@ -706,7 +756,6 @@ function applyLevelPreset() {
   // the board and seeds it with a fresh preset — bottom rows fill in as
   // the level climbs, mirroring how falling-block games raise the floor.
   grid = newGrid();
-  magicGrid = newMagicGrid();
   // Capped at ~42% of the board's height (same proportion as the old
   // 5-of-12-row cap) now that the board is a shorter 9 rows, so a
   // maxed-out preset doesn't eat nearly all the player's headroom.
@@ -823,14 +872,24 @@ function drawGridPanel() {
   ctx.strokeRect(GRID_X0, GRID_Y0, GRID_W, GRID_H);
 }
 
+// Resolves a grid/piece stage value (0-4, or RAINBOW) into what
+// drawGummyShape needs — rainbow's fill cycles hue every frame instead
+// of looking up a fixed STAGES color, and always gets the sparkle-ring
+// treatment so it reads as "not a regular color" at a glance.
+function stageVisual(stage) {
+  if (stage === RAINBOW) return { color: rainbowColor(0), face: RAINBOW_FACE, legendary: false, magic: true };
+  const st = STAGES[stage];
+  return { color: st.color, face: st.face, legendary: st.legendary, magic: false };
+}
+
 function drawGridCells() {
   for (let c = 0; c < GRID_COLS; c++) {
     for (let r = 0; r < GRID_ROWS; r++) {
       const stage = grid[c][r];
       if (stage === null) continue;
       const { x, y } = cellCenter(c, r);
-      const st = STAGES[stage];
-      drawGummyShape(x, y, CELL * 0.42, st.color, st.face, 0, 1, st.legendary, magicGrid[c][r]);
+      const v = stageVisual(stage);
+      drawGummyShape(x, y, CELL * 0.42, v.color, v.face, 0, 1, v.legendary, v.magic);
     }
   }
 }
@@ -841,8 +900,9 @@ function drawPiece() {
   const a = cellCenter(piece.col, piece.row);
   const b = cellCenter(sat.col, sat.row);
   const pulse = 1 + 0.04 * Math.sin(Date.now() * 0.012);
-  drawGummyShape(a.x, a.y, CELL * 0.42 * pulse, STAGES[piece.s1].color, STAGES[piece.s1].face, 0, 1, STAGES[piece.s1].legendary, piece.m1);
-  drawGummyShape(b.x, b.y, CELL * 0.42 * pulse, STAGES[piece.s2].color, STAGES[piece.s2].face, 0, 1, STAGES[piece.s2].legendary, piece.m2);
+  const v1 = stageVisual(piece.s1), v2 = stageVisual(piece.s2);
+  drawGummyShape(a.x, a.y, CELL * 0.42 * pulse, v1.color, v1.face, 0, 1, v1.legendary, v1.magic);
+  drawGummyShape(b.x, b.y, CELL * 0.42 * pulse, v2.color, v2.face, 0, 1, v2.legendary, v2.magic);
 }
 
 function drawNextPreview() {
@@ -860,8 +920,9 @@ function drawNextPreview() {
   ctx.restore();
   if (nextPair) {
     const r = 24;
-    drawGummyShape(bx + 56, by + 63, r, STAGES[nextPair.s1].color, STAGES[nextPair.s1].face, 0, 1, false, nextPair.m1);
-    drawGummyShape(bx + 56, by + 118, r, STAGES[nextPair.s2].color, STAGES[nextPair.s2].face, 0, 1, false, nextPair.m2);
+    const v1 = stageVisual(nextPair.s1), v2 = stageVisual(nextPair.s2);
+    drawGummyShape(bx + 56, by + 63, r, v1.color, v1.face, 0, 1, false, v1.magic);
+    drawGummyShape(bx + 56, by + 118, r, v2.color, v2.face, 0, 1, false, v2.magic);
   }
 }
 
@@ -1317,7 +1378,6 @@ function startGame() {
   pendingLevelPreset = false;
   playFrames = 0;
   grid = newGrid();
-  magicGrid = newMagicGrid();
   particles = [];
   chainCount = 0;
   fallTimer = 0;
