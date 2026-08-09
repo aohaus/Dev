@@ -33,6 +33,11 @@ body {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
+  /* Side padding keeps the control buttons off the physical screen
+     edge — flush-to-edge buttons are harder to land a thumb on and
+     can conflict with OS edge-swipe gestures (back navigation) or get
+     clipped by a notch/rounded-corner safe area. */
+  padding: 0 clamp(16px, 3vw, 40px);
 }
 .side-col {
   display: flex;
