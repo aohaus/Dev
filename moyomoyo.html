@@ -394,6 +394,7 @@ let bestScore = parseInt(localStorage.getItem('moyomoyo-best') || '0', 10);
 let grid = [];        // grid[col][row] = stage number | null
 let magicGrid = [];   // magicGrid[col][row] = true if that cell is マジックモヨモヨ
 let piece = null;     // { col, row, rot, s1, s2 (stages), m1, m2 (magic flags) }
+let lockedCols = [];  // columns the most recently locked piece occupied
 let nextPair = null;  // { s1, s2, m1, m2 } pre-rolled preview
 let particles = [];
 let comboText = '';
@@ -480,7 +481,7 @@ function rotatePiece() {
 }
 function softDrop() {
   if (!piece) return;
-  if (canPlace(piece.col, piece.row + 1, piece.rot)) { piece.row++; score += 1; updateHUD(); playSfx('drop'); }
+  if (canPlace(piece.col, piece.row + 1, piece.rot)) { piece.row++; playSfx('drop'); }
 }
 
 function lockPiece() {
@@ -489,6 +490,7 @@ function lockPiece() {
   magicGrid[piece.col][piece.row] = !!piece.m1;
   grid[sat.col][sat.row] = piece.s2;
   magicGrid[sat.col][sat.row] = !!piece.m2;
+  lockedCols = [piece.col, sat.col];
   piece = null;
   phase = 'LOCK_PAUSE';
   pauseTimer = 10;
@@ -528,10 +530,17 @@ function findGroups() {
   return groups;
 }
 
-function applyGravity() {
+function applyGravity(cols) {
   // Moves magicGrid flags in lockstep with grid so a マジックモヨモヨ never
   // desyncs from its own cell when the column compacts.
-  for (let c = 0; c < GRID_COLS; c++) {
+  // Accepts an optional list of columns to settle — omitting it settles
+  // the whole grid (used after a match clears cells, since anything
+  // above the gap needs to fall). Passing the touched columns instead
+  // (used right after a piece locks) keeps gravity from silently
+  // sweeping away an untouched preset column's intentional gaps just
+  // because some other piece happened to land elsewhere on the board.
+  const targets = cols || Array.from({ length: GRID_COLS }, (_, i) => i);
+  for (const c of targets) {
     const stages = [], magics = [];
     for (let r = 0; r < GRID_ROWS; r++) {
       if (grid[c][r] !== null) { stages.push(grid[c][r]); magics.push(magicGrid[c][r]); }
@@ -553,6 +562,10 @@ function resolveStep() {
   const mult = 1 + (chainCount - 1) * 0.5;
   let topStageThisStep = 0;
   let magicFired = false;
+  // Columns actually touched by a clear this step — gravity below only
+  // resettles these, so an untouched preset column elsewhere on the
+  // board never gets swept just because a match happened somewhere else.
+  const affectedCols = new Set();
 
   groups.forEach(g => {
     let anchor = g.cells[0];
@@ -561,7 +574,7 @@ function resolveStep() {
     });
     // Capture which cells in this group were マジックモヨモヨ before clearing them.
     const magicCells = g.cells.filter(([c, r]) => magicGrid[c][r]);
-    g.cells.forEach(([c, r]) => { grid[c][r] = null; magicGrid[c][r] = false; });
+    g.cells.forEach(([c, r]) => { grid[c][r] = null; magicGrid[c][r] = false; affectedCols.add(c); });
     const { x: mx, y: my } = cellCenter(anchor[0], anchor[1]);
     if (g.stage < STAGES.length - 1) {
       const newStage = g.stage + 1;
@@ -596,6 +609,7 @@ function resolveStep() {
         addParticles(wx, wy, STAGES[wipedStage].color, 12, 5);
         grid[nc][nr] = null;
         magicGrid[nc][nr] = false;
+        affectedCols.add(nc);
       });
     });
   });
@@ -635,12 +649,16 @@ function resolveStep() {
   }
   checkLevelUp();
   updateHUD();
-  applyGravity();
+  applyGravity([...affectedCols]);
   return true;
 }
 
 function checkLevelUp() {
-  const newLevel = 1 + Math.floor(score / LEVEL_STEP);
+  // Cumulative score needed to reach level L+1 is LEVEL_STEP*(1+2+...+L),
+  // so each level takes progressively more score than the last instead
+  // of a flat 200 every time — 1→2 still takes 200 (unchanged pacing
+  // early on), but 2→3 takes 400 more, 3→4 takes 600 more, and so on.
+  const newLevel = 1 + Math.floor((-1 + Math.sqrt(1 + 8 * score / LEVEL_STEP)) / 2);
   if (newLevel <= level) return;
   level = newLevel;
   pendingLevelPreset = true;
@@ -1123,8 +1141,11 @@ function update() {
     if (--pauseTimer <= 0) {
       // The falling pair locks as a rigid unit, so over uneven column
       // heights one cell can end up floating with a gap beneath it.
-      // Settle every column before checking for matches.
-      applyGravity();
+      // Settle only the piece's own columns before checking for matches
+      // — settling the whole grid here would also sweep away any
+      // untouched preset column's intentional gaps the instant any
+      // piece locks anywhere on the board.
+      applyGravity(lockedCols);
       phase = 'RESOLVING';
     }
   } else if (phase === 'RESOLVING') {
