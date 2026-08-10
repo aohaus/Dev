@@ -649,6 +649,8 @@ function drawTitleScreen() {
   ctx.fillText('🦉 アングリーモクモクへ ▶', W - 26, 71);
   ctx.fillStyle = '#FF9FCB';
   ctx.fillText('🍬 モヨモヨへ ▶', W - 26, 107);
+  ctx.fillStyle = '#F2A65A';
+  ctx.fillText('🏆 バトルロイヤルへ ▶', W - 26, 143);
   ctx.restore();
 
   ctx.save();
@@ -994,6 +996,7 @@ function onDown(e) {
     // flush against it.
     if (p.x >= W - 340 && p.x <= W - 10 && p.y >= 45 && p.y <= 89) { window.location.href = 'angry-mokumoku.html'; return; }
     if (p.x >= W - 340 && p.x <= W - 10 && p.y >= 89 && p.y <= 129) { window.location.href = 'moyomoyo.html'; return; }
+    if (p.x >= W - 340 && p.x <= W - 10 && p.y >= 129 && p.y <= 169) { window.location.href = 'angry-moku-battle-royal.html'; return; }
     return;
   }
   if (state === 'TIMESELECT') {

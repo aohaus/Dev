@@ -3640,6 +3640,10 @@ function onDown(e) {
       window.location.href = 'mk-mobile.html';
       return;
     }
+    if (p.x >= W - 280 && p.x <= W - 10 && p.y >= 110 && p.y <= 150) {
+      window.location.href = 'angry-moku-battle-royal.html';
+      return;
+    }
     const menuY = 345;
     if (p.y >= menuY - 24 && p.y < menuY + 30) { titleMenuSel = 0; startFromTitle(); return; }
     if (p.y >= menuY + 22) {
@@ -4099,6 +4103,8 @@ function drawTitleScreen() {
   ctx.fillText('🍬 モヨモヨへ ▶', W - 18, 54);
   ctx.fillStyle = '#FFD37A';
   ctx.fillText('⚽ MK Mobileへ ▶', W - 18, 92);
+  ctx.fillStyle = '#F2A65A';
+  ctx.fillText('🏆 バトルロイヤルへ ▶', W - 18, 130);
   ctx.restore();
 
   // Owl character
