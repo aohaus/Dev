@@ -247,7 +247,10 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
 }
 .sheet .row button.warn { background: linear-gradient(#ff5147, #b5120b); }
 .sheet .row button.ok { background: linear-gradient(#35c35a, #148a35); }
+.user-tag { position: absolute; left: 0; top: 12.2cqw; font-size: 2.6cqw; }
+.sheet .mb-panel { --mb-accent: var(--blue); }
 </style>
+<script src="medal-bank.js"></script>
 </head>
 <body>
 <div id="machine">
@@ -255,6 +258,7 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
     <button class="menu-btn" id="menuBtn" aria-label="メニュー"><i></i></button>
     <div class="logo"><div class="big">PICCADILLY</div><div class="small">Circus</div></div>
     <button class="mode-btn" id="modeBtn">通常</button>
+    <span class="user-tag" id="userTag"></span>
   </header>
 
   <div class="wheel-wrap">
@@ -283,6 +287,7 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
 
 <div class="modal" id="modal">
   <div class="sheet">
+    <div id="bankPanel"></div>
     <h2>How to play</h2>
     <h3>遊び方</h3>
     <ul>
@@ -302,7 +307,6 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
     </table>
     <div class="row">
       <button id="soundBtn">サウンド: ON</button>
-      <button class="ok" id="refillBtn">メダル補充 +100</button>
     </div>
     <div class="row">
       <button class="warn" id="resetBtn">リセット</button>
@@ -543,7 +547,7 @@ function repeatBets() {
   return true;
 }
 function promptRefill() {
-  banner('メダル切れ<small>メニューから補充できます</small>', 'lose', 2200);
+  banner('メダル切れ<small>メニューのメダルバンクで補充</small>', 'lose', 2200);
 }
 
 // ---------------- game flow ----------------
@@ -898,12 +902,18 @@ $('helpBtn').onclick = openModal;
 $('closeBtn').onclick = () => modal.classList.remove('show');
 modal.onclick = e => { if (e.target === modal) modal.classList.remove('show'); };
 $('soundBtn').onclick = () => { st.sound = !st.sound; openModal(); save(); };
-$('refillBtn').onclick = () => { st.credit += 100; renderMeters(); save(); sfx.win(false); modal.classList.remove('show'); };
+MedalBank.mountBadge($('userTag'));
+MedalBank.mountPanel($('bankPanel'), {
+  game: 'piccadilly',
+  getHand: () => st.credit,
+  setHand: n => { st.credit = n; renderMeters(); renderControls(); save(); sfx.coin(); },
+  canMove: () => st.phase === 'bet' || 'ルーレットが止まってから操作してください',
+});
 $('resetBtn').onclick = () => {
   if (st.phase !== 'bet') return;
-  if (!confirm('クレジットを初期化しますか？')) return;
+  if (!confirm('クレジットを0にしてリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）')) return;
   NUMS.forEach(n => st.bets[n] = 0);
-  st.credit = START_CREDIT; st.lastBets = null; st.chanceNext = false; st.win = 0; st.auto = false;
+  st.credit = 0; st.lastBets = null; st.chanceNext = false; st.win = 0; st.auto = false;
   renderAll(); save(); modal.classList.remove('show');
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });

@@ -256,7 +256,10 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 .sheet .acts button.alt { background: #fff; }
 .sheet .acts button.danger { background: #ff4a6a; color: #fff; }
 .sheet .keys { font-size: 12px; color: #cfd8ff; }
+.user-tag { position: absolute; left: 50%; bottom: -1.4cqw; transform: translateX(-50%); font-size: 2cqw; max-width: 50%; }
+.sheet .mb-panel { --mb-accent: #ff4a6a; margin-top: 0; }
 </style>
+<script src="medal-bank.js"></script>
 </head>
 <body>
 <div id="machine">
@@ -264,6 +267,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
     <button class="menu-btn" id="menuBtn" aria-label="メニュー"><i></i></button>
     <div class="logo"><span class="sig">SIGMA</span> POKER</div>
     <button class="snd-btn" id="sndBtn" aria-label="サウンド">♪ON</button>
+    <span class="user-tag" id="userTag"></span>
   </header>
 
   <div class="bezel">
@@ -314,6 +318,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 
 <div class="modal" id="modal">
   <div class="sheet">
+    <div id="bankPanel"></div>
     <h2>SIGMA POKER</h2>
     <h3>遊び方</h3>
     <ul>
@@ -329,7 +334,6 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
     <table id="payHelp"></table>
     <p class="keys" style="margin-top:8px">Keys: 1–5 HOLD · Space/Enter DEAL/DRAW · B BET ONE · M MAX BET · D DOUBLE UP · T TAKE SCORE · ← SMALL · → BIG</p>
     <div class="acts">
-      <button id="refillBtn">メダル +100</button>
       <button class="alt" id="closeBtn">閉じる</button>
       <button class="danger" id="resetBtn">リセット</button>
       <button class="alt" id="soundBtn">サウンド: ON</button>
@@ -686,7 +690,7 @@ function renderAll() {
   renderPay(); renderMeters(); renderHeld(); renderButtons();
 }
 function idleMessage() {
-  if (st.credit + st.bet <= 0) setMsg('INSERT MEDALS', 'blink', 'MENU ≡ → +100');
+  if (st.credit + st.bet <= 0) setMsg('INSERT MEDALS', 'blink', 'MENU ≡ → MEDAL BANK');
   else if (st.bet > 0) setMsg('PRESS DEAL', 'gold');
   else setMsg('PLACE YOUR BET', 'gold blink');
 }
@@ -931,15 +935,17 @@ $('closeBtn').onclick = closeModal;
 modal.onclick = e => { if (e.target === modal) closeModal(); };
 $('sndBtn').onclick = toggleSound;
 $('soundBtn').onclick = () => { toggleSound(); $('soundBtn').textContent = `サウンド: ${st.sound ? 'ON' : 'OFF'}`; };
-$('refillBtn').onclick = () => {
-  st.credit += 100; sfx.coin(); save(); renderAll();
-  if (st.phase === 'idle') idleMessage();
-  closeModal();
-};
+MedalBank.mountBadge($('userTag'));
+MedalBank.mountPanel($('bankPanel'), {
+  game: 'sigma',
+  getHand: () => st.credit,
+  setHand: n => { st.credit = n; sfx.coin(); save(); renderAll(); idleMessage(); },
+  canMove: () => (st.phase === 'idle' && !st.busy) || '勝負が終わってから操作してください',
+});
 $('resetBtn').onclick = () => {
   if (st.busy) return;
-  if (!confirm('クレジットとジャックポットをリセットしますか？')) return;
-  Object.assign(st, { credit: 100, bet: 0, lastBet: 1, jackpot: JP_BASE, jpFrac: 0, phase: 'idle', win: 0, result: null, duHist: [] });
+  if (!confirm('クレジットを0にして、ジャックポットもリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）')) return;
+  Object.assign(st, { credit: 0, bet: 0, lastBet: 1, jackpot: JP_BASE, jpFrac: 0, phase: 'idle', win: 0, result: null, duHist: [] });
   hideDouble();
   cardEls.forEach(el => paintCard(el, null));
   save(); idleMessage(); renderAll(); closeModal();

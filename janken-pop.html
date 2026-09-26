@@ -93,12 +93,15 @@ header { position: relative; text-align: center; line-height: .9; }
   -webkit-text-stroke: 0.6cqw #fff; paint-order: stroke fill;
 }
 .badge b { display: block; color: var(--yellow); font-size: 5cqw; text-shadow: 0 .4cqw 0 var(--red-dark); }
-.sound {
+.sound, .gear {
   position: absolute; left: 0; top: 0;
   width: 10cqw; height: 10cqw; border-radius: 50%;
   border: 0.6cqw solid #fff; background: rgba(0,0,0,.35); color: #fff;
   font-size: 5cqw; cursor: pointer;
 }
+.gear { left: auto; right: 0; }
+.user-tag { position: absolute; left: 0; top: 11cqw; font-size: 2.8cqw; }
+.sheet .mb-panel { --mb-accent: var(--red); margin-top: 0; }
 
 /* ─── Board: number ring, LED, lamps ────────────────── */
 .board { position: relative; height: 80cqw; margin-top: 3cqw; }
@@ -334,6 +337,7 @@ header { position: relative; text-align: center; line-height: .9; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 20px; margin-top: 6px; }
 .progress { font-size: 15px; margin-bottom: 4px; }
 </style>
+<script src="medal-bank.js"></script>
 </head>
 <body>
 <div id="machine">
@@ -345,6 +349,8 @@ header { position: relative; text-align: center; line-height: .9; }
 
   <header>
     <button class="sound" id="soundBtn" aria-label="Sound">🔊</button>
+    <button class="gear" id="gearBtn" aria-label="せってい">⚙</button>
+    <span class="user-tag" id="userTag"></span>
     <div class="logo">JANKEN<span class="pop">POP!</span></div><br>
     <div class="subtitle">じゃんけんチャレンジ</div>
     <div class="badge">勝ったら<b>カードGET!</b></div>
@@ -430,6 +436,15 @@ header { position: relative; text-align: center; line-height: .9; }
   </div>
 </div>
 
+<!-- Settings -->
+<div class="modal" id="settings">
+  <div class="sheet">
+    <h2>せってい</h2>
+    <div id="bankPanel"></div>
+    <button class="okbtn" data-close>とじる</button>
+  </div>
+</div>
+
 <!-- Card book -->
 <div class="modal" id="zukan">
   <div class="sheet">
@@ -478,14 +493,31 @@ const HANDS = ['gu', 'choki', 'pa'];
 // ─── Save data ────────────────────────────────────────
 const SAVE_KEY = 'janken-pop-v1';
 const START_MEDALS = 10;
+// save.cards holds the guest's cards; a logged-in user's cards live in the
+// medal bank so they follow the user (and move with a transfer code).
 let save = { medals: START_MEDALS, cards: {}, sound: true };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
   if (raw && typeof raw === 'object') save = { ...save, ...raw };
 } catch (e) {}
+let cards = save.cards;
 function persist() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {}
+  if (cards !== save.cards && MedalBank.current()) MedalBank.setCards('janken', cards);
 }
+function bindCards() {
+  if (!MedalBank.current()) { cards = save.cards; return; }
+  const uc = MedalBank.getCards('janken');
+  // Cards collected as a guest go to the first user who logs in.
+  if (Object.keys(save.cards).length) {
+    for (const [id, n] of Object.entries(save.cards)) uc[id] = (uc[id] || 0) + n;
+    save.cards = {};
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {}
+    MedalBank.setCards('janken', uc);
+  }
+  cards = uc;
+}
+bindCards();
 
 // ─── DOM ──────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -680,10 +712,11 @@ function clearSegs() { segLamps.forEach(s => s.classList.remove('on', 'win')); }
 function renderCounts() {
   $('medalCount').textContent = save.medals;
   $('medalCorner').textContent = save.medals;
-  const owned = CARDS.filter(c => save.cards[c.id]).length;
+  const owned = CARDS.filter(c => cards[c.id]).length;
   $('cardCorner').textContent = `${owned}/${CARDS.length}`;
   slotEl.classList.toggle('empty', save.medals < 1);
-  $('slotPrice').textContent = save.medals < 1 ? 'タッチで+10枚' : '1枚であそべる!';
+  $('slotPrice').textContent = save.medals >= 1 ? '1枚であそべる!'
+    : MedalBank.serviceAvailable('janken') ? 'タッチで+10枚' : 'せっていでひきだす';
 }
 function setIdleUI(idle) {
   slotEl.classList.toggle('pulse', idle);
@@ -734,11 +767,16 @@ function stopCycle() { clearInterval(cycleTimer); cycleTimer = null; }
 async function insertMedal() {
   if (state !== 'idle') return;
   if (save.medals < 1) {
-    // MVP: free refill so you can always keep playing.
-    save.medals += START_MEDALS; persist(); renderCounts();
+    // Out of medals: today's free service medals, otherwise the bank.
+    if (!MedalBank.serviceAvailable('janken')) {
+      setMsg('きょうのサービスはおしまい。バンクからひきだしてね!');
+      openModal('settings');
+      return;
+    }
+    save.medals += MedalBank.claimService('janken'); persist(); renderCounts();
     flyCoin(msgEl, slotEl, 5);
     sfx.coin();
-    setMsg('メダルを10枚あげるね!');
+    setMsg('サービスメダル10枚!(1日1回)');
     return;
   }
   save.medals--; persist(); renderCounts();
@@ -864,8 +902,8 @@ async function payout(value) {
   const r = rarityFor(value);
   const pool = CARDS.filter(c => c.r === r);
   const card = pool[Math.floor(Math.random() * pool.length)];
-  const isNew = !save.cards[card.id];
-  save.cards[card.id] = (save.cards[card.id] || 0) + 1;
+  const isNew = !cards[card.id];
+  cards[card.id] = (cards[card.id] || 0) + 1;
   persist(); renderCounts();
 
   $('getCard').innerHTML = cardHTML(card);
@@ -883,7 +921,8 @@ function endRound() {
   handBtns.forEach(b => b.classList.remove('picked'));
   setIdleUI(true);
   renderCounts();
-  setMsg(save.medals > 0 ? 'メダルを入れてね!' : 'メダルがなくなった… タッチで補充!');
+  setMsg(save.medals > 0 ? 'メダルを入れてね!'
+    : MedalBank.serviceAvailable('janken') ? 'メダルがなくなった… タッチで補充!' : 'メダルがなくなった… ⚙からひきだしてね');
   setTimeout(() => {
     if (state === 'idle') { setLamp(null); clearSegs(); showShape('face'); }
   }, 1200);
@@ -891,10 +930,10 @@ function endRound() {
 
 // ─── Zukan ────────────────────────────────────────────
 function renderZukan() {
-  const owned = CARDS.filter(c => save.cards[c.id]).length;
+  const owned = CARDS.filter(c => cards[c.id]).length;
   $('zukanProgress').textContent = `あつめたカード ${owned} / ${CARDS.length}`;
   $('zukanGrid').innerHTML = CARDS.map(c =>
-    cardHTML(c, { locked: !save.cards[c.id], count: save.cards[c.id] || 0 })).join('');
+    cardHTML(c, { locked: !cards[c.id], count: cards[c.id] || 0 })).join('');
 }
 
 // ─── Wiring ───────────────────────────────────────────
@@ -905,10 +944,25 @@ handBtns.forEach(b => b.addEventListener('pointerdown', e => {
   throwHand(b.dataset.hand);
 }));
 $('howtoBtn').addEventListener('click', () => openModal('howto'));
+$('gearBtn').addEventListener('click', () => openModal('settings'));
+MedalBank.mountBadge($('userTag'));
+MedalBank.mountPanel($('bankPanel'), {
+  game: 'janken',
+  getHand: () => save.medals,
+  setHand: n => { save.medals = n; persist(); renderCounts(); sfx.coin(); if (state === 'idle') endRound(); },
+  canMove: () => state === 'idle' || 'じゃんけんが終わってからね',
+});
+MedalBank.onChange(() => {
+  bindCards(); renderCounts();
+  if ($('zukan').classList.contains('open')) renderZukan();
+});
 $('zukanBtn').addEventListener('click', () => { renderZukan(); openModal('zukan'); });
 $('resetBtn').addEventListener('click', () => {
-  if (!confirm('メダルとカードをリセットしますか?')) return;
-  save.medals = START_MEDALS; save.cards = {}; persist();
+  const who = MedalBank.current();
+  if (!confirm(`メダルを0枚にして、${who ? who.name + ' さんの' : ''}カードをリセットしますか?\n(メダルを残したいときは先にバンクへ預けてね)`)) return;
+  save.medals = 0;
+  for (const k of Object.keys(cards)) delete cards[k];
+  persist();
   renderCounts(); renderZukan();
 });
 $('soundBtn').addEventListener('click', () => {
@@ -923,6 +977,7 @@ document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click
 }));
 document.addEventListener('keydown', e => {
   if (e.repeat) return;
+  if (e.target.closest && e.target.closest('input')) return;
   const open = document.querySelector('.modal.open');
   if (open) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') { e.preventDefault(); open.querySelector('[data-close]').click(); }
