@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#e8322a">
+<title>JANKEN POP! じゃんけんチャレンジ</title>
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800;900&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --red: #e8322a;
+  --red-dark: #a3140f;
+  --yellow: #ffcf2e;
+  --yellow-dark: #d99a00;
+  --blue: #1e5be6;
+  --blue-dark: #0d339b;
+  --green: #17a45a;
+  --green-dark: #0b6a39;
+  --teal: #19a37a;
+  --cream: #fff8e6;
+  --ink: #2a1a10;
+  --led: #ff3a2e;
+}
+html, body { height: 100%; }
+body {
+  background:
+    repeating-conic-gradient(from 0deg at 50% 38%,
+      #e8322a 0deg 10deg, #ffcf2e 10deg 20deg, #1e5be6 20deg 30deg, #ffcf2e 30deg 40deg);
+  background-color: #e8322a;
+  font-family: 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+  font-weight: 900;
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Everything inside the machine is sized in container units so the
+   whole cabinet scales as one piece, from phones to iPads. */
+#machine {
+  container-type: inline-size;
+  position: relative;
+  width: min(100vw, calc(100dvh / 1.78), 500px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 2cqw 3cqw calc(2cqw + env(safe-area-inset-bottom, 0px));
+  gap: 1.6cqw;
+}
+.stars { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.stars span {
+  position: absolute; font-size: 7cqw; color: #fff;
+  text-shadow: 0 0 0 #000, 0.4cqw 0.4cqw 0 rgba(0,0,0,.25);
+}
+
+/* ─── Title ─────────────────────────────────────────── */
+header { position: relative; text-align: center; line-height: .9; }
+.logo {
+  display: inline-block;
+  font-size: 13.5cqw;
+  letter-spacing: -0.02em;
+  color: var(--red);
+  -webkit-text-stroke: 1.2cqw #fff;
+  paint-order: stroke fill;
+  text-shadow: 0 1.2cqw 0 #7a0d08, 0 1.6cqw 1.5cqw rgba(0,0,0,.3);
+  transform: rotate(-3deg);
+}
+.logo .pop { color: var(--yellow); display: block; font-size: 14.5cqw; margin-top: -1cqw; }
+.subtitle {
+  display: inline-block;
+  margin-top: 1.4cqw;
+  background: #fff;
+  border: 0.7cqw solid var(--red);
+  border-radius: 99px;
+  padding: 0.6cqw 4cqw;
+  font-size: 4cqw;
+  color: var(--ink);
+}
+.badge {
+  position: absolute; right: 0; top: 22cqw;
+  transform: rotate(-8deg);
+  font-size: 3.6cqw; line-height: 1.05;
+  text-align: center;
+  color: var(--ink);
+  -webkit-text-stroke: 0.6cqw #fff; paint-order: stroke fill;
+}
+.badge b { display: block; color: var(--yellow); font-size: 5cqw; text-shadow: 0 .4cqw 0 var(--red-dark); }
+.sound {
+  position: absolute; left: 0; top: 0;
+  width: 10cqw; height: 10cqw; border-radius: 50%;
+  border: 0.6cqw solid #fff; background: rgba(0,0,0,.35); color: #fff;
+  font-size: 5cqw; cursor: pointer;
+}
+
+/* ─── Board: number ring, LED, lamps ────────────────── */
+.board { position: relative; height: 80cqw; margin-top: 3cqw; }
+.wheel {
+  position: absolute; left: 50%; top: 0;
+  width: 72cqw; height: 72cqw; transform: translateX(-50%);
+  filter: drop-shadow(0 1.4cqw 0 rgba(0,0,0,.25));
+}
+.wheel svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.seg-lamp { fill: #fff; opacity: 0; transition: opacity .05s; }
+.seg-lamp.on { opacity: .85; }
+.seg-lamp.win { animation: segflash .22s steps(1) infinite; }
+@keyframes segflash { 50% { opacity: 0; } 0% { opacity: .9; } }
+.led-dot { fill: #2a0806; opacity: .55; }
+.led-group.on .led-dot { opacity: 1; }
+.led-group.on .led-dot { fill: var(--led); filter: url(#glow); }
+.jp-plate {
+  position: absolute; left: 50%; top: -6.4cqw; transform: translateX(-50%);
+  background: var(--red); color: var(--yellow);
+  border: 0.8cqw solid var(--yellow);
+  border-radius: 1.6cqw 1.6cqw 0.6cqw 0.6cqw;
+  padding: 0 2.6cqw; font-size: 5.6cqw; line-height: 1.25;
+  z-index: 2;
+}
+.jp-plate.on { animation: jpflash .15s steps(1) infinite; }
+@keyframes jpflash { 50% { background: var(--yellow); color: var(--red); } }
+
+.lamp {
+  position: absolute;
+  background: #f6e7b8;
+  color: #c9a8a0;
+  border: 1cqw solid #6fbfa0;
+  border-radius: 3cqw;
+  box-shadow: 0 1cqw 0 rgba(0,0,0,.25);
+  font-size: 9cqw;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .08s, color .08s;
+}
+.lamp.vert { writing-mode: vertical-rl; text-orientation: upright; letter-spacing: -0.1em; width: 14.5cqw; height: 32cqw; top: 34cqw; }
+.lamp.kachi { left: 0; }
+.lamp.make  { right: 0; }
+.lamp.aiko  { left: 50%; transform: translateX(-50%); bottom: 0; height: 13cqw; width: 40cqw; }
+.lamp.on {
+  background: var(--yellow); color: var(--red);
+  border-color: var(--teal);
+  box-shadow: 0 0 4cqw 1cqw rgba(255,240,120,.95), 0 1cqw 0 rgba(0,0,0,.25);
+}
+.lamp.on.blink { animation: lampblink .18s steps(1) infinite; }
+@keyframes lampblink { 50% { background: #fff; } }
+
+.corner {
+  position: absolute; top: 0;
+  width: 19cqw; padding: 1.2cqw 0;
+  background: var(--cream);
+  border: 0.9cqw solid var(--teal);
+  border-radius: 2.6cqw;
+  text-align: center; line-height: 1.05;
+  font-size: 3.2cqw; color: var(--red);
+  box-shadow: 0 0.9cqw 0 rgba(0,0,0,.25);
+}
+.corner b { display: block; font-size: 7.5cqw; color: var(--ink); }
+.corner.l { left: 0; }
+.corner.r { right: 0; }
+
+/* ─── Message strip ─────────────────────────────────── */
+.msg {
+  background: #140806;
+  border: 0.9cqw solid var(--yellow);
+  border-radius: 2.5cqw;
+  color: #ffb13a;
+  text-shadow: 0 0 1.4cqw #ff7a00;
+  text-align: center;
+  font-size: 5.6cqw;
+  height: 10cqw; line-height: 8.4cqw;
+  white-space: nowrap; overflow: hidden;
+}
+.msg.big { color: #ff5a4a; text-shadow: 0 0 2cqw #ff2200; font-size: 6.6cqw; }
+
+/* ─── Hand buttons ──────────────────────────────────── */
+.buttons {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 2cqw;
+  background: var(--red);
+  border: 0.9cqw solid #fff;
+  border-radius: 3cqw;
+  padding: 2.4cqw;
+  box-shadow: 0 1.2cqw 0 var(--red-dark);
+}
+.hand {
+  appearance: none; border: 0; cursor: pointer; font: inherit;
+  background: repeating-conic-gradient(from 0deg at 50% 45%, #ffe45c 0deg 12deg, #ffd21f 12deg 24deg);
+  border-radius: 2.4cqw;
+  padding: 2cqw 0 1.6cqw;
+  display: flex; flex-direction: column; align-items: center; gap: 1.2cqw;
+}
+.hand .btn {
+  width: 21cqw; height: 21cqw; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11cqw;
+  border: 0.8cqw solid rgba(0,0,0,.25);
+  box-shadow: inset 0 -1.6cqw 0 rgba(0,0,0,.25), inset 0 1.4cqw 0 rgba(255,255,255,.35), 0 1.4cqw 0 rgba(0,0,0,.35);
+  transition: transform .06s, box-shadow .06s;
+}
+.hand .lbl {
+  color: #fff; font-size: 4.4cqw;
+  border-radius: 99px; padding: 0.3cqw 4cqw;
+  border: 0.6cqw solid #fff;
+}
+.hand.gu .btn, .hand.gu .lbl { background: var(--red); }
+.hand.choki .btn, .hand.choki .lbl { background: var(--blue); }
+.hand.pa .btn, .hand.pa .lbl { background: var(--green); }
+.hand:active .btn, .hand.pressed .btn {
+  transform: translateY(1.2cqw);
+  box-shadow: inset 0 -0.6cqw 0 rgba(0,0,0,.25), inset 0 1.4cqw 0 rgba(255,255,255,.35), 0 0.2cqw 0 rgba(0,0,0,.35);
+}
+.buttons.ready .btn { animation: ready 0.5s ease-in-out infinite alternate; }
+@keyframes ready { to { filter: brightness(1.25); } }
+.hand.picked .btn { outline: 1.2cqw solid #fff; outline-offset: 0.4cqw; }
+
+/* ─── Bottom panel ──────────────────────────────────── */
+.bottom { display: grid; grid-template-columns: 1fr 1.25fr 1fr; gap: 2cqw; }
+.panel {
+  appearance: none; font: inherit; cursor: pointer;
+  border: 0.9cqw solid #fff;
+  border-radius: 3cqw;
+  box-shadow: 0 1cqw 0 rgba(0,0,0,.3);
+  padding: 1.6cqw;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1cqw;
+  font-size: 3.6cqw; color: var(--ink);
+}
+.panel.howto { background: var(--cream); }
+.panel.howto .ico, .panel.zukan .ico { font-size: 8cqw; line-height: 1; }
+.panel.zukan { background: var(--red); color: #fff; }
+.slot {
+  background: linear-gradient(#ffe45c, #ffc400);
+  cursor: pointer;
+}
+.slot .price {
+  background: #fff; color: var(--red); border: 0.5cqw solid var(--red);
+  border-radius: 99px; padding: 0.2cqw 2cqw; font-size: 3.2cqw;
+}
+.slot .coinhole {
+  width: 80%; height: 9cqw; border-radius: 1.6cqw;
+  background: linear-gradient(#9aa3ad, #5c646d);
+  border: 0.5cqw solid #3b4148;
+  display: flex; align-items: center; justify-content: center;
+}
+.slot .coinhole::before {
+  content: ""; width: 1.6cqw; height: 6cqw; border-radius: 1cqw; background: #111;
+}
+.slot .medals { font-size: 3.6cqw; }
+.slot .medals b { font-size: 5.6cqw; color: var(--red); }
+.slot.pulse { animation: pulse .7s ease-in-out infinite alternate; }
+@keyframes pulse { to { transform: scale(1.05); box-shadow: 0 0 4cqw 1cqw #fff8a0, 0 1cqw 0 rgba(0,0,0,.3); } }
+.slot.empty .price { background: var(--red); color: #fff; }
+
+/* ─── Flying coin ───────────────────────────────────── */
+.coin {
+  position: fixed; z-index: 30; pointer-events: none;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff6b0, #f0b400 60%, #b07800);
+  border: 2px solid #8a5d00;
+  font: 900 12px/30px sans-serif; color: #7a4d00; text-align: center;
+}
+
+/* ─── Modals ────────────────────────────────────────── */
+.modal {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(20, 8, 30, .72);
+  display: none; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.modal.open { display: flex; }
+.sheet {
+  width: min(92vw, 440px); max-height: 88dvh; overflow: auto;
+  background: var(--cream);
+  border: 5px solid var(--yellow);
+  border-radius: 22px;
+  padding: 18px;
+  box-shadow: 0 10px 0 rgba(0,0,0,.3);
+  text-align: center;
+}
+.sheet h2 { color: var(--red); font-size: 26px; margin-bottom: 10px; }
+.sheet p, .sheet li { font-weight: 800; font-size: 15px; line-height: 1.55; text-align: left; }
+.sheet ol { padding-left: 1.3em; margin-bottom: 8px; }
+.sheet .en { color: #7a6a5a; font-size: 12.5px; }
+.sheet table { margin: 8px auto; border-collapse: collapse; font-size: 14px; }
+.sheet td { padding: 2px 10px; border-bottom: 1px dashed #e0c98a; }
+.okbtn {
+  appearance: none; border: 0; cursor: pointer; font: inherit;
+  margin-top: 14px; padding: 10px 34px; border-radius: 99px;
+  background: var(--red); color: #fff; font-size: 18px;
+  box-shadow: 0 5px 0 var(--red-dark);
+}
+.okbtn:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--red-dark); }
+.okbtn.sub { background: #8a7a6a; box-shadow: 0 5px 0 #5a4a3a; font-size: 14px; padding: 8px 20px; }
+
+.card {
+  position: relative;
+  aspect-ratio: 5 / 7;
+  border-radius: 12px;
+  border: 4px solid #fff;
+  box-shadow: 0 4px 0 rgba(0,0,0,.25);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: #fff; overflow: hidden;
+}
+.card .em { font-size: 2.6em; line-height: 1.1; }
+.card .nm { font-size: .72em; margin-top: 4px; text-shadow: 0 1px 0 rgba(0,0,0,.4); }
+.card .rr {
+  position: absolute; top: 4px; left: 6px; font-size: .6em;
+  background: rgba(0,0,0,.3); padding: 0 6px; border-radius: 99px;
+}
+.card .ct { position: absolute; bottom: 4px; right: 6px; font-size: .62em; }
+.card.N  { background: linear-gradient(145deg, #4aa3ff, #1e5be6); }
+.card.R  { background: linear-gradient(145deg, #b77bff, #6a2bd6); }
+.card.SR { background: linear-gradient(145deg, #ffe066, #f09000); }
+.card.JP { background: linear-gradient(145deg, #ff5a5a, #ffcf2e, #3fd17a, #3f8cff, #b35aff); }
+.card.locked { background: #9c9186; }
+.card.locked .em { filter: brightness(0) opacity(.35); }
+.card::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.45) 50%, transparent 65%);
+  transform: translateX(-100%);
+}
+.card.shine::after { animation: shine 1.6s ease-in-out infinite; }
+@keyframes shine { to { transform: translateX(100%); } }
+
+#get .card { width: 170px; margin: 6px auto 4px; font-size: 26px; animation: cardin .5s cubic-bezier(.2,1.6,.4,1); }
+@keyframes cardin { from { transform: scale(.2) rotate(-25deg); opacity: 0; } }
+#get .newtag { color: var(--red); font-size: 20px; height: 26px; }
+#get .payout { font-size: 18px; margin-top: 6px; }
+#get .payout b { color: var(--red); font-size: 26px; }
+
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 20px; margin-top: 6px; }
+.progress { font-size: 15px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<div id="machine">
+  <div class="stars" aria-hidden="true">
+    <span style="left:2%;top:1%">★</span><span style="left:86%;top:0%;color:#ffcf2e">★</span>
+    <span style="left:4%;top:18%;color:#ffcf2e">★</span><span style="left:90%;top:14%">★</span>
+    <span style="left:22%;top:48%;font-size:5cqw">★</span><span style="left:72%;top:47%;font-size:5cqw;color:#ffcf2e">★</span>
+  </div>
+
+  <header>
+    <button class="sound" id="soundBtn" aria-label="Sound">🔊</button>
+    <div class="logo">JANKEN<span class="pop">POP!</span></div><br>
+    <div class="subtitle">じゃんけんチャレンジ</div>
+    <div class="badge">勝ったら<b>カードGET!</b></div>
+  </header>
+
+  <section class="board">
+    <div class="corner l">メダル<b id="medalCorner">10</b></div>
+    <div class="corner r">カード<b id="cardCorner">0</b></div>
+    <div class="wheel">
+      <div class="jp-plate" id="jpPlate">JP</div>
+      <svg id="wheelSvg" viewBox="0 0 400 400" aria-hidden="true">
+        <defs>
+          <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="2.2" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <radialGradient id="screen" cx="50%" cy="45%" r="60%">
+            <stop offset="0" stop-color="#1c0b09"/><stop offset="1" stop-color="#050202"/>
+          </radialGradient>
+        </defs>
+        <circle cx="200" cy="200" r="199" fill="#fff"/>
+        <circle cx="200" cy="200" r="194" fill="#19a37a"/>
+        <g id="ring"></g>
+        <circle cx="200" cy="200" r="144" fill="#19a37a"/>
+        <circle cx="200" cy="200" r="138" fill="url(#screen)"/>
+        <g id="leds"></g>
+      </svg>
+    </div>
+    <div class="lamp vert kachi" id="lampKachi">かち</div>
+    <div class="lamp vert make" id="lampMake">まけ</div>
+    <div class="lamp aiko" id="lampAiko">あいこ</div>
+  </section>
+
+  <div class="msg" id="msg">メダルを入れてね!</div>
+
+  <section class="buttons" id="buttons">
+    <button class="hand gu" data-hand="gu"><span class="btn">✊</span><span class="lbl">グー</span></button>
+    <button class="hand choki" data-hand="choki"><span class="btn">✌️</span><span class="lbl">チョキ</span></button>
+    <button class="hand pa" data-hand="pa"><span class="btn">✋</span><span class="lbl">パー</span></button>
+  </section>
+
+  <section class="bottom">
+    <button class="panel howto" id="howtoBtn"><span class="ico">💡</span>あそびかた</button>
+    <button class="panel slot pulse" id="slot">
+      <span class="price" id="slotPrice">1枚であそべる!</span>
+      <span class="coinhole"></span>
+      <span class="medals">のこり <b id="medalCount">10</b> 枚</span>
+    </button>
+    <button class="panel zukan" id="zukanBtn"><span class="ico">🃏</span>カードずかん</button>
+  </section>
+</div>
+
+<!-- How to play -->
+<div class="modal" id="howto">
+  <div class="sheet">
+    <h2>あそびかた</h2>
+    <ol>
+      <li>まんなかの<b>メダル投入口</b>をタッチ!<br><span class="en">Tap the coin slot to insert a medal.</span></li>
+      <li>「ジャンケン…」の声にあわせて<b>グー・チョキ・パー</b>をおしてね!<br><span class="en">Pick rock, scissors or paper.</span></li>
+      <li><b>あいこ</b>ならもう一回!(メダルはいらないよ)<br><span class="en">A draw means a free rematch.</span></li>
+      <li><b>かち</b>ならルーレットが回るよ。止まった数だけメダルがでてくる!<br><span class="en">Win and the ring spins — you get that many medals.</span></li>
+      <li>勝つたびに<b>カード</b>が1枚もらえる。大きい数ほどレアカード!<br><span class="en">Every win also earns a card. Bigger numbers → rarer cards.</span></li>
+    </ol>
+    <table>
+      <tr><td>1・2</td><td>ノーマル (N)</td></tr>
+      <tr><td>4・7</td><td>レア (R)</td></tr>
+      <tr><td>16</td><td>スーパーレア (SR)</td></tr>
+      <tr><td>50 (JP)</td><td>ジャックポット!</td></tr>
+    </table>
+    <p class="en">Keyboard: Space = insert medal, 1/2/3 or A/S/D = グー/チョキ/パー</p>
+    <button class="okbtn" data-close>OK!</button>
+  </div>
+</div>
+
+<!-- Card get -->
+<div class="modal" id="get">
+  <div class="sheet">
+    <h2>カードGET!</h2>
+    <div class="newtag" id="getNew"></div>
+    <div id="getCard"></div>
+    <div class="payout">メダル <b id="getPay">0</b> 枚 でてきたよ!</div>
+    <button class="okbtn" data-close>やったね!</button>
+  </div>
+</div>
+
+<!-- Card book -->
+<div class="modal" id="zukan">
+  <div class="sheet">
+    <h2>カードずかん</h2>
+    <div class="progress" id="zukanProgress"></div>
+    <div class="grid" id="zukanGrid"></div>
+    <button class="okbtn" data-close>とじる</button>
+    <div><button class="okbtn sub" id="resetBtn">データをリセット</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ─── Data ─────────────────────────────────────────────
+// Ring values clockwise from the top, as on the original cabinet.
+const RING = [50, 1, 2, 7, 4, 2, 16, 1, 2, 7, 4, 2];
+// Relative weights for where the roulette stops (per value, not per segment).
+const WEIGHTS = { 1: 52, 2: 30, 4: 10, 7: 5, 16: 2.4, 50: 0.6 };
+// Outcome odds per throw. A draw replays for free, so the effective
+// win rate per medal is WIN / (WIN + LOSE) ≈ 43%.
+const ODDS = { win: 0.30, draw: 0.30, lose: 0.40 };
+
+const CARDS = [
+  { id: 'usa',    em: '🐰', nm: 'ウサピョン',   r: 'N'  },
+  { id: 'neko',   em: '🐱', nm: 'ネコマル',     r: 'N'  },
+  { id: 'inu',    em: '🐶', nm: 'ワンタ',       r: 'N'  },
+  { id: 'hiyo',   em: '🐤', nm: 'ピヨコ',       r: 'N'  },
+  { id: 'kaeru',  em: '🐸', nm: 'ケロスケ',     r: 'N'  },
+  { id: 'pen',    em: '🐧', nm: 'ペンタ',       r: 'N'  },
+  { id: 'kitsu',  em: '🦊', nm: 'コンキチ',     r: 'R'  },
+  { id: 'panda',  em: '🐼', nm: 'パンダン',     r: 'R'  },
+  { id: 'tako',   em: '🐙', nm: 'タコハチ',     r: 'R'  },
+  { id: 'uni',    em: '🦄', nm: 'ユニコーン',   r: 'SR' },
+  { id: 'dora',   em: '🐉', nm: 'ドラゴン',     r: 'SR' },
+  { id: 'king',   em: '👑', nm: 'ジャンケンキング', r: 'JP' },
+];
+const RARITY_NAME = { N: 'ノーマル', R: 'レア', SR: 'スーパーレア', JP: 'ジャックポット' };
+const rarityFor = v => v >= 50 ? 'JP' : v >= 16 ? 'SR' : v >= 4 ? 'R' : 'N';
+
+const BEATS = { gu: 'choki', choki: 'pa', pa: 'gu' };      // key beats value
+const LOSES_TO = { gu: 'pa', choki: 'gu', pa: 'choki' };   // key loses to value
+const HANDS = ['gu', 'choki', 'pa'];
+
+// ─── Save data ────────────────────────────────────────
+const SAVE_KEY = 'janken-pop-v1';
+const START_MEDALS = 10;
+let save = { medals: START_MEDALS, cards: {}, sound: true };
+try {
+  const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+  if (raw && typeof raw === 'object') save = { ...save, ...raw };
+} catch (e) {}
+function persist() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {}
+}
+
+// ─── DOM ──────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const msgEl = $('msg');
+const lamps = { win: $('lampKachi'), lose: $('lampMake'), draw: $('lampAiko') };
+const buttonsEl = $('buttons');
+const slotEl = $('slot');
+const handBtns = [...document.querySelectorAll('.hand')];
+
+// ─── Number ring ──────────────────────────────────────
+const SVGNS = 'http://www.w3.org/2000/svg';
+const segLamps = [];
+(function buildRing() {
+  const ring = $('ring');
+  const R1 = 144, R2 = 194, C = 200;
+  const pt = (r, deg) => {
+    const a = (deg - 90) * Math.PI / 180;
+    return [C + r * Math.cos(a), C + r * Math.sin(a)];
+  };
+  const wedge = (a0, a1) => {
+    const [x0, y0] = pt(R2, a0), [x1, y1] = pt(R2, a1);
+    const [x2, y2] = pt(R1, a1), [x3, y3] = pt(R1, a0);
+    return `M${x0},${y0} A${R2},${R2} 0 0 1 ${x1},${y1} L${x2},${y2} A${R1},${R1} 0 0 0 ${x3},${y3} Z`;
+  };
+  RING.forEach((v, i) => {
+    const a = i * 30;
+    const seg = document.createElementNS(SVGNS, 'path');
+    seg.setAttribute('d', wedge(a - 15, a + 15));
+    seg.setAttribute('fill', v === 50 ? '#ffe45c' : (i % 2 ? '#e8322a' : '#ffc12b'));
+    seg.setAttribute('stroke', '#19a37a');
+    seg.setAttribute('stroke-width', '2');
+    ring.appendChild(seg);
+
+    const t = document.createElementNS(SVGNS, 'text');
+    t.textContent = v;
+    t.setAttribute('x', C);
+    t.setAttribute('y', C - (R1 + R2) / 2);
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('dominant-baseline', 'central');
+    t.setAttribute('font-size', v >= 10 ? 34 : 38);
+    t.setAttribute('font-weight', 900);
+    t.setAttribute('fill', i % 2 && v !== 50 ? '#ffe45c' : '#e8322a');
+    t.setAttribute('stroke', '#7a1a0a');
+    t.setAttribute('stroke-width', '1.5');
+    t.setAttribute('font-family', "'M PLUS Rounded 1c', sans-serif");
+    t.setAttribute('transform', `rotate(${a} ${C} ${C})`);
+    ring.appendChild(t);
+
+    const lamp = document.createElementNS(SVGNS, 'path');
+    lamp.setAttribute('d', wedge(a - 15, a + 15));
+    lamp.setAttribute('class', 'seg-lamp');
+    ring.appendChild(lamp);
+    segLamps.push(lamp);
+  });
+})();
+
+// ─── LED dot-matrix shapes ────────────────────────────
+// Outlines are drawn in a 200×200 box, then sampled at a fixed spacing
+// along the path so each shape reads as a string of LED bulbs, like the
+// cabinet's hand display.
+const SHAPES = {
+  gu: [
+    'M48,122 C36,104 44,84 60,82 C62,66 80,62 90,70 C96,58 116,58 120,70 C128,60 148,64 148,80 C164,84 166,110 156,126 C150,142 140,150 128,154 L128,172 L74,172 L74,154 C62,148 52,138 48,122 Z',
+    'M88,98 L94,124', 'M116,98 L110,124',
+  ],
+  choki: [
+    'M58,128 C46,110 52,94 64,90 L50,42 C47,28 67,24 72,38 L90,84 L108,34 C113,21 132,26 128,41 L116,90 C138,88 156,100 154,122 C152,142 142,150 128,155 L128,172 L74,172 L74,155 C66,150 60,140 58,128 Z',
+    'M88,106 L93,128', 'M114,106 L109,128',
+  ],
+  pa: [
+    'M72,172 L72,152 C60,146 50,136 44,124 L24,100 C17,89 31,80 40,89 L58,110 L50,52 C48,38 67,36 70,50 L80,96 L85,34 C86,21 105,21 105,35 L104,94 L118,44 C122,31 140,35 136,48 L124,100 L146,68 C153,57 170,66 162,79 L140,122 C136,138 132,148 128,154 L128,172 Z',
+    'M86,112 L91,134', 'M112,112 L107,134',
+  ],
+  face: [
+    'M100,42 A58,58 0 1 1 99.9,42 Z',
+    'M76,82 L76,100', 'M124,82 L124,100',
+    'M66,118 Q100,158 134,118',
+  ],
+  sad: [
+    'M100,42 A58,58 0 1 1 99.9,42 Z',
+    'M68,86 L86,96', 'M132,86 L114,96',
+    'M70,140 Q100,110 130,140',
+  ],
+};
+const ledGroups = {};
+(function buildLeds() {
+  const leds = $('leds');
+  const probe = document.createElementNS(SVGNS, 'path');
+  const S = 1.3, C = 200, OX = 100, OY = 106;
+  const svg = $('wheelSvg');
+  svg.appendChild(probe);
+  for (const [key, paths] of Object.entries(SHAPES)) {
+    const g = document.createElementNS(SVGNS, 'g');
+    g.setAttribute('class', 'led-group');
+    for (const d of paths) {
+      probe.setAttribute('d', d);
+      const len = probe.getTotalLength();
+      const closed = /Z\s*$/i.test(d);
+      const n = Math.max(2, Math.round(len / 8.2));
+      const count = closed ? n : n + 1;
+      for (let i = 0; i < count; i++) {
+        const p = probe.getPointAtLength(len * i / n);
+        const c = document.createElementNS(SVGNS, 'circle');
+        c.setAttribute('cx', (C + (p.x - OX) * S).toFixed(1));
+        c.setAttribute('cy', (C + (p.y - OY) * S).toFixed(1));
+        c.setAttribute('r', 4.3);
+        c.setAttribute('class', 'led-dot');
+        g.appendChild(c);
+      }
+    }
+    leds.appendChild(g);
+    ledGroups[key] = g;
+  }
+  probe.remove();
+})();
+let shownShape = null;
+function showShape(key) {
+  if (shownShape === key) return;
+  if (shownShape) ledGroups[shownShape].classList.remove('on');
+  if (key) {
+    // Re-append so the lit group paints above the dim ones.
+    ledGroups[key].parentNode.appendChild(ledGroups[key]);
+    ledGroups[key].classList.add('on');
+  }
+  shownShape = key;
+}
+
+// ─── Sound ────────────────────────────────────────────
+let actx = null;
+function audio() {
+  if (!save.sound) return null;
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    actx = new AC();
+  }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+function tone(freq, dur, { type = 'square', vol = 0.08, at = 0, slide = 0 } = {}) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + at;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(a.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+const sfx = {
+  coin()  { tone(1800, 0.08, { type: 'triangle', vol: .12 }); tone(2400, 0.18, { type: 'triangle', vol: .1, at: .06 }); },
+  flick() { tone(900, 0.025, { vol: .03 }); },
+  jan()   { tone(660, 0.14, { vol: .07 }); },
+  ken()   { tone(784, 0.14, { vol: .07 }); },
+  pon()   { tone(1046, 0.25, { vol: .09 }); },
+  tick()  { tone(1400, 0.03, { vol: .05 }); },
+  win()   { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => tone(f, .14, { vol: .08, at: i * .09 })); },
+  draw()  { tone(700, .1, { vol: .07 }); tone(700, .1, { vol: .07, at: .15 }); },
+  lose()  { [392, 370, 349, 262].forEach((f, i) => tone(f, i === 3 ? .5 : .2, { type: 'sawtooth', vol: .06, at: i * .22, slide: i === 3 ? -80 : 0 })); },
+  stop()  { [1046, 1318, 1568, 2093].forEach((f, i) => tone(f, .12, { vol: .08, at: i * .07 })); },
+  pay()   { tone(2200 + Math.random() * 400, 0.06, { type: 'triangle', vol: .07 }); },
+  jp()    { for (let i = 0; i < 16; i++) tone([523, 659, 784, 1046][i % 4] * (i >= 8 ? 2 : 1), .1, { vol: .07, at: i * .07 }); },
+};
+// Voice callouts via the browser's speech engine, when a Japanese voice exists.
+let jaVoice = null;
+function pickVoice() {
+  try { jaVoice = speechSynthesis.getVoices().find(v => /^ja/i.test(v.lang)) || null; } catch (e) {}
+}
+if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+function say(text, rate = 1.3) {
+  if (!save.sound || !jaVoice) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = jaVoice; u.lang = 'ja-JP'; u.rate = rate; u.pitch = 1.5;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+// ─── UI helpers ───────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function setMsg(text, big = false) { msgEl.textContent = text; msgEl.classList.toggle('big', big); }
+function setLamp(which, blink = false) {
+  for (const [k, el] of Object.entries(lamps)) {
+    el.classList.toggle('on', k === which);
+    el.classList.toggle('blink', k === which && blink);
+  }
+}
+function clearSegs() { segLamps.forEach(s => s.classList.remove('on', 'win')); }
+function renderCounts() {
+  $('medalCount').textContent = save.medals;
+  $('medalCorner').textContent = save.medals;
+  const owned = CARDS.filter(c => save.cards[c.id]).length;
+  $('cardCorner').textContent = `${owned}/${CARDS.length}`;
+  slotEl.classList.toggle('empty', save.medals < 1);
+  $('slotPrice').textContent = save.medals < 1 ? 'タッチで+10枚' : '1枚であそべる!';
+}
+function setIdleUI(idle) {
+  slotEl.classList.toggle('pulse', idle);
+}
+function cardHTML(c, { locked = false, count = 0 } = {}) {
+  return `<div class="card ${locked ? 'locked' : c.r + (c.r === 'N' ? '' : ' shine')}">
+    <span class="rr">${locked ? '???' : c.r}</span>
+    <span class="em">${c.em}</span>
+    <span class="nm">${locked ? '？？？' : c.nm}</span>
+    ${count > 1 ? `<span class="ct">×${count}</span>` : ''}
+  </div>`;
+}
+function flyCoin(fromEl, toEl, n = 1) {
+  const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+  for (let i = 0; i < n; i++) {
+    const c = document.createElement('div');
+    c.className = 'coin'; c.textContent = '★';
+    document.body.appendChild(c);
+    const x0 = a.left + a.width / 2 - 17, y0 = a.top + a.height / 2 - 17;
+    const x1 = b.left + b.width / 2 - 17, y1 = b.top + b.height / 2 - 17;
+    c.animate([
+      { transform: `translate(${x0}px, ${y0}px) scale(.6)`, opacity: 1 },
+      { transform: `translate(${(x0 + x1) / 2}px, ${Math.min(y0, y1) - 60}px) scale(1.1)`, opacity: 1, offset: .5 },
+      { transform: `translate(${x1}px, ${y1}px) scale(.5)`, opacity: .2 },
+    ], { duration: 520, delay: i * 70, easing: 'ease-in-out', fill: 'forwards' }).onfinish = () => c.remove();
+  }
+}
+function openModal(id) { $(id).classList.add('open'); }
+function closeModal(id) { $(id).classList.remove('open'); }
+
+// ─── Game flow ────────────────────────────────────────
+// idle → (medal) → choose → (button) → busy → result → idle
+let state = 'idle';
+let cycleTimer = null;
+let aikoRound = false;
+let onCardClosed = null;
+
+function startCycle() {
+  let i = 0;
+  stopCycle();
+  cycleTimer = setInterval(() => {
+    showShape(HANDS[i++ % 3]);
+    sfx.flick();
+  }, 85);
+}
+function stopCycle() { clearInterval(cycleTimer); cycleTimer = null; }
+
+async function insertMedal() {
+  if (state !== 'idle') return;
+  if (save.medals < 1) {
+    // MVP: free refill so you can always keep playing.
+    save.medals += START_MEDALS; persist(); renderCounts();
+    flyCoin(msgEl, slotEl, 5);
+    sfx.coin();
+    setMsg('メダルを10枚あげるね!');
+    return;
+  }
+  save.medals--; persist(); renderCounts();
+  state = 'busy';
+  setIdleUI(false);
+  sfx.coin();
+  clearSegs(); setLamp(null);
+  await sleep(250);
+  beginThrow(false);
+}
+
+function beginThrow(aiko) {
+  aikoRound = aiko;
+  handBtns.forEach(b => b.classList.remove('picked'));
+  if (aiko) { setMsg('あいこで…', true); say('あいこで'); sfx.jan(); }
+  else {
+    setMsg('ジャン…', true); say('じゃんけん'); sfx.jan();
+    setTimeout(() => { if (state === 'choose') { setMsg('ジャン ケン…', true); sfx.ken(); } }, 350);
+  }
+  startCycle();
+  buttonsEl.classList.add('ready');
+  state = 'choose';
+}
+
+function rollOutcome() {
+  const r = Math.random();
+  return r < ODDS.win ? 'win' : r < ODDS.win + ODDS.draw ? 'draw' : 'lose';
+}
+
+async function throwHand(hand) {
+  if (state !== 'choose') {
+    if (state === 'idle') { setMsg('さきにメダルを入れてね!'); }
+    return;
+  }
+  state = 'busy';
+  buttonsEl.classList.remove('ready');
+  const btn = handBtns.find(b => b.dataset.hand === hand);
+  btn.classList.add('picked');
+
+  const outcome = rollOutcome();
+  const machine = outcome === 'draw' ? hand : outcome === 'win' ? BEATS[hand] : LOSES_TO[hand];
+
+  stopCycle();
+  showShape(machine);
+  sfx.pon();
+  say(aikoRound ? 'しょ' : 'ぽん');
+  setMsg(aikoRound ? 'しょ!' : 'ポン!', true);
+  await sleep(650);
+
+  if (outcome === 'draw') {
+    setLamp('draw', true); sfx.draw();
+    setMsg('あいこ! もう一回!', true);
+    await sleep(1000);
+    setLamp(null);
+    beginThrow(true);
+    return;
+  }
+  if (outcome === 'lose') {
+    setLamp('lose', true); sfx.lose();
+    setMsg('まけ… ざんねん!', true);
+    await sleep(900);
+    showShape('sad');
+    await sleep(900);
+    setLamp('lose');
+    endRound();
+    return;
+  }
+  // Win → roulette.
+  setLamp('win', true); sfx.win(); say('かち');
+  setMsg('かち! ルーレットスタート!', true);
+  await sleep(800);
+  showShape('face');
+  const value = await roulette();
+  await payout(value);
+}
+
+function pickSegment() {
+  const total = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
+  let r = Math.random() * total, value = 1;
+  for (const [v, w] of Object.entries(WEIGHTS)) { if ((r -= w) < 0) { value = +v; break; } }
+  const idx = RING.map((v, i) => v === value ? i : -1).filter(i => i >= 0);
+  return idx[Math.floor(Math.random() * idx.length)];
+}
+
+async function roulette() {
+  const target = pickSegment();
+  let pos = Math.floor(Math.random() * 12);
+  const steps = 12 * 3 + ((target - pos + 12) % 12);
+  for (let s = 1; s <= steps; s++) {
+    pos = (pos + 1) % 12;
+    clearSegs();
+    segLamps[pos].classList.add('on');
+    sfx.tick();
+    const remain = steps - s;
+    // Fast spin, then a long ease-out over the last dozen or so steps.
+    const delay = remain > 14 ? 45 : 45 + Math.pow(14 - remain, 2) * 2.4;
+    await sleep(delay);
+  }
+  segLamps[pos].classList.remove('on');
+  segLamps[pos].classList.add('win');
+  const value = RING[pos];
+  if (value === 50) { $('jpPlate').classList.add('on'); sfx.jp(); say('ジャックポット'); }
+  else sfx.stop();
+  setMsg(value === 50 ? '★ジャックポット 50枚!★' : `あたり! メダル ${value} 枚!`, true);
+  await sleep(value === 50 ? 1600 : 900);
+  return value;
+}
+
+async function payout(value) {
+  // Medals trickle out one at a time, like the tray on the real machine.
+  const n = value;
+  const per = Math.max(25, Math.min(120, 1200 / n));
+  for (let i = 0; i < n; i++) {
+    save.medals++;
+    renderCounts();
+    sfx.pay();
+    if (i < 8) flyCoin(msgEl, slotEl, 1);
+    await sleep(per);
+  }
+  persist();
+
+  // Card reward.
+  const r = rarityFor(value);
+  const pool = CARDS.filter(c => c.r === r);
+  const card = pool[Math.floor(Math.random() * pool.length)];
+  const isNew = !save.cards[card.id];
+  save.cards[card.id] = (save.cards[card.id] || 0) + 1;
+  persist(); renderCounts();
+
+  $('getCard').innerHTML = cardHTML(card);
+  $('getNew').textContent = isNew ? '★NEW!★ ' + RARITY_NAME[r] : RARITY_NAME[r];
+  $('getPay').textContent = value;
+  await sleep(300);
+  openModal('get');
+  await new Promise(res => { onCardClosed = res; });
+  $('jpPlate').classList.remove('on');
+  endRound();
+}
+
+function endRound() {
+  state = 'idle';
+  handBtns.forEach(b => b.classList.remove('picked'));
+  setIdleUI(true);
+  renderCounts();
+  setMsg(save.medals > 0 ? 'メダルを入れてね!' : 'メダルがなくなった… タッチで補充!');
+  setTimeout(() => {
+    if (state === 'idle') { setLamp(null); clearSegs(); showShape('face'); }
+  }, 1200);
+}
+
+// ─── Zukan ────────────────────────────────────────────
+function renderZukan() {
+  const owned = CARDS.filter(c => save.cards[c.id]).length;
+  $('zukanProgress').textContent = `あつめたカード ${owned} / ${CARDS.length}`;
+  $('zukanGrid').innerHTML = CARDS.map(c =>
+    cardHTML(c, { locked: !save.cards[c.id], count: save.cards[c.id] || 0 })).join('');
+}
+
+// ─── Wiring ───────────────────────────────────────────
+slotEl.addEventListener('click', insertMedal);
+handBtns.forEach(b => b.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  audio();
+  throwHand(b.dataset.hand);
+}));
+$('howtoBtn').addEventListener('click', () => openModal('howto'));
+$('zukanBtn').addEventListener('click', () => { renderZukan(); openModal('zukan'); });
+$('resetBtn').addEventListener('click', () => {
+  if (!confirm('メダルとカードをリセットしますか?')) return;
+  save.medals = START_MEDALS; save.cards = {}; persist();
+  renderCounts(); renderZukan();
+});
+$('soundBtn').addEventListener('click', () => {
+  save.sound = !save.sound; persist();
+  $('soundBtn').textContent = save.sound ? '🔊' : '🔇';
+  if (!save.sound) { try { speechSynthesis.cancel(); } catch (e) {} }
+});
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => {
+  const m = b.closest('.modal');
+  m.classList.remove('open');
+  if (m.id === 'get' && onCardClosed) { const f = onCardClosed; onCardClosed = null; f(); }
+}));
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const open = document.querySelector('.modal.open');
+  if (open) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') { e.preventDefault(); open.querySelector('[data-close]').click(); }
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if (k === ' ' || k === 'enter') { e.preventDefault(); insertMedal(); }
+  else if (k === '1' || k === 'a') throwHand('gu');
+  else if (k === '2' || k === 's') throwHand('choki');
+  else if (k === '3' || k === 'd') throwHand('pa');
+});
+
+$('soundBtn').textContent = save.sound ? '🔊' : '🔇';
+renderCounts();
+showShape('face');
+
+// Test hook: lets automated checks force outcomes.
+window.__jankenPop = { ODDS, WEIGHTS, get state() { return state; } };
+})();
+</script>
+</body>
+</html>
