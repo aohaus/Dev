@@ -162,7 +162,7 @@ function current() { return publicUser(activeUser(read())); }
 function users() {
   return Object.values(read().users).sort((a, b) => a.created - b.created).map(publicUser);
 }
-function createUser(name, pin) {
+function localCreateUser(name, pin) {
   name = cleanName(name);
   if (!name) fail(t('名前を入れてください', 'Enter a name'));
   if (!validPin(pin)) fail(t('パスワードは数字3桁です', 'The password is 3 digits'));
@@ -175,7 +175,7 @@ function createUser(name, pin) {
     return publicUser(db.users[id]);
   });
 }
-function login(id, pin) {
+function localLogin(id, pin) {
   return tx(db => {
     const u = db.users[id] || fail(t('ユーザーが見つかりません', 'User not found'));
     if (u.movedAt) fail(t('このユーザーは別の端末へ引き継ぎ済みです', 'This user has been moved to another device'));
@@ -185,12 +185,12 @@ function login(id, pin) {
     return publicUser(u);
   });
 }
-function logout() { tx(db => { db.current = null; }); }
+function localLogout() { tx(db => { db.current = null; }); }
 function checkPin(id, pin) {
   const u = read().users[id];
   return !!u && u.pinHash === pinHash(id, pin);
 }
-function renameUser(id, pin, name) {
+function localRenameUser(id, pin, name) {
   name = cleanName(name);
   if (!name) fail(t('名前を入れてください', 'Enter a name'));
   tx(db => {
@@ -200,7 +200,7 @@ function renameUser(id, pin, name) {
     u.name = name;
   });
 }
-function changePin(id, oldPin, newPin) {
+function localChangePin(id, oldPin, newPin) {
   if (!validPin(newPin)) fail(t('パスワードは数字3桁です', 'The password is 3 digits'));
   tx(db => {
     const u = db.users[id] || fail(t('ユーザーが見つかりません', 'User not found'));
@@ -208,7 +208,7 @@ function changePin(id, oldPin, newPin) {
     u.pinHash = pinHash(id, newPin);
   });
 }
-function deleteUser(id, pin) {
+function localDeleteUser(id, pin) {
   tx(db => {
     const u = db.users[id] || fail(t('ユーザーが見つかりません', 'User not found'));
     if (!u.movedAt && u.pinHash !== pinHash(id, pin)) fail(t('パスワードがちがいます', 'Wrong password'));
@@ -218,7 +218,7 @@ function deleteUser(id, pin) {
 }
 
 // ---------------- public: medals (cup ⇄ bank) ----------------
-function deposit(n, note = '') {
+function localDeposit(n, note = '') {
   n = toInt(n);
   if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
   return tx(db => {
@@ -230,7 +230,7 @@ function deposit(n, note = '') {
     return u.balance;
   });
 }
-function withdraw(n, note = '') {
+function localWithdraw(n, note = '') {
   n = toInt(n);
   if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
   return tx(db => {
@@ -256,7 +256,7 @@ function serviceAvailable() {
   const db = read();
   return db.freeDay === today() || db.service.bank !== today();
 }
-function claimService() {
+function localClaimService() {
   const n = SERVICE_MEDALS;
   return tx(db => {
     const u = activeUser(db);
@@ -274,7 +274,7 @@ function log(id) {
   const db = read(), u = db.users[id || db.current];
   return u ? u.log.map(e => ({ ...e })) : [];
 }
-function editLog(entryId, { n, note, type } = {}) {
+function localEditLog(entryId, { n, note, type } = {}) {
   return tx(db => {
     const u = needUser(db);
     const e = u.log.find(x => x.id === entryId) || fail(t('記録が見つかりません', 'Record not found'));
@@ -289,7 +289,7 @@ function editLog(entryId, { n, note, type } = {}) {
     return u.balance;
   });
 }
-function deleteLog(entryId) {
+function localDeleteLog(entryId) {
   return tx(db => {
     const u = needUser(db);
     const i = u.log.findIndex(x => x.id === entryId);
@@ -302,7 +302,7 @@ function deleteLog(entryId) {
     return u.balance;
   });
 }
-function addAdjust(n, note = '') {
+function localAddAdjust(n, note = '') {
   n = toInt(n);
   if (!n) fail(t('枚数を入れてください（マイナスも可）', 'Enter a number (negative is OK)'));
   return tx(db => {
@@ -435,6 +435,173 @@ function transferUrl(code) {
   return `${base}medal-bank.html#t=${code}`;
 }
 
+// ---------------- server (shared bank across devices) ----------------
+// With a server address set, each user's bank balance and history live on the
+// MEDAL BANK server (server/medal-bank-worker.js): the same name + password
+// works on any device. Medals in hand, cards and service medals stay on the
+// device. Without an address everything stays on this device as before.
+const SERVER_URL = '';   // e.g. 'https://medal-bank.example.workers.dev'
+const server = () => { try { return localStorage.getItem('mb-server') || SERVER_URL; } catch (e) { return SERVER_URL; } };
+const online = () => !!server();
+
+const API_MSG = {
+  name_required: () => t('名前を入れてください', 'Enter a name'),
+  bad_pin: () => t('パスワードは数字3桁です', 'The password is 3 digits'),
+  name_taken: () => t('その名前はもう使われています', 'That name is already taken'),
+  no_user: () => t('その名前のユーザーはいません', 'No user with that name'),
+  wrong_pin: d => t(`パスワードがちがいます（あと${d.left}回まちがえると15分ロック）`, `Wrong password (${d.left} more tries before a 15-minute lock)`),
+  locked: d => t(`まちがいが続いたのでロック中です。${Math.ceil(d.retryAfter / 60)}分後に試してね`, `Locked after too many tries. Try again in ${Math.ceil(d.retryAfter / 60)} min`),
+  not_enough: d => t(`残高が足りません（残高 ${d.balance} 枚）`, `Not enough in the bank (balance ${d.balance})`),
+  negative: () => t('残高がマイナスになるため変更できません', 'That would make the balance negative'),
+  bad_amount: () => t('枚数が正しくありません', 'Invalid number'),
+  no_entry: () => t('記録が見つかりません', 'Record not found'),
+  auth: () => t('もう一度ログインしてください', 'Please log in again'),
+};
+async function api(op, body = {}, token) {
+  let res, data;
+  try {
+    res = await fetch(server().replace(/\/$/, '') + '/api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+      body: JSON.stringify({ op, ...body }),
+    });
+    data = await res.json();
+  } catch (e) {
+    fail(t('オフラインのため使えません。ネットにつながってから試してね', 'Offline — try again when you\'re connected'));
+  }
+  if (res.ok) return data;
+  if (data.error === 'auth') tx(db => { const u = activeUser(db); if (u) { delete u.token; db.current = null; } });
+  fail((API_MSG[data.error] || (() => t('サーバーでエラーが起きました', 'Server error')))(data));
+}
+// Copy the server's view of a user into the local record (balance and history are the server's).
+function applyServer(db, u, su, token) {
+  u.sid = su.id; u.name = su.name; u.balance = su.balance; u.log = su.log;
+  if (token) u.token = token;
+  delete u.pinHash;
+}
+function localRecord(db, su) {
+  let u = Object.values(db.users).find(x => x.sid === su.id);
+  if (!u) { const id = rid(); u = db.users[id] = { id, name: su.name, balance: 0, hand: 0, log: [], cards: {}, created: Date.now() }; }
+  return u;
+}
+async function authed(op, body = {}) {
+  const u = activeUser(read()) || fail(t('ログインしてください', 'Please log in'));
+  if (!u.token) { tx(db => { db.current = null; }); fail(t('もう一度ログインしてください', 'Please log in again')); }
+  const out = await api(op, { rid: rid(10), ...body }, u.token);
+  if (out.user) tx(db => { const x = db.users[u.id]; if (x) applyServer(db, x, out.user); });
+  return out;
+}
+
+// ---------------- public API (async: works for both modes) ----------------
+async function createUser(name, pin) {
+  if (!online()) return localCreateUser(name, pin);
+  if (!cleanName(name)) fail(t('名前を入れてください', 'Enter a name'));
+  if (!validPin(pin)) fail(t('パスワードは数字3桁です', 'The password is 3 digits'));
+  const out = await api('register', { name: cleanName(name), pin });
+  return tx(db => {
+    const u = localRecord(db, out.user);
+    applyServer(db, u, out.user, out.token);
+    db.current = u.id; takeGuestCup(db, u);
+    return publicUser(u);
+  });
+}
+// Log in a user listed on this device. A device-only user moves up to the server here.
+async function login(id, pin) {
+  if (!online()) return localLogin(id, pin);
+  const u = read().users[id] || fail(t('ユーザーが見つかりません', 'User not found'));
+  if (u.sid) return loginByName(u.name, pin);
+  if (u.pinHash !== pinHash(id, pin)) fail(t('パスワードがちがいます', 'Wrong password'));
+  let out;
+  try {
+    out = await api('register', { name: u.name, pin, balance: u.balance, log: u.log });
+  } catch (e) {
+    // Same name already on the server (e.g. moved up from another device): join it, bringing this balance along.
+    if (!(e instanceof BankError) || !/使われて|taken/.test(e.message)) throw e;
+    out = await api('login', { name: u.name, pin });
+    if (u.balance > 0) out = { ...out, ...(await api('adjust', { n: u.balance, note: '端末から移行', rid: rid(10) }, out.token)) };
+  }
+  return tx(db => {
+    const x = db.users[id];
+    applyServer(db, x, out.user, out.token);
+    db.current = id; takeGuestCup(db, x);
+    return publicUser(x);
+  });
+}
+async function loginByName(name, pin) {
+  const out = await api('login', { name: cleanName(name), pin });
+  return tx(db => {
+    const u = localRecord(db, out.user);
+    applyServer(db, u, out.user, out.token);
+    db.current = u.id; takeGuestCup(db, u);
+    return publicUser(u);
+  });
+}
+async function logout() {
+  const u = activeUser(read());
+  if (online() && u && u.token) api('logout', {}, u.token).catch(() => {});
+  tx(db => { const x = activeUser(db); if (x && online()) delete x.token; db.current = null; });
+}
+// Fetch the latest balance/history (another device may have changed it). Quiet when offline.
+async function refresh() {
+  if (!online() || !activeUser(read())) return;
+  try { await authed('me'); } catch (e) {}
+}
+async function renameUser(id, pin, name) {
+  if (!online()) return localRenameUser(id, pin, name);
+  await authed('rename', { pin, name: cleanName(name) });
+}
+async function changePin(id, oldPin, newPin) {
+  if (!online()) return localChangePin(id, oldPin, newPin);
+  await authed('repin', { pin: oldPin, newPin });
+}
+async function deleteUser(id, pin) {
+  const u = read().users[id];
+  if (online() && u && u.sid && !u.movedAt) {
+    if (!u.token) fail(t('もう一度ログインしてください', 'Please log in again'));
+    await api('delete_user', { pin }, u.token);
+    return tx(db => { delete db.users[id]; if (db.current === id) db.current = null; });
+  }
+  return localDeleteUser(id, pin);
+}
+async function deposit(n, note = '') {
+  if (!online()) return localDeposit(n, note);
+  n = toInt(n);
+  if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
+  const cup = hand();
+  if (n > cup) fail(t(`手持ちが足りません（手持ち ${cup} 枚）`, `Not enough in hand (${cup} in hand)`));
+  await authed('deposit', { n, note });
+  tx(db => setCupOf(db, Math.max(0, cupOf(db) - n)));
+  return current().balance;
+}
+async function withdraw(n, note = '') {
+  if (!online()) return localWithdraw(n, note);
+  n = toInt(n);
+  if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
+  await authed('withdraw', { n, note });
+  tx(db => setCupOf(db, cupOf(db) + n));
+  return current().balance;
+}
+function claimService() {
+  const n = localClaimService();
+  // The history lives on the server; recording the service medals there is best-effort.
+  if (online() && activeUser(read())) authed('service', { n, note: specialDay() ? 'スペシャル' : '手持ちへ' }).catch(() => {});
+  return n;
+}
+async function editLog(entryId, change = {}) {
+  if (!online()) return localEditLog(entryId, change);
+  await authed('edit', { entry: entryId, ...change });
+}
+async function deleteLog(entryId) {
+  if (!online()) return localDeleteLog(entryId);
+  await authed('remove_entry', { entry: entryId });
+}
+async function addAdjust(n, note = '') {
+  if (!online()) return localAddAdjust(n, note);
+  n = toInt(n);
+  if (!n) fail(t('枚数を入れてください（マイナスも可）', 'Enter a number (negative is OK)'));
+  await authed('adjust', { n, note });
+}
+
 // ---------------- UI: name badge ----------------
 function mountBadge(el) {
   el.classList.add('mb-badge');
@@ -522,7 +689,7 @@ window.MedalBank = {
   GAMES, JANKEN_CARDS, TYPE_NAME, EFFECT, BankError,
   lang, setLang, t, typeName, gameName, noteText,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
-  hand, setHand, SERVICE_MEDALS,
+  hand, setHand, SERVICE_MEDALS, online, refresh, loginByName,
   deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
   getCards, setCards,
