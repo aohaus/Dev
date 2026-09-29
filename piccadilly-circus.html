@@ -250,7 +250,7 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
 .user-tag { position: absolute; left: 0; top: 12.2cqw; font-size: 2.6cqw; }
 .sheet .mb-panel { --mb-accent: var(--blue); }
 </style>
-<script src="medal-bank.js?v=4"></script>
+<script src="medal-bank.js?v=5"></script>
 </head>
 <body>
 <div id="machine">
@@ -328,7 +328,6 @@ const OFFSETS = { 30: 0.0, S: 0.5, 2: 0.12, 4: 0.33, 6: 0.58, 8: 0.8, 10: 0.2, 0
 // Odds lamp distributions for level 1..4 (multiplier = number × level).
 const DIST = { normal: [0.45, 0.30, 0.17, 0.08], event: [0.25, 0.30, 0.25, 0.20] };
 const MAX_BET_PER_NUM = 200;
-const START_CREDIT = 100;
 const SAVE_KEY = 'piccadilly-circus-v1';
 
 const SEG_STYLE = {
@@ -355,7 +354,7 @@ const WHEEL = (() => {
 
 // ---------------- state ----------------
 const st = {
-  credit: START_CREDIT,
+  credit: 0,           // mirror of the shared medal cup
   mode: 'normal',
   sound: true,
   unit: 1,
@@ -372,7 +371,6 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
     if (raw) {
-      if (Number.isFinite(raw.credit)) st.credit = Math.max(0, Math.floor(raw.credit));
       if (raw.mode === 'event' || raw.mode === 'normal') st.mode = raw.mode;
       if (typeof raw.sound === 'boolean') st.sound = raw.sound;
       if (UNITS.includes(raw.unit)) st.unit = raw.unit;
@@ -381,13 +379,22 @@ function load() {
   } catch (e) {}
 }
 function save() {
+  // CREDIT is the shared medal cup. Bets on the table count as still in the
+  // cup, so leaving or reloading never loses them.
+  try { MedalBank.setHand(st.credit + (st.phase === 'bet' ? totalBet() : 0)); } catch (e) {}
   try {
-    // Bets on the table are refunded into the saved credit so a reload never loses medals.
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      credit: st.credit + (st.phase === 'bet' ? totalBet() : 0),
       mode: st.mode, sound: st.sound, unit: st.unit, chanceNext: st.chanceNext,
     }));
   } catch (e) {}
+}
+// Pick up changes made elsewhere (the bank, another game, the back button).
+function syncCup() {
+  if (st.phase !== 'bet') return;
+  const cup = MedalBank.hand(), onTable = totalBet();
+  if (cup < onTable) { NUMS.forEach(n => st.bets[n] = 0); st.credit = cup; }
+  else st.credit = cup - onTable;
+  renderAll();
 }
 
 const totalBet = (b = st.bets) => NUMS.reduce((s, n) => s + (b[n] || 0), 0);
@@ -547,7 +554,7 @@ function repeatBets() {
   return true;
 }
 function promptRefill() {
-  banner(MedalBank.t('メダル切れ<small>メニューのメダルバンクで補充</small>', 'OUT OF MEDALS<small>Refill from MEDAL BANK in the menu</small>'), 'lose', 2200);
+  banner(MedalBank.t('メダル切れ<small>メダルバンクで引き出してね</small>', 'OUT OF MEDALS<small>Withdraw at the MEDAL BANK</small>'), 'lose', 2200);
 }
 
 // ---------------- game flow ----------------
@@ -572,6 +579,7 @@ function start() {
   st.phase = 'spin';
   st.win = 0;
   st.lastBets = { ...st.bets };
+  save();
   clearHits();
   renderBets(); renderMeters(); renderControls(); save();
   sfx.start();
@@ -903,22 +911,21 @@ $('closeBtn').onclick = () => modal.classList.remove('show');
 modal.onclick = e => { if (e.target === modal) modal.classList.remove('show'); };
 $('soundBtn').onclick = () => { st.sound = !st.sound; openModal(); save(); };
 MedalBank.mountBadge($('userTag'));
-MedalBank.mountPanel($('bankPanel'), {
-  game: 'piccadilly',
-  getHand: () => st.credit,
-  setHand: n => { st.credit = n; renderMeters(); renderControls(); save(); sfx.coin(); },
-  canMove: () => st.phase === 'bet' || MedalBank.t('ルーレットが止まってから操作してください', 'Wait until the wheel stops'),
-});
+MedalBank.mountPanel($('bankPanel'), { game: 'piccadilly' });
 $('resetBtn').onclick = () => {
   if (st.phase !== 'bet') return;
-  if (!confirm(MedalBank.t('クレジットを0にしてリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）', 'Reset credit to 0?\n(Deposit to the bank first to keep your medals)'))) return;
+  if (!confirm(MedalBank.t('ベットとモードをリセットしますか？（手持ちメダルはそのままです）', 'Reset bets and mode? (Your medals in hand stay)'))) return;
+  st.credit += totalBet();
   NUMS.forEach(n => st.bets[n] = 0);
-  st.credit = 0; st.lastBets = null; st.chanceNext = false; st.win = 0; st.auto = false;
+  st.lastBets = null; st.chanceNext = false; st.win = 0; st.auto = false; st.mode = 'normal';
   renderAll(); save(); modal.classList.remove('show');
 };
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else syncCup(); });
+addEventListener('pageshow', syncCup);
+MedalBank.onChange(syncCup);
 
 load();
+st.credit = MedalBank.hand();
 NUMS.forEach(n => st.levels[n] = rollLevel());
 renderAll();
 })();

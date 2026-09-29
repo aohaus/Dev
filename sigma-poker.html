@@ -261,7 +261,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 .user-tag { position: absolute; left: 50%; bottom: -1.4cqw; transform: translateX(-50%); font-size: 2cqw; max-width: 50%; }
 .sheet .mb-panel { --mb-accent: #ff4a6a; margin-top: 0; }
 </style>
-<script src="medal-bank.js?v=4"></script>
+<script src="medal-bank.js?v=5"></script>
 </head>
 <body>
 <div id="machine">
@@ -446,7 +446,7 @@ const SAVE_KEY = 'sigma-poker-v1';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const st = {
-  credit: 100,
+  credit: 0,       // mirror of the shared medal cup
   bet: 0,
   lastBet: 1,
   maxBet: 5,
@@ -468,7 +468,6 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
     if (!raw) return;
-    if (Number.isFinite(raw.credit)) st.credit = Math.max(0, Math.floor(raw.credit));
     if (Number.isFinite(raw.jackpot)) st.jackpot = Math.max(JP_BASE, Math.floor(raw.jackpot));
     if (Number.isFinite(raw.jpFrac)) st.jpFrac = raw.jpFrac;
     if (MODES.includes(raw.maxBet)) st.maxBet = raw.maxBet;
@@ -484,13 +483,18 @@ function load() {
     }
   } catch (e) {}
 }
+// Medals that count as still in the cup: an undealt bet and a pending win.
+function pending() {
+  if (st.phase === 'idle') return st.bet;
+  if (st.phase === 'win' || st.phase === 'double') return st.win;
+  return 0;
+}
 function save() {
+  // CREDIT is the shared medal cup (see medal-bank.js).
+  try { MedalBank.setHand(st.credit + pending()); } catch (e) {}
   try {
-    let credit = st.credit;
-    if (st.phase === 'idle') credit += st.bet;                         // bet not yet dealt: refund
-    if (st.phase === 'win' || st.phase === 'double') credit += st.win; // pending win: collect
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      credit, jackpot: st.jackpot, jpFrac: st.jpFrac, lastBet: st.lastBet, maxBet: st.maxBet, sound: st.sound,
+      jackpot: st.jackpot, jpFrac: st.jpFrac, lastBet: st.lastBet, maxBet: st.maxBet, sound: st.sound,
       inHand: st.phase === 'hold' ? { bet: st.bet, hand: st.hand, deck: st.deck, held: st.held } : null,
     }));
   } catch (e) {}
@@ -708,7 +712,7 @@ function renderAll() {
   renderPay(); renderMeters(); renderHeld(); renderButtons();
 }
 function idleMessage() {
-  if (st.credit + st.bet <= 0) setMsg('INSERT MEDALS', 'blink', 'MENU ≡ → MEDAL BANK');
+  if (st.credit + st.bet <= 0) setMsg('INSERT MEDALS', 'blink', 'MEDAL BANK → WITHDRAW');
   else if (st.bet > 0) setMsg('PRESS DEAL', 'gold');
   else setMsg('PLACE YOUR BET', 'gold blink');
 }
@@ -975,16 +979,24 @@ modal.onclick = e => { if (e.target === modal) closeModal(); };
 $('sndBtn').onclick = toggleSound;
 $('soundBtn').onclick = () => { toggleSound(); $('soundBtn').textContent = `サウンド: ${st.sound ? 'ON' : 'OFF'}`; };
 MedalBank.mountBadge($('userTag'));
-MedalBank.mountPanel($('bankPanel'), {
-  game: 'sigma',
-  getHand: () => st.credit,
-  setHand: n => { st.credit = n; sfx.coin(); save(); renderAll(); idleMessage(); },
-  canMove: () => (st.phase === 'idle' && !st.busy) || MedalBank.t('勝負が終わってから操作してください', 'Finish the hand first'),
-});
+MedalBank.mountPanel($('bankPanel'), { game: 'sigma' });
+// Pick up changes made elsewhere (the bank, another game, the back button).
+function syncCup() {
+  if (st.busy) return;
+  const cup = MedalBank.hand();
+  if (st.phase === 'idle' && cup < st.bet) st.bet = 0;
+  st.credit = Math.max(0, cup - pending());
+  renderAll();
+  if (st.phase === 'idle') idleMessage();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncCup(); });
+addEventListener('pageshow', syncCup);
+MedalBank.onChange(syncCup);
 $('resetBtn').onclick = () => {
   if (st.busy) return;
-  if (!confirm(MedalBank.t('クレジットを0にして、ジャックポットもリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）', 'Reset credit to 0 and the jackpot?\n(Deposit to the bank first to keep your medals)'))) return;
-  Object.assign(st, { credit: 0, bet: 0, lastBet: 1, maxBet: 5, jackpot: JP_BASE, jpFrac: 0, phase: 'idle', win: 0, result: null, duHist: [] });
+  if (!confirm(MedalBank.t('ジャックポットとベット設定をリセットしますか？（手持ちメダルはそのままです）', 'Reset the jackpot and bet settings? (Your medals in hand stay)'))) return;
+  st.credit += pending();
+  Object.assign(st, { bet: 0, lastBet: 1, maxBet: 5, jackpot: JP_BASE, jpFrac: 0, phase: 'idle', win: 0, result: null, duHist: [] });
   hideDouble();
   cardEls.forEach(el => paintCard(el, null));
   save(); idleMessage(); renderAll(); closeModal();
@@ -992,6 +1004,7 @@ $('resetBtn').onclick = () => {
 
 // ---------------- boot ----------------
 load();
+st.credit = MedalBank.hand();
 if (st.phase === 'hold') {
   st.hand.forEach((c, i) => paintCard(cardEls[i], c));
   holdMessage();

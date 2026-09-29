@@ -5,8 +5,9 @@
  * is done with a transfer code (引き継ぎコード) encrypted with the user's
  * 3-digit password — no server involved.
  *
- * Each game keeps its own "hand" (credit) as before; this module only moves
- * medals between that hand and the bank, and draws the settings-panel UI.
+ * Medals in hand live in one cup per user (plus a guest cup), shared by every
+ * game: a game's CREDIT is the cup. Deposits, withdrawals and the daily
+ * service medals happen only at the MEDAL BANK machine.
  */
 (() => {
 'use strict';
@@ -15,11 +16,14 @@ const KEY = 'medal-bank-v1';
 const LOG_MAX = 500;
 const EXPORT_LOG_MAX = 80;   // keeps transfer codes small enough for a QR code
 const CODE_PREFIX = 'MB1.';
+const SERVICE_MEDALS = 100;   // handed out at the bank once a day
+// Where each game kept its own credit before the shared cup (moved into the cup once).
+const OLD_HANDS = [['piccadilly-circus-v1', 'credit'], ['sigma-poker-v1', 'credit'], ['janken-pop-v1', 'medals']];
 
 const GAMES = {
-  piccadilly: { name: 'ピカデリーサーカス', short: 'ピカデリー', en: 'Piccadilly', url: 'piccadilly-circus.html', service: 100 },
-  sigma:      { name: 'シグマポーカー',     short: 'シグマ',     en: 'Sigma',      url: 'sigma-poker.html',       service: 100 },
-  janken:     { name: 'じゃんけんポップ',   short: 'じゃんけん', en: 'Janken',     url: 'janken-pop.html',        service: 10  },
+  piccadilly: { name: 'ピカデリーサーカス', short: 'ピカデリー', en: 'Piccadilly', url: 'piccadilly-circus.html' },
+  sigma:      { name: 'シグマポーカー',     short: 'シグマ',     en: 'Sigma',      url: 'sigma-poker.html' },
+  janken:     { name: 'じゃんけんポップ',   short: 'じゃんけん', en: 'Janken',     url: 'janken-pop.html' },
 };
 const JANKEN_CARDS = [
   ['usa', '🐰', 'ウサピョン'], ['neko', '🐱', 'ネコマル'], ['inu', '🐶', 'ワンタ'],
@@ -73,7 +77,7 @@ class BankError extends Error {}
 const fail = msg => { throw new BankError(msg); };
 
 // ---------------- storage ----------------
-function blank() { return { v: 1, current: null, users: {}, service: {} }; }
+function blank() { return { v: 1, current: null, users: {}, service: {}, guestHand: 0 }; }
 function read() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
@@ -115,9 +119,44 @@ function recompute(u, base) {
   return bal;
 }
 
+// ---------------- the cup (medals in hand) ----------------
+function cupOf(db) { const u = activeUser(db); return u ? (u.hand || 0) : (db.guestHand || 0); }
+function setCupOf(db, n) { const u = activeUser(db); if (u) u.hand = n; else db.guestHand = n; }
+// Logging in picks up whatever the guest cup was holding.
+function takeGuestCup(db, u) {
+  if (db.guestHand > 0) { u.hand = (u.hand || 0) + db.guestHand; db.guestHand = 0; }
+}
+function hand() { return cupOf(read()); }
+function setHand(n) {
+  n = Math.max(0, Math.floor(Number(n) || 0));
+  const db = read();
+  if (cupOf(db) === n) return n;
+  setCupOf(db, n); write(db);
+  return n;
+}
+// One-time move of each game's old separate credit into the cup.
+function migrateHands() {
+  const db = read();
+  if (db.cupV) return;
+  let total = 0;
+  for (const [key, field] of OLD_HANDS) {
+    try {
+      const s = JSON.parse(localStorage.getItem(key) || 'null');
+      if (s && Number.isFinite(s[field]) && s[field] > 0) {
+        total += Math.floor(s[field]);
+        s[field] = 0;
+        localStorage.setItem(key, JSON.stringify(s));
+      }
+    } catch (e) {}
+  }
+  setCupOf(db, cupOf(db) + total);
+  db.cupV = 1;
+  try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {}
+}
+
 // ---------------- public: users ----------------
 function publicUser(u) {
-  return u && { id: u.id, name: u.name, balance: u.balance, created: u.created, moved: !!u.movedAt, movedAt: u.movedAt || null };
+  return u && { id: u.id, name: u.name, balance: u.balance, hand: u.hand || 0, created: u.created, moved: !!u.movedAt, movedAt: u.movedAt || null };
 }
 function current() { return publicUser(activeUser(read())); }
 function users() {
@@ -130,8 +169,9 @@ function createUser(name, pin) {
   return tx(db => {
     if (Object.values(db.users).some(u => u.name === name && !u.movedAt)) fail(t('その名前はもう使われています', 'That name is already taken'));
     const id = rid();
-    db.users[id] = { id, name, pinHash: pinHash(id, pin), balance: 0, log: [], cards: {}, created: Date.now() };
+    db.users[id] = { id, name, pinHash: pinHash(id, pin), balance: 0, hand: 0, log: [], cards: {}, created: Date.now() };
     db.current = id;
+    takeGuestCup(db, db.users[id]);
     return publicUser(db.users[id]);
   });
 }
@@ -141,6 +181,7 @@ function login(id, pin) {
     if (u.movedAt) fail(t('このユーザーは別の端末へ引き継ぎ済みです', 'This user has been moved to another device'));
     if (u.pinHash !== pinHash(id, pin)) fail(t('パスワードがちがいます', 'Wrong password'));
     db.current = id;
+    takeGuestCup(db, u);
     return publicUser(u);
   });
 }
@@ -176,29 +217,32 @@ function deleteUser(id, pin) {
   });
 }
 
-// ---------------- public: medals ----------------
-function deposit(game, n, note = '') {
+// ---------------- public: medals (cup ⇄ bank) ----------------
+function deposit(n, note = '') {
   n = toInt(n);
   if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
   return tx(db => {
     const u = needUser(db);
+    if (n > (u.hand || 0)) fail(t(`手持ちが足りません（手持ち ${u.hand || 0} 枚）`, `Not enough in hand (${u.hand || 0} in hand)`));
+    u.hand -= n;
     u.balance += n;
-    pushLog(u, { type: 'deposit', game, n, note });
+    pushLog(u, { type: 'deposit', game: 'bank', n, note });
     return u.balance;
   });
 }
-function withdraw(game, n, note = '') {
+function withdraw(n, note = '') {
   n = toInt(n);
   if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
   return tx(db => {
     const u = needUser(db);
     if (n > u.balance) fail(t(`残高が足りません（残高 ${u.balance} 枚）`, `Not enough in the bank (balance ${u.balance})`));
     u.balance -= n;
-    pushLog(u, { type: 'withdraw', game, n, note });
+    u.hand = (u.hand || 0) + n;
+    pushLog(u, { type: 'withdraw', game: 'bank', n, note });
     return u.balance;
   });
 }
-// Free service medals: once per game per day on this device, whoever is
+// Free service medals: once a day at the bank on this device, whoever is
 // logged in (so making extra users can't farm them). A special code lifts
 // the limit for the rest of the day it is entered.
 const SPECIAL_CODE = '1bou87ribcx';   // hash of the code, not the code itself
@@ -208,18 +252,19 @@ function useSpecialCode(code) {
   tx(db => { db.freeDay = today(); });
 }
 function endSpecial() { tx(db => { delete db.freeDay; }); }
-function serviceAvailable(game) {
+function serviceAvailable() {
   const db = read();
-  return db.freeDay === today() || db.service[game] !== today();
+  return db.freeDay === today() || db.service.bank !== today();
 }
-function claimService(game) {
-  const n = GAMES[game].service;
+function claimService() {
+  const n = SERVICE_MEDALS;
   return tx(db => {
     const u = activeUser(db);
     const special = db.freeDay === today();
-    if (!special && db.service[game] === today()) fail(t('サービスメダルは1日1回です。また明日！', 'Service medals are once a day. See you tomorrow!'));
-    db.service[game] = today();
-    if (u) pushLog(u, { type: 'service', game, n, note: special ? 'スペシャル' : '手持ちへ' });
+    if (!special && db.service.bank === today()) fail(t('サービスメダルは1日1回です。また明日！', 'Service medals are once a day. See you tomorrow!'));
+    db.service.bank = today();
+    setCupOf(db, cupOf(db) + n);
+    if (u) pushLog(u, { type: 'service', game: 'bank', n, note: special ? 'スペシャル' : '手持ちへ' });
     return n;
   });
 }
@@ -403,126 +448,24 @@ function mountBadge(el) {
 }
 
 // ---------------- UI: settings panel ----------------
-// opts: { game, getHand(), setHand(n), canMove() -> true | '理由' }
-function mountPanel(el, opts) {
-  const g = GAMES[opts.game];
+// Shows who is playing and the cup; banking itself happens at the MEDAL BANK machine.
+// opts: { game }
+function mountPanel(el) {
   el.classList.add('mb-panel');
-  let mode = 'main';   // main | login | create
-  let loginId = null;
-  let flash = '';
-
-  const say = (msg, ok = false) => { flash = `<p class="mb-flash ${ok ? 'ok' : 'ng'}">${esc(msg)}</p>`; draw(); };
-  const guard = fn => (...a) => { try { fn(...a); } catch (e) { if (e instanceof BankError) say(e.message); else throw e; } };
-  const movable = () => { const r = opts.canMove ? opts.canMove() : true; return r === true ? null : r; };
-
   function draw() {
-    const u = current(), hand = opts.getHand();
-    const svc = serviceAvailable(opts.game), special = specialDay();
-    let h = `<div class="mb-head"><span class="mb-logo">MEDAL BANK</span><span class="mb-links"><button class="mb-link" data-a="lang">${t('English', '日本語')}</button><a class="mb-link" href="game-center.html">🏠 Game Centre</a><a class="mb-link" href="medal-bank.html">${t('バンクを開く ›', 'Open bank ›')}</a></span></div>`;
-    const pinBox = `<input class="mb-pin" type="password" inputmode="numeric" maxlength="3" placeholder="${t('パスワード3桁', '3-digit password')}" data-f="pin">`;
-    if (mode === 'login') {
-      const list = users().filter(x => !x.moved);
-      h += `<div class="mb-box"><b>${t('ユーザーをえらぶ', 'Choose a user')}</b><div class="mb-users">${
-        list.map(x => `<button class="mb-chip${x.id === loginId ? ' on' : ''}" data-uid="${x.id}">${esc(x.name)}</button>`).join('') || `<span class="mb-dim">${t('まだユーザーがいません', 'No users yet')}</span>`
-      }</div>${loginId ? `<div class="mb-line">${pinBox}<button class="mb-btn" data-a="doLogin">${t('ログイン', 'Log in')}</button></div>` : ''}
-      <div class="mb-line"><button class="mb-btn sub" data-a="toCreate">${t('新しく作る', 'New user')}</button><button class="mb-btn sub" data-a="back">${t('もどる', 'Back')}</button></div></div>`;
-    } else if (mode === 'create') {
-      h += `<div class="mb-box"><b>${t('ユーザー作成', 'New user')}</b>
-      <div class="mb-line"><input type="text" maxlength="12" placeholder="${t('なまえ', 'Name')}" data-f="name"></div>
-      <div class="mb-line">${pinBox}<button class="mb-btn" data-a="doCreate">${t('作成', 'Create')}</button></div>
-      <div class="mb-line"><button class="mb-btn sub" data-a="back">${t('もどる', 'Back')}</button></div></div>`;
-    } else {
-      h += `<div class="mb-user">${u ? `👤 <b>${esc(u.name)}</b>` : t('👤 ゲスト', '👤 Guest')}<button class="mb-mini" data-a="toLogin">${u ? t('切り替え', 'Switch') : t('ログイン', 'Log in')}</button>${u ? `<button class="mb-mini" data-a="logout">${t('ログアウト', 'Log out')}</button>` : ''}</div>`;
-      if (u) {
-        const num = f => `<input type="number" min="1" inputmode="numeric" placeholder="${t('枚数', 'Medals')}" data-f="${f}">`;
-        h += `<div class="mb-meters"><div>${t('手持ち', 'In hand')}<output>${hand}</output></div><div>${t('バンク残高', 'In bank')}<output>${u.balance}</output></div></div>
-        <div class="mb-line">${num('n')}<button class="mb-btn sub" data-a="allIn">${t('全部', 'All')}</button><button class="mb-btn" data-a="dep">${t('預ける', 'Deposit')}</button></div>
-        <div class="mb-line">${num('w')}<button class="mb-btn sub" data-a="allOut">${t('全部', 'All')}</button><button class="mb-btn" data-a="wd">${t('引き出す', 'Withdraw')}</button></div>`;
-      } else {
-        h += `<p class="mb-dim">${t('ログインすると、手持ちメダルを預けたり、別の日に引き出したりできます。', 'Log in to deposit your medals and withdraw them another day.')}</p>`;
-      }
-      const label = special ? t(`サービスメダル +${g.service}（きょうは何回でも！）`, `Service medals +${g.service} (unlimited today!)`)
-        : svc ? t(`サービスメダル +${g.service}（1日1回）`, `Service medals +${g.service} (once a day)`)
-        : t('サービスメダルは受け取り済み（また明日）', 'Service medals already taken (come back tomorrow)');
-      h += `<div class="mb-line"><button class="mb-btn svc" data-a="svc" ${svc ? '' : 'disabled'}>${label}</button></div>`;
-    }
-    el.innerHTML = h + flash;
-    flash = '';
+    const u = current(), cup = hand();
+    let h = `<div class="mb-head"><span class="mb-logo">MEDAL BANK</span><span class="mb-links"><button class="mb-link" data-a="lang">${t('English', '日本語')}</button><a class="mb-link" href="game-center.html">🏠 Game Centre</a></span></div>`;
+    h += `<div class="mb-user">${u ? `👤 <b>${esc(u.name)}</b>` : t('👤 ゲスト', '👤 Guest')}</div>`;
+    h += `<div class="mb-meters"><div>${t('手持ち', 'In hand')}<output>${cup}</output></div>${u ? `<div>${t('バンク残高', 'In bank')}<output>${u.balance}</output></div>` : ''}</div>`;
+    h += `<p class="mb-dim">${t('手持ちメダルは全部のゲームで共通です。預け入れ・引き出し・サービスメダル・ログインはメダルバンクで。',
+      'Medals in hand are shared by every game. Deposit, withdraw, service medals and log-in are at the MEDAL BANK.')}</p>`;
+    h += `<div class="mb-line"><a class="mb-btn go" href="medal-bank.html">${t('🏦 メダルバンクへ行く', '🏦 Go to the MEDAL BANK')}</a></div>`;
+    el.innerHTML = h;
   }
-
-  const field = f => el.querySelector(`[data-f="${f}"]`);
-  const actions = {
-    lang() { setLang(lang() === 'en' ? 'ja' : 'en'); },
-    toLogin() { mode = 'login'; loginId = current()?.id || null; },
-    toCreate() { mode = 'create'; },
-    back() { mode = 'main'; },
-    logout() { offerDeposit(); logout(); },
-    doLogin() {
-      const cur = current();
-      const pin = field('pin').value;
-      if (cur && cur.id !== loginId) {
-        if (!checkPin(loginId, pin)) fail(t('パスワードがちがいます', 'Wrong password'));
-        offerDeposit();
-      }
-      const u = login(loginId, pin); mode = 'main'; say(t(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true);
-      return true;
-    },
-    doCreate() {
-      if (current()) offerDeposit();
-      const u = createUser(field('name').value, field('pin').value);
-      mode = 'main'; say(t(`${u.name} さんを作成しました`, `Created ${u.name}`), true); return true;
-    },
-    allIn() { field('n').value = opts.getHand(); return 'keep'; },
-    allOut() { field('w').value = current()?.balance || 0; return 'keep'; },
-    dep() {
-      const why = movable(); if (why) fail(why);
-      const n = toInt(field('n').value);
-      if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
-      if (n > opts.getHand()) fail(t(`手持ちが足りません（手持ち ${opts.getHand()} 枚）`, `Not enough in hand (${opts.getHand()} in hand)`));
-      deposit(opts.game, n);
-      opts.setHand(opts.getHand() - n);
-      say(t(`${n} 枚 預けました`, `Deposited ${n}`), true); return true;
-    },
-    wd() {
-      const why = movable(); if (why) fail(why);
-      const n = toInt(field('w').value);
-      withdraw(opts.game, n);
-      opts.setHand(opts.getHand() + n);
-      say(t(`${n} 枚 引き出しました`, `Withdrew ${n}`), true); return true;
-    },
-    svc() {
-      const why = movable(); if (why) fail(why);
-      const n = claimService(opts.game);
-      opts.setHand(opts.getHand() + n);
-      say(t(`サービスメダル ${n} 枚！`, `${n} service medals!`), true); return true;
-    },
-  };
-  // Leaving a user with medals still in hand: offer to bank them first.
-  function offerDeposit() {
-    const u = current(), hand = opts.getHand();
-    if (!u || hand <= 0 || movable()) return;
-    if (confirm(t(`手持ち ${hand} 枚を「${u.name}」のバンクに預けてから切り替えますか？\n（キャンセルすると手持ちのまま残ります）`,
-      `Deposit the ${hand} medals in hand to ${u.name}'s bank before switching?\n(Cancel keeps them in hand)`))) {
-      deposit(opts.game, hand, '切り替え時');
-      opts.setHand(0);
-    }
-  }
-
-  el.addEventListener('click', guard(e => {
-    const chip = e.target.closest('[data-uid]');
-    if (chip) { loginId = chip.dataset.uid; draw(); el.querySelector('[data-f="pin"]')?.focus(); return; }
-    const b = e.target.closest('[data-a]');
-    if (!b) return;
-    const r = actions[b.dataset.a]();
-    if (r === 'keep') return;
-    if (r !== true) draw();
-  }));
-  el.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    const btn = e.target.closest('.mb-line')?.querySelector('.mb-btn:not(.sub)');
-    if (btn) { e.preventDefault(); btn.click(); }
+  el.addEventListener('click', e => {
+    if (e.target.closest('[data-a="lang"]')) setLang(lang() === 'en' ? 'ja' : 'en');
   });
-  listeners.add(() => { if (!el.contains(document.activeElement)) draw(); });
+  listeners.add(draw);
   draw();
   return { refresh: draw };
 }
@@ -556,6 +499,7 @@ const css = `
   background: var(--mb-accent); color: #fff; }
 .mb-btn.sub { background: rgba(127,127,127,.35); color: inherit; }
 .mb-btn.svc { flex: 1 1 auto; background: linear-gradient(#ffe36b, #f0b400); color: #5a3400; }
+.mb-btn.go { flex: 1 1 auto; text-align: center; text-decoration: none; padding: 10px 12px; }
 .mb-btn:disabled { opacity: .45; cursor: default; }
 .mb-box b { display: block; margin-bottom: 4px; }
 .mb-users { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -567,6 +511,7 @@ const css = `
 .mb-flash.ng { background: #d8141c; color: #fff; }
 `;
 document.documentElement.lang = lang();
+migrateHands();
 if (!document.getElementById('mb-style')) {
   const s = document.createElement('style');
   s.id = 'mb-style'; s.textContent = css;
@@ -577,6 +522,7 @@ window.MedalBank = {
   GAMES, JANKEN_CARDS, TYPE_NAME, EFFECT, BankError,
   lang, setLang, t, typeName, gameName, noteText,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
+  hand, setHand, SERVICE_MEDALS,
   deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
   getCards, setCards,
