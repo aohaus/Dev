@@ -337,7 +337,7 @@ header { position: relative; text-align: center; line-height: .9; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 20px; margin-top: 6px; }
 .progress { font-size: 15px; margin-bottom: 4px; }
 </style>
-<script src="medal-bank.js?v=4"></script>
+<script src="medal-bank.js?v=5"></script>
 </head>
 <body>
 <div id="machine">
@@ -492,17 +492,19 @@ const HANDS = ['gu', 'choki', 'pa'];
 
 // ─── Save data ────────────────────────────────────────
 const SAVE_KEY = 'janken-pop-v1';
-const START_MEDALS = 10;
-// save.cards holds the guest's cards; a logged-in user's cards live in the
-// medal bank so they follow the user (and move with a transfer code).
-let save = { medals: START_MEDALS, cards: {}, sound: true };
+// save.medals mirrors the shared medal cup (medal-bank.js). save.cards holds
+// the guest's cards; a logged-in user's cards live in the medal bank so they
+// follow the user (and move with a transfer code).
+let save = { medals: 0, cards: {}, sound: true };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
   if (raw && typeof raw === 'object') save = { ...save, ...raw };
 } catch (e) {}
+save.medals = MedalBank.hand();
 let cards = save.cards;
 function persist() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {}
+  MedalBank.setHand(save.medals);
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ cards: save.cards, sound: save.sound })); } catch (e) {}
   if (cards !== save.cards && MedalBank.current()) MedalBank.setCards('janken', cards);
 }
 function bindCards() {
@@ -715,8 +717,7 @@ function renderCounts() {
   const owned = CARDS.filter(c => cards[c.id]).length;
   $('cardCorner').textContent = `${owned}/${CARDS.length}`;
   slotEl.classList.toggle('empty', save.medals < 1);
-  $('slotPrice').textContent = save.medals >= 1 ? '1枚であそべる!'
-    : MedalBank.serviceAvailable('janken') ? MedalBank.t('タッチで+10枚', 'Tap for +10') : MedalBank.t('せっていでひきだす', 'Withdraw in ⚙');
+  $('slotPrice').textContent = save.medals >= 1 ? MedalBank.t('1枚であそべる!', '1 medal to play!') : MedalBank.t('バンクでひきだす', 'Get medals at the bank');
 }
 function setIdleUI(idle) {
   slotEl.classList.toggle('pulse', idle);
@@ -767,16 +768,9 @@ function stopCycle() { clearInterval(cycleTimer); cycleTimer = null; }
 async function insertMedal() {
   if (state !== 'idle') return;
   if (save.medals < 1) {
-    // Out of medals: today's free service medals, otherwise the bank.
-    if (!MedalBank.serviceAvailable('janken')) {
-      setMsg(MedalBank.t('きょうのサービスはおしまい。バンクからひきだしてね!', 'No more service today. Withdraw from the bank!'));
-      openModal('settings');
-      return;
-    }
-    save.medals += MedalBank.claimService('janken'); persist(); renderCounts();
-    flyCoin(msgEl, slotEl, 5);
-    sfx.coin();
-    setMsg(MedalBank.t('サービスメダル10枚!(1日1回)', '10 service medals! (once a day)'));
+    // Out of medals: off to the MEDAL BANK (withdraw or today's service medals).
+    setMsg(MedalBank.t('メダルがないよ。メダルバンクでもらってきてね!', 'No medals. Get some at the MEDAL BANK!'));
+    openModal('settings');
     return;
   }
   save.medals--; persist(); renderCounts();
@@ -891,6 +885,7 @@ async function payout(value) {
   const per = Math.max(25, Math.min(120, 1200 / n));
   for (let i = 0; i < n; i++) {
     save.medals++;
+    persist();
     renderCounts();
     sfx.pay();
     if (i < 8) flyCoin(msgEl, slotEl, 1);
@@ -922,7 +917,7 @@ function endRound() {
   setIdleUI(true);
   renderCounts();
   setMsg(save.medals > 0 ? 'メダルを入れてね!'
-    : MedalBank.serviceAvailable('janken') ? MedalBank.t('メダルがなくなった… タッチで補充!', 'Out of medals… tap to refill!') : MedalBank.t('メダルがなくなった… ⚙からひきだしてね', 'Out of medals… withdraw in ⚙'));
+    : MedalBank.t('メダルがなくなった… メダルバンクへ!', 'Out of medals… off to the MEDAL BANK!'));
   setTimeout(() => {
     if (state === 'idle') { setLamp(null); clearSegs(); showShape('face'); }
   }, 1200);
@@ -946,22 +941,20 @@ handBtns.forEach(b => b.addEventListener('pointerdown', e => {
 $('howtoBtn').addEventListener('click', () => openModal('howto'));
 $('gearBtn').addEventListener('click', () => { $('settingsTitle').textContent = MedalBank.t('せってい', 'Settings'); openModal('settings'); });
 MedalBank.mountBadge($('userTag'));
-MedalBank.mountPanel($('bankPanel'), {
-  game: 'janken',
-  getHand: () => save.medals,
-  setHand: n => { save.medals = n; persist(); renderCounts(); sfx.coin(); if (state === 'idle') endRound(); },
-  canMove: () => state === 'idle' || MedalBank.t('じゃんけんが終わってからね', 'Finish the round first'),
-});
+MedalBank.mountPanel($('bankPanel'), { game: 'janken' });
+// Pick up changes made elsewhere (the bank, another game, the back button).
+function syncCup() { if (state === 'idle') { save.medals = MedalBank.hand(); renderCounts(); } }
+addEventListener('pageshow', syncCup);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncCup(); });
 MedalBank.onChange(() => {
-  bindCards(); renderCounts();
+  bindCards(); syncCup(); renderCounts();
   if ($('zukan').classList.contains('open')) renderZukan();
 });
 $('zukanBtn').addEventListener('click', () => { renderZukan(); openModal('zukan'); });
 $('resetBtn').addEventListener('click', () => {
   const who = MedalBank.current();
-  if (!confirm(MedalBank.t(`メダルを0枚にして、${who ? who.name + ' さんの' : ''}カードをリセットしますか?\n(メダルを残したいときは先にバンクへ預けてね)`,
-    `Reset medals to 0 and ${who ? who.name + "'s" : 'the'} cards?\n(Deposit to the bank first to keep your medals)`))) return;
-  save.medals = 0;
+  if (!confirm(MedalBank.t(`${who ? who.name + ' さんの' : ''}カードをリセットしますか?(メダルはそのままだよ)`,
+    `Reset ${who ? who.name + "'s" : 'the'} cards? (Your medals stay)`))) return;
   for (const k of Object.keys(cards)) delete cards[k];
   persist();
   renderCounts(); renderZukan();

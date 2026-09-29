@@ -114,6 +114,12 @@ button { cursor: pointer; }
 .lcd h3 { font-size: 13px; margin: 12px 0 6px; color: var(--lcd-dim); }
 .who { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .who b { font-size: 18px; }
+.cup { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; margin: 10px 0 4px; }
+.cup > div { background: #0e1420; border-radius: 6px; padding: 6px 10px; }
+.cup span { display: block; font-size: 11px; color: #9fb0c9; }
+.cup output { display: block; text-align: right; font: 700 26px/1.1 'Courier New', monospace; color: #ffb13b; }
+.btn.svc { flex: 1 1 100%; white-space: normal; background: linear-gradient(#ffe36b, #f0b400); color: #5a3400; }
+.row > #depN, .row > #wdN { flex: 1 1 40px; }
 .bal { margin: 10px 0 4px; background: #0e1420; color: #ffb13b; border-radius: 6px; padding: 8px 12px;
   display: flex; justify-content: space-between; align-items: baseline; }
 .bal span { font-size: 12px; color: #9fb0c9; }
@@ -176,7 +182,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=4"></script>
+<script src="medal-bank.js?v=5"></script>
 </head>
 <body>
 <div class="toprow"><button class="langbtn" id="langBtn">English</button></div>
@@ -201,7 +207,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
     </div>
   </div>
   <div class="base">
-    <div class="tray" data-en="Withdraw from each game's settings">払い出しは各ゲームの設定から</div>
+    <div class="tray" data-en="Medal tray">メダル払い出し口</div>
     <div class="games" id="games"></div>
     <a class="home" href="game-center.html" data-en="🏠 Back to Game Centre">🏠 Game Centre へもどる</a>
   </div>
@@ -222,8 +228,8 @@ document.querySelectorAll('[data-en]').forEach(el => { el.dataset.ja = el.textCo
 function renderStatic() {
   document.querySelectorAll('[data-en]').forEach(el => { el.textContent = T(el.dataset.ja, el.dataset.en); });
   $('note').innerHTML = T(
-    'メダルの預け入れ・引き出しは、各ゲームのメニュー（≡ / ⚙）の「MEDAL BANK」欄から行います。<br>データはこの端末のブラウザに保存されます。別の端末へ移すときは「引き継ぎ」でコードを発行し、移動先でパスワード（3桁）と一緒に読み込んでください。発行した時点でこの端末のアカウントはロックされます。',
-    'Deposit and withdraw medals from the MEDAL BANK section in each game\'s menu (≡ / ⚙).<br>Data is saved in this browser on this device. To move to another device, issue a code under "Transfer" and load it there with the 3-digit password. Once issued, the account is locked on this device.');
+    '手持ちメダルは全部のゲームで共通です。遊ぶ前にここで引き出し（またはサービスメダル）、帰るときに預けてください。<br>データはこの端末のブラウザに保存されます。別の端末へ移すときは「引き継ぎ」でコードを発行し、移動先でパスワード（3桁）と一緒に読み込んでください。発行した時点でこの端末のアカウントはロックされます。',
+    'Medals in hand are shared by every game. Withdraw here (or take service medals) before playing, and deposit when you leave.<br>Data is saved in this browser on this device. To move to another device, issue a code under "Transfer" and load it there with the 3-digit password. Once issued, the account is locked on this device.');
   $('langBtn').textContent = T('English', '日本語');
   $('games').innerHTML = Object.values(GAMES).map(g =>
     `<a href="${g.url}"><b>${g.url.startsWith('janken') ? '✊' : g.url.startsWith('sigma') ? '🃏' : '🎡'}</b>${esc(T(g.short, g.en || g.short))}</a>`).join('');
@@ -290,9 +296,27 @@ function specialBox() {
     <div class="row"><input id="special" type="text" autocomplete="off" autocapitalize="characters" placeholder="${T('コード', 'Code')}"><button class="btn" data-a="special">${T('使う', 'Use')}</button></div>`;
 }
 
+// The counter: medals in hand, and the daily service medals.
+function counter(u) {
+  const cup = MB.hand(), svc = MB.serviceAvailable(), sp = MB.specialDay && MB.specialDay();
+  let h = `<div class="cup"><div><span>${T('手持ち', 'In hand')}</span><output>${cup.toLocaleString()}</output></div>`;
+  if (u) h += `<div><span>${T('預け入れ残高', 'Balance')}</span><output>${u.balance.toLocaleString()}</output></div>`;
+  h += `</div>`;
+  if (u) h += `
+    <div class="row"><input id="depN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Medals')}"><button class="btn sub" data-a="allIn">${T('全部', 'All')}</button><button class="btn" data-a="dep">${T('預ける', 'Deposit')}</button></div>
+    <div class="row"><input id="wdN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Medals')}"><button class="btn sub" data-a="allOut">${T('全部', 'All')}</button><button class="btn" data-a="wd">${T('引き出す', 'Withdraw')}</button></div>`;
+  h += `<div class="row"><button class="btn svc" data-a="svc" ${svc ? '' : 'disabled'}>${
+    sp ? T(`サービスメダル +${MB.SERVICE_MEDALS}（きょうは何回でも！）`, `Service medals +${MB.SERVICE_MEDALS} (unlimited today!)`)
+    : svc ? T(`サービスメダル +${MB.SERVICE_MEDALS}（1日1回）`, `Service medals +${MB.SERVICE_MEDALS} (once a day)`)
+    : T('サービスメダルは受け取り済み（また明日）', 'Service medals taken (come back tomorrow)')}</button></div>`;
+  return h;
+}
+
 function loginScreen() {
   const list = MB.users();
-  let h = `<h2>${T('ユーザーをえらんでください', 'Choose a user')}</h2><div class="users">`;
+  let h = `<h2>${T('ゲスト', 'Guest')}</h2>${counter(null)}
+    <p class="dim">${T('ログインすると手持ちメダルを預けられます。ゲストの手持ちは、ログインした人に引き継がれます。', 'Log in to deposit your medals. Medals held as a guest go to whoever logs in.')}</p>
+    <h2 style="margin-top:14px">${T('ユーザーをえらんでください', 'Choose a user')}</h2><div class="users">`;
   if (!list.length) h += `<p class="dim">${T('まだユーザーがいません。「新しく作る」から始めましょう。', 'No users yet. Start with "New user".')}</p>`;
   for (const x of list) {
     if (x.moved) {
@@ -329,7 +353,7 @@ function importScreen() {
 
 function userScreen(u) {
   let h = `<div class="who">👤 <b>${esc(u.name)}</b><button class="mini" data-a="logout">${T('ログアウト / 切り替え', 'Log out / switch')}</button></div>
-    <div class="bal"><span>${T('預け入れ残高', 'Balance')}</span><output>${u.balance.toLocaleString()}<small style="font-size:14px">${T(' 枚', '')}</small></output></div>
+    ${counter(u)}
     <div class="tabs">${[['log', T('記録', 'History')], ['cards', T('カード', 'Cards')], ['user', T('設定', 'Settings')], ['move', T('引き継ぎ', 'Transfer')]].map(([k, l]) =>
       `<button class="${view.tab === k ? 'on' : ''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`;
   if (view.tab === 'log') h += logTab();
@@ -422,6 +446,11 @@ function drawQr() {
 
 // ---------------- actions ----------------
 const actions = {
+  allIn() { $('depN').value = MB.hand(); },
+  allOut() { $('wdN').value = MB.current().balance; },
+  dep() { const n = +val('#depN'); MB.deposit(n); flash(T(`${n} 枚 預けました`, `Deposited ${n}`), true); },
+  wd() { const n = +val('#wdN'); MB.withdraw(n); flash(T(`${n} 枚 引き出しました`, `Withdrew ${n}`), true); },
+  svc() { const n = MB.claimService(); flash(T(`サービスメダル ${n} 枚！手持ちに入りました`, `${n} service medals added to your hand!`), true); },
   pick(id) { view.pick = view.pick === id ? null : id; render(); $('pin')?.focus(); },
   login() { const u = MB.login(view.pick, val('#pin')); view.pick = null; view.code = null; view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
   logout() { MB.logout(); view.editing = null; render(); },

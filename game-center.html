@@ -82,7 +82,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 }
 @keyframes flicker { 0%, 100% { opacity: 1; } 91% { opacity: .25; } 92% { opacity: 1; } 94% { opacity: .35; } 95% { opacity: 1; } }
 .wall .deco { position: absolute; bottom: 44%; font-size: clamp(8px, 2.4vw, 13px); padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
-.wall .exit { left: 39%; color: #b9ffc4; background: #0d5a26; box-shadow: 0 0 10px #1bd35a; }
+.wall .exit { cursor: pointer; font: inherit; font-size: clamp(8px, 2.4vw, 13px); left: 39%; color: #b9ffc4; background: #0d5a26; box-shadow: 0 0 10px #1bd35a; }
 .wall .change { right: 39%; color: #3a2600; background: #ffc21a; box-shadow: 0 0 12px #ffae00; }
 @media (orientation: landscape) { .wall .exit { left: 31%; } .wall .change { right: 31%; } }
 
@@ -300,7 +300,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 </style>
-<script src="medal-bank.js?v=4"></script>
+<script src="medal-bank.js?v=5"></script>
 </head>
 <body>
 <div id="app">
@@ -319,7 +319,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
     <div class="layer ceiling" id="ceiling"></div>
     <div class="layer wall" id="wall">
       <div class="sign"><div class="name">Game <span class="fl">C</span>entre</div><div class="sub">MEDAL &amp; AMUSEMENT</div></div>
-      <span class="deco exit">▶ EXIT</span>
+      <button class="deco exit" id="exitBtn">▶ EXIT</button>
       <span class="deco change">両替機 CHANGE</span>
     </div>
     <div class="layer floor" id="floor"></div>
@@ -350,19 +350,16 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
 // ---------------- the machines you can play ----------------
-function hand(key, field, fallback) {
-  try { const s = JSON.parse(localStorage.getItem(key) || 'null'); if (s && Number.isFinite(s[field])) return s[field]; } catch (e) {}
-  return fallback;
-}
+// Medals in hand are one shared cup (medal-bank.js); each machine shows what a play costs.
 const MACHINES = [
   { id: 'piccadilly', cls: 'm-pc', url: 'piccadilly-circus.html', title: '<span>PICCADILLY</span>',
-    screen: '<div class="wheel"></div>', hand: () => hand('piccadilly-circus-v1', 'credit', 100) },
+    screen: '<div class="wheel"></div>', price: '1〜' },
   { id: 'sigma', cls: 'm-sg', url: 'sigma-poker.html', title: '<span>SIGMA POKER</span>',
     screen: '<div class="cards"><i>A♠</i><i class="r">K♥</i><i class="r">Q♦</i><i>J♣</i><i>🃏</i></div><div class="jp">JACK POT</div>',
-    hand: () => hand('sigma-poker-v1', 'credit', 100) },
+    price: '1〜50' },
   { id: 'janken', cls: 'm-jk', url: 'janken-pop.html', title: '<span>JANKEN POP!</span>',
-    screen: '<div class="hands"><span>✊</span><span>✌️</span><span>✋</span></div>', hand: () => hand('janken-pop-v1', 'medals', 10) },
-  { id: 'bank', cls: 'm-bk', url: 'medal-bank.html', title: '<span>MEDAL BANK</span>', screen: '' },
+    screen: '<div class="hands"><span>✊</span><span>✌️</span><span>✋</span></div>', price: '1' },
+  { id: 'bank', cls: 'm-bk', url: 'medal-bank.html', title: '<span>MEDAL BANK</span>', screen: '', service: true },
   { id: 'soon', cls: 'm-cs', coming: true },
 ];
 
@@ -372,7 +369,8 @@ function buildFront() {
     : `<a class="machine ${m.cls}" href="${m.url}" data-id="${m.id}"><div class="body">
         <div class="marquee">${m.title}</div>
         <div class="screen">${m.screen}</div>
-        ${m.hand ? `<div class="led">${T('手持ち', 'In hand')}<b data-hand="${m.id}">0</b></div><div class="badge" data-svc="${m.id}"></div>` : ''}
+        ${m.price ? `<div class="led">${T('1回', 'Per play')}<b>${m.price}${T('枚', '')}</b></div>` : ''}
+        ${m.service ? `<div class="badge" id="svcBadge"></div>` : ''}
       </div><span class="play">${m.id === 'bank' ? T('ひらく ▶', 'Open ▶') : T('あそぶ ▶', 'Play ▶')}</span></a>`).join('');
 }
 
@@ -389,21 +387,20 @@ function refresh() {
     $('front').setAttribute('aria-label', T('ゲームをえらぶ', 'Choose a game'));
   }
   const u = MB.current(), special = MB.specialDay ? MB.specialDay() : false;
-  $('userChip').innerHTML = u ? `👤 ${MB.esc(u.name)} ・ 🪙 <b>${u.balance.toLocaleString()}</b>` : T('👤 ゲスト ・ ログインはこちら', '👤 Guest ・ Log in here');
+  const cup = MB.hand ? MB.hand() : 0;
+  $('userChip').innerHTML = (u ? `👤 ${MB.esc(u.name)}` : T('👤 ゲスト', '👤 Guest'))
+    + ` ・ 🪙 <b>${cup.toLocaleString()}</b>` + (u ? ` ・ 🏦 <b>${u.balance.toLocaleString()}</b>` : '');
   $('starChip').hidden = !special;
-  for (const m of MACHINES) {
-    if (!m.hand) continue;
-    const el = document.querySelector(`[data-hand="${m.id}"]`);
-    if (el) el.textContent = m.hand().toLocaleString();
-    const b = document.querySelector(`[data-svc="${m.id}"]`);
-    if (!b) continue;
-    const ok = MB.serviceAvailable(m.id);
+  const b = $('svcBadge');
+  if (b) {
+    const ok = MB.serviceAvailable();
     b.className = 'badge' + (special ? ' star' : ok ? ' ok' : '');
     b.textContent = special ? T('★ サービス何回でも', '★ Unlimited service') : ok ? T('サービスメダルあり', 'Service medals ready') : T('サービス受け取りずみ', 'Service taken today');
   }
   const bank = document.querySelector('.m-bk .screen');
   if (bank) bank.innerHTML = u ? T(`${MB.esc(u.name)} さん<b>${u.balance.toLocaleString()}</b>枚 あずけ中`, `${MB.esc(u.name)}<b>${u.balance.toLocaleString()}</b>medals saved`)
-    : T('ログインして<br>メダルをあずけよう', 'Log in to<br>save your medals');
+    : T('まずはここで<br>メダルをもらおう', 'Start here to<br>get your medals');
+  $('exitBtn').textContent = T('▶ EXIT', '▶ EXIT');
 }
 
 // ---------------- the hall behind ----------------
@@ -575,6 +572,24 @@ $('sndBtn').addEventListener('click', () => {
   soundOn ? startSound() : stopSound();
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopSound(); else if (soundOn) startSound(); });
+
+// Leaving the hall: offer to bank what's in the cup, like stopping at the machine on the way out.
+function toast(msg) {
+  const h = $('hint');
+  h.textContent = msg; h.style.opacity = 1;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { h.style.opacity = 0; }, 3500);
+}
+$('exitBtn').addEventListener('click', () => {
+  const u = MB.current(), cup = MB.hand();
+  if (cup <= 0) { toast(T('またきてね！👋', 'See you next time! 👋')); return; }
+  if (!u) {
+    if (confirm(T(`手持ちが ${cup} 枚あります。メダルバンクでログインして預けますか？`, `You have ${cup} medals in hand. Log in at the MEDAL BANK to deposit them?`))) location.href = 'medal-bank.html';
+    return;
+  }
+  if (!confirm(T(`手持ち ${cup} 枚を ${u.name} さんのバンクに預けて帰りますか？`, `Deposit your ${cup} medals to ${u.name}'s bank before leaving?`))) return;
+  try { MB.deposit(cup); toast(T(`${cup} 枚 預けました。またきてね！👋`, `Deposited ${cup}. See you next time! 👋`)); }
+  catch (e) { toast(e.message); }
+});
 
 $('langBtn').addEventListener('click', () => MB.setLang && MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
 
