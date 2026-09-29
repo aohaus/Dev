@@ -250,7 +250,7 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
 .user-tag { position: absolute; left: 0; top: 12.2cqw; font-size: 2.6cqw; }
 .sheet .mb-panel { --mb-accent: var(--blue); }
 </style>
-<script src="medal-bank.js?v=3"></script>
+<script src="medal-bank.js?v=4"></script>
 </head>
 <body>
 <div id="machine">
@@ -547,7 +547,7 @@ function repeatBets() {
   return true;
 }
 function promptRefill() {
-  banner('メダル切れ<small>メニューのメダルバンクで補充</small>', 'lose', 2200);
+  banner(MedalBank.t('メダル切れ<small>メニューのメダルバンクで補充</small>', 'OUT OF MEDALS<small>Refill from MEDAL BANK in the menu</small>'), 'lose', 2200);
 }
 
 // ---------------- game flow ----------------
@@ -907,11 +907,11 @@ MedalBank.mountPanel($('bankPanel'), {
   game: 'piccadilly',
   getHand: () => st.credit,
   setHand: n => { st.credit = n; renderMeters(); renderControls(); save(); sfx.coin(); },
-  canMove: () => st.phase === 'bet' || 'ルーレットが止まってから操作してください',
+  canMove: () => st.phase === 'bet' || MedalBank.t('ルーレットが止まってから操作してください', 'Wait until the wheel stops'),
 });
 $('resetBtn').onclick = () => {
   if (st.phase !== 'bet') return;
-  if (!confirm('クレジットを0にしてリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）')) return;
+  if (!confirm(MedalBank.t('クレジットを0にしてリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）', 'Reset credit to 0?\n(Deposit to the bank first to keep your medals)'))) return;
   NUMS.forEach(n => st.bets[n] = 0);
   st.credit = 0; st.lastBets = null; st.chanceNext = false; st.win = 0; st.auto = false;
   renderAll(); save(); modal.classList.remove('show');

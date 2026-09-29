@@ -181,7 +181,8 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .chip b { color: var(--gold); font-family: 'Courier New', monospace; }
 .chip.star { color: #3a2600; background: linear-gradient(#ffe36b, #f0b400); border-color: #fff3b0; box-shadow: 0 0 12px #ffb400; }
 .top .sp { flex: 1; }
-.snd { width: 40px; height: 40px; border-radius: 50%; font-size: 18px; background: rgba(10,6,20,.7); border: 1px solid rgba(255,255,255,.22); }
+.snd.lang { font-size: 13px; font-weight: 900; }
+.snd { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; background: rgba(10,6,20,.7); border: 1px solid rgba(255,255,255,.22); }
 
 /* ---------- front row (the machines you can play) ---------- */
 .front {
@@ -299,7 +300,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 </style>
-<script src="medal-bank.js?v=3"></script>
+<script src="medal-bank.js?v=4"></script>
 </head>
 <body>
 <div id="app">
@@ -331,6 +332,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
     <a class="chip" id="userChip" href="medal-bank.html"></a>
     <span class="chip star" id="starChip" hidden>★ スペシャルデー</span>
     <span class="sp"></span>
+    <button class="snd lang" id="langBtn" aria-label="Language">EN</button>
     <button class="snd" id="sndBtn" aria-label="店内の音">🔇</button>
   </header>
 
@@ -342,6 +344,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 'use strict';
 const MB = window.MedalBank;
 const $ = id => document.getElementById(id);
+const T = MB.t || (ja => ja);   // T('日本語', 'English')
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -365,17 +368,28 @@ const MACHINES = [
 
 function buildFront() {
   $('front').innerHTML = MACHINES.map(m => m.coming
-    ? `<div class="machine ${m.cls} coming" aria-label="じゅんびちゅう"><div class="body"><div class="cover">COMING SOON<small>あたらしい台 じゅんびちゅう</small></div></div><span class="play">もうすぐ</span></div>`
+    ? `<div class="machine ${m.cls} coming" aria-label="${T('じゅんびちゅう', 'coming soon')}"><div class="body"><div class="cover">COMING SOON<small>${T('あたらしい台 じゅんびちゅう', 'A new machine is on its way')}</small></div></div><span class="play">${T('もうすぐ', 'Soon')}</span></div>`
     : `<a class="machine ${m.cls}" href="${m.url}" data-id="${m.id}"><div class="body">
         <div class="marquee">${m.title}</div>
         <div class="screen">${m.screen}</div>
-        ${m.hand ? `<div class="led">手持ち<b data-hand="${m.id}">0</b></div><div class="badge" data-svc="${m.id}"></div>` : ''}
-      </div><span class="play">${m.id === 'bank' ? 'ひらく ▶' : 'あそぶ ▶'}</span></a>`).join('');
+        ${m.hand ? `<div class="led">${T('手持ち', 'In hand')}<b data-hand="${m.id}">0</b></div><div class="badge" data-svc="${m.id}"></div>` : ''}
+      </div><span class="play">${m.id === 'bank' ? T('ひらく ▶', 'Open ▶') : T('あそぶ ▶', 'Play ▶')}</span></a>`).join('');
 }
 
+let shownLang = null;
 function refresh() {
+  const lang = MB.lang ? MB.lang() : 'ja';
+  if (lang !== shownLang) {   // language changed: redraw every label
+    shownLang = lang;
+    buildFront();
+    $('langBtn').textContent = T('EN', '日本');
+    $('starChip').textContent = T('★ スペシャルデー', '★ Special day');
+    $('hint').textContent = T('← スワイプして台をえらんでね →', '← Swipe to pick a machine →');
+    $('sndBtn').setAttribute('aria-label', T('店内の音', 'Arcade sound'));
+    $('front').setAttribute('aria-label', T('ゲームをえらぶ', 'Choose a game'));
+  }
   const u = MB.current(), special = MB.specialDay ? MB.specialDay() : false;
-  $('userChip').innerHTML = u ? `👤 ${MB.esc(u.name)} ・ 🪙 <b>${u.balance.toLocaleString()}</b>` : '👤 ゲスト ・ ログインはこちら';
+  $('userChip').innerHTML = u ? `👤 ${MB.esc(u.name)} ・ 🪙 <b>${u.balance.toLocaleString()}</b>` : T('👤 ゲスト ・ ログインはこちら', '👤 Guest ・ Log in here');
   $('starChip').hidden = !special;
   for (const m of MACHINES) {
     if (!m.hand) continue;
@@ -385,10 +399,11 @@ function refresh() {
     if (!b) continue;
     const ok = MB.serviceAvailable(m.id);
     b.className = 'badge' + (special ? ' star' : ok ? ' ok' : '');
-    b.textContent = special ? '★ サービス何回でも' : ok ? 'サービスメダルあり' : 'サービス受け取りずみ';
+    b.textContent = special ? T('★ サービス何回でも', '★ Unlimited service') : ok ? T('サービスメダルあり', 'Service medals ready') : T('サービス受け取りずみ', 'Service taken today');
   }
   const bank = document.querySelector('.m-bk .screen');
-  if (bank) bank.innerHTML = u ? `${MB.esc(u.name)} さん<b>${u.balance.toLocaleString()}</b>枚 あずけ中` : 'ログインして<br>メダルをあずけよう';
+  if (bank) bank.innerHTML = u ? T(`${MB.esc(u.name)} さん<b>${u.balance.toLocaleString()}</b>枚 あずけ中`, `${MB.esc(u.name)}<b>${u.balance.toLocaleString()}</b>medals saved`)
+    : T('ログインして<br>メダルをあずけよう', 'Log in to<br>save your medals');
 }
 
 // ---------------- the hall behind ----------------
@@ -560,6 +575,8 @@ $('sndBtn').addEventListener('click', () => {
   soundOn ? startSound() : stopSound();
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopSound(); else if (soundOn) startSound(); });
+
+$('langBtn').addEventListener('click', () => MB.setLang && MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
 
 // ---------------- boot ----------------
 buildFront();

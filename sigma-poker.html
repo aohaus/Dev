@@ -259,7 +259,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 .user-tag { position: absolute; left: 50%; bottom: -1.4cqw; transform: translateX(-50%); font-size: 2cqw; max-width: 50%; }
 .sheet .mb-panel { --mb-accent: #ff4a6a; margin-top: 0; }
 </style>
-<script src="medal-bank.js?v=3"></script>
+<script src="medal-bank.js?v=4"></script>
 </head>
 <body>
 <div id="machine">
@@ -940,11 +940,11 @@ MedalBank.mountPanel($('bankPanel'), {
   game: 'sigma',
   getHand: () => st.credit,
   setHand: n => { st.credit = n; sfx.coin(); save(); renderAll(); idleMessage(); },
-  canMove: () => (st.phase === 'idle' && !st.busy) || '勝負が終わってから操作してください',
+  canMove: () => (st.phase === 'idle' && !st.busy) || MedalBank.t('勝負が終わってから操作してください', 'Finish the hand first'),
 });
 $('resetBtn').onclick = () => {
   if (st.busy) return;
-  if (!confirm('クレジットを0にして、ジャックポットもリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）')) return;
+  if (!confirm(MedalBank.t('クレジットを0にして、ジャックポットもリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）', 'Reset credit to 0 and the jackpot?\n(Deposit to the bank first to keep your medals)'))) return;
   Object.assign(st, { credit: 0, bet: 0, lastBet: 1, jackpot: JP_BASE, jpFrac: 0, phase: 'idle', win: 0, result: null, duHist: [] });
   hideDouble();
   cardEls.forEach(el => paintCard(el, null));

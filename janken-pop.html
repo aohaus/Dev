@@ -337,7 +337,7 @@ header { position: relative; text-align: center; line-height: .9; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 20px; margin-top: 6px; }
 .progress { font-size: 15px; margin-bottom: 4px; }
 </style>
-<script src="medal-bank.js?v=3"></script>
+<script src="medal-bank.js?v=4"></script>
 </head>
 <body>
 <div id="machine">
@@ -439,7 +439,7 @@ header { position: relative; text-align: center; line-height: .9; }
 <!-- Settings -->
 <div class="modal" id="settings">
   <div class="sheet">
-    <h2>せってい</h2>
+    <h2 id="settingsTitle">せってい</h2>
     <div id="bankPanel"></div>
     <button class="okbtn" data-close>とじる</button>
   </div>
@@ -716,7 +716,7 @@ function renderCounts() {
   $('cardCorner').textContent = `${owned}/${CARDS.length}`;
   slotEl.classList.toggle('empty', save.medals < 1);
   $('slotPrice').textContent = save.medals >= 1 ? '1枚であそべる!'
-    : MedalBank.serviceAvailable('janken') ? 'タッチで+10枚' : 'せっていでひきだす';
+    : MedalBank.serviceAvailable('janken') ? MedalBank.t('タッチで+10枚', 'Tap for +10') : MedalBank.t('せっていでひきだす', 'Withdraw in ⚙');
 }
 function setIdleUI(idle) {
   slotEl.classList.toggle('pulse', idle);
@@ -769,14 +769,14 @@ async function insertMedal() {
   if (save.medals < 1) {
     // Out of medals: today's free service medals, otherwise the bank.
     if (!MedalBank.serviceAvailable('janken')) {
-      setMsg('きょうのサービスはおしまい。バンクからひきだしてね!');
+      setMsg(MedalBank.t('きょうのサービスはおしまい。バンクからひきだしてね!', 'No more service today. Withdraw from the bank!'));
       openModal('settings');
       return;
     }
     save.medals += MedalBank.claimService('janken'); persist(); renderCounts();
     flyCoin(msgEl, slotEl, 5);
     sfx.coin();
-    setMsg('サービスメダル10枚!(1日1回)');
+    setMsg(MedalBank.t('サービスメダル10枚!(1日1回)', '10 service medals! (once a day)'));
     return;
   }
   save.medals--; persist(); renderCounts();
@@ -922,7 +922,7 @@ function endRound() {
   setIdleUI(true);
   renderCounts();
   setMsg(save.medals > 0 ? 'メダルを入れてね!'
-    : MedalBank.serviceAvailable('janken') ? 'メダルがなくなった… タッチで補充!' : 'メダルがなくなった… ⚙からひきだしてね');
+    : MedalBank.serviceAvailable('janken') ? MedalBank.t('メダルがなくなった… タッチで補充!', 'Out of medals… tap to refill!') : MedalBank.t('メダルがなくなった… ⚙からひきだしてね', 'Out of medals… withdraw in ⚙'));
   setTimeout(() => {
     if (state === 'idle') { setLamp(null); clearSegs(); showShape('face'); }
   }, 1200);
@@ -944,13 +944,13 @@ handBtns.forEach(b => b.addEventListener('pointerdown', e => {
   throwHand(b.dataset.hand);
 }));
 $('howtoBtn').addEventListener('click', () => openModal('howto'));
-$('gearBtn').addEventListener('click', () => openModal('settings'));
+$('gearBtn').addEventListener('click', () => { $('settingsTitle').textContent = MedalBank.t('せってい', 'Settings'); openModal('settings'); });
 MedalBank.mountBadge($('userTag'));
 MedalBank.mountPanel($('bankPanel'), {
   game: 'janken',
   getHand: () => save.medals,
   setHand: n => { save.medals = n; persist(); renderCounts(); sfx.coin(); if (state === 'idle') endRound(); },
-  canMove: () => state === 'idle' || 'じゃんけんが終わってからね',
+  canMove: () => state === 'idle' || MedalBank.t('じゃんけんが終わってからね', 'Finish the round first'),
 });
 MedalBank.onChange(() => {
   bindCards(); renderCounts();
@@ -959,7 +959,8 @@ MedalBank.onChange(() => {
 $('zukanBtn').addEventListener('click', () => { renderZukan(); openModal('zukan'); });
 $('resetBtn').addEventListener('click', () => {
   const who = MedalBank.current();
-  if (!confirm(`メダルを0枚にして、${who ? who.name + ' さんの' : ''}カードをリセットしますか?\n(メダルを残したいときは先にバンクへ預けてね)`)) return;
+  if (!confirm(MedalBank.t(`メダルを0枚にして、${who ? who.name + ' さんの' : ''}カードをリセットしますか?\n(メダルを残したいときは先にバンクへ預けてね)`,
+    `Reset medals to 0 and ${who ? who.name + "'s" : 'the'} cards?\n(Deposit to the bank first to keep your medals)`))) return;
   save.medals = 0;
   for (const k of Object.keys(cards)) delete cards[k];
   persist();
