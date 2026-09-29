@@ -251,10 +251,19 @@ function render() {
   if (view.screen === 'create') h = createScreen();
   else if (view.screen === 'import') h = importScreen();
   else h = u ? userScreen(u) : loginScreen();
+  if (view.screen === 'home') h += specialBox();
   if (view.flash) h += `<p class="flash ${view.flash.ok ? 'ok' : 'ng'}">${esc(view.flash.msg)}</p>`;
   view.flash = null;
   lcd.innerHTML = h;
   if (view.code) drawQr();
+}
+
+function specialBox() {
+  if (MB.specialDay()) return `<div class="box"><b>★ スペシャルデー</b>
+    <p class="dim">きょうはサービスメダルを何回でも受け取れます（日付が変わると自動で元に戻ります）。</p>
+    <div class="row"><button class="btn sub" data-a="endSpecial">いま終了する</button></div></div>`;
+  return `<h3>スペシャルコード</h3>
+    <div class="row"><input id="special" type="text" autocomplete="off" autocapitalize="characters" placeholder="コード"><button class="btn" data-a="special">使う</button></div>`;
 }
 
 function loginScreen() {
@@ -434,6 +443,8 @@ const actions = {
     view.code = await MB.exportUser(u.id, val('#pinMove'));
     flash('引き継ぎコードを発行しました', true);
   },
+  special() { MB.useSpecialCode(val('#special')); flash('スペシャルデー！きょうはサービスメダルが何回でも受け取れます', true); },
+  endSpecial() { MB.endSpecial(); flash('スペシャルデーを終了しました', true); },
   showCode(id) { view.code = MB.pendingCode(id); render(); },
   hideCode() { view.code = null; render(); },
   cancelMove(id) {

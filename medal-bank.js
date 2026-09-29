@@ -181,17 +181,27 @@ function withdraw(game, n, note = '') {
   });
 }
 // Free service medals: once per game per day on this device, whoever is
-// logged in (so making extra users can't farm them).
+// logged in (so making extra users can't farm them). A special code lifts
+// the limit for the rest of the day it is entered.
+const SPECIAL_CODE = '1bou87ribcx';   // hash of the code, not the code itself
+function specialDay() { return read().freeDay === today(); }
+function useSpecialCode(code) {
+  if (hash(String(code || '').trim().toUpperCase(), 5) !== SPECIAL_CODE) fail('コードがちがいます');
+  tx(db => { db.freeDay = today(); });
+}
+function endSpecial() { tx(db => { delete db.freeDay; }); }
 function serviceAvailable(game) {
-  return read().service[game] !== today();
+  const db = read();
+  return db.freeDay === today() || db.service[game] !== today();
 }
 function claimService(game) {
   const n = GAMES[game].service;
   return tx(db => {
     const u = activeUser(db);
-    if (db.service[game] === today()) fail('サービスメダルは1日1回です。また明日！');
+    const special = db.freeDay === today();
+    if (!special && db.service[game] === today()) fail('サービスメダルは1日1回です。また明日！');
     db.service[game] = today();
-    if (u) pushLog(u, { type: 'service', game, n, note: '手持ちへ' });
+    if (u) pushLog(u, { type: 'service', game, n, note: special ? 'スペシャル' : '手持ちへ' });
     return n;
   });
 }
@@ -388,7 +398,7 @@ function mountPanel(el, opts) {
 
   function draw() {
     const u = current(), hand = opts.getHand();
-    const svc = serviceAvailable(opts.game);
+    const svc = serviceAvailable(opts.game), special = specialDay();
     let h = `<div class="mb-head"><span class="mb-logo">MEDAL BANK</span><a class="mb-link" href="medal-bank.html">バンクを開く ›</a></div>`;
     if (mode === 'login') {
       const list = users().filter(x => !x.moved);
@@ -410,7 +420,7 @@ function mountPanel(el, opts) {
       } else {
         h += `<p class="mb-dim">ログインすると、手持ちメダルを預けたり、別の日に引き出したりできます。</p>`;
       }
-      h += `<div class="mb-line"><button class="mb-btn svc" data-a="svc" ${svc ? '' : 'disabled'}>${svc ? `サービスメダル +${g.service}（1日1回）` : 'サービスメダルは受け取り済み（また明日）'}</button></div>`;
+      h += `<div class="mb-line"><button class="mb-btn svc" data-a="svc" ${svc ? '' : 'disabled'}>${special ? `サービスメダル +${g.service}（きょうは何回でも！）` : svc ? `サービスメダル +${g.service}（1日1回）` : 'サービスメダルは受け取り済み（また明日）'}</button></div>`;
     }
     el.innerHTML = h + flash;
     flash = '';
@@ -538,7 +548,7 @@ if (!document.getElementById('mb-style')) {
 window.MedalBank = {
   GAMES, JANKEN_CARDS, TYPE_NAME, EFFECT, BankError,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
-  deposit, withdraw, serviceAvailable, claimService,
+  deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
   getCards, setCards,
   exportUser, cancelExport, pendingCode, importCode, transferUrl,
