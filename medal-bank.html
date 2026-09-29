@@ -171,7 +171,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js"></script>
+<script src="medal-bank.js?v=2"></script>
 </head>
 <body>
 <div class="cab">
@@ -259,6 +259,7 @@ function render() {
 }
 
 function specialBox() {
+  if (typeof MB.specialDay !== 'function') return '';   // stale cached medal-bank.js
   if (MB.specialDay()) return `<div class="box"><b>★ スペシャルデー</b>
     <p class="dim">きょうはサービスメダルを何回でも受け取れます（日付が変わると自動で元に戻ります）。</p>
     <div class="row"><button class="btn sub" data-a="endSpecial">いま終了する</button></div></div>`;
