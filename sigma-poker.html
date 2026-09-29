@@ -118,6 +118,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 .pay .nm { color: var(--pay-name); padding-left: .8cqw; text-shadow: .2cqw .2cqw 0 #000; }
 .pay .nm::after { content: '..........................'; color: #b8b000; margin-left: .6cqw; letter-spacing: .2cqw; font-size: 1.6cqw; }
 .pay .v { justify-content: flex-end; padding-right: .8cqw; color: var(--pay-num); border-left: .25cqw solid #ffe600; text-shadow: .2cqw .2cqw 0 #000; }
+.pay.wide .v { font-size: 1.85cqw; padding-right: .5cqw; }
 .pay .v.c5 { background: var(--jp-red); color: #ffe600; }
 .pay .row0.nm { background: linear-gradient(90deg, var(--jp-red), #9c0a10); color: #fff6a0; }
 .pay .v.on { background: #3d6bff; box-shadow: inset 0 0 0 .25cqw #fff; }
@@ -208,7 +209,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 }
 .row { display: grid; gap: 1.8cqw; }
 .row.holds { grid-template-columns: repeat(5, 1fr); }
-.row.main { grid-template-columns: 1fr 1fr 1.4fr; }
+.row.main { grid-template-columns: .8fr 1fr 1fr 1.4fr; }
 .row.du-row { grid-template-columns: 1fr 1fr 1fr 1fr; }
 .btn {
   height: 10.5cqw; border-radius: 2cqw;
@@ -224,6 +225,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 .b-hold { background: #ffd21a; }
 .b-hold.on { background: #fff6b0; box-shadow: inset 0 -.4cqw 0 rgba(0,0,0,.2), 0 0 2cqw #ffe600, 0 .3cqw 0 #07080a; transform: translateY(.4cqw); }
 .b-bet { background: #e9edf5; }
+.b-mode { background: #ffd21a; font-size: 2.1cqw; }
 .b-max { background: #5aa2ff; }
 .b-deal { background: #3ddc5a; font-size: 2.8cqw; }
 .b-take { background: #ff9b1f; }
@@ -303,6 +305,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
   <div class="panel">
     <div class="row holds" id="holds"></div>
     <div class="row main">
+      <button class="btn b-mode" id="modeBtn">MAX<br>5</button>
       <button class="btn b-bet" id="betBtn">BET<br>ONE</button>
       <button class="btn b-max" id="maxBtn">MAX<br>BET</button>
       <button class="btn b-deal" id="dealBtn">DEAL</button>
@@ -322,17 +325,18 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
     <h2>SIGMA POKER</h2>
     <h3>遊び方</h3>
     <ul>
-      <li><b>BET ONE</b>（1枚ずつ）または <b>MAX BET</b>（5枚）でベット。ベット無しで DEAL すると前回と同じベット。</li>
+      <li><b>MAX</b> ボタンで最大ベットを <b>5 → 10 → 20 → 50枚</b> に切り替え。<b>BET</b>（最大の5分の1ずつ）または <b>MAX BET</b> でベット。ベット無しで DEAL すると前回と同じベット。</li>
       <li><b>DEAL</b> で5枚配られます。残したいカードを <b>HOLD</b>（カードをタップでもOK）して <b>DRAW</b>。</li>
       <li>ジョーカー1枚入りの53枚デッキ。ジョーカーは何にでもなるワイルドカード。</li>
       <li>役ができたら <b>TAKE SCORE</b> でクレジットへ、または <b>DOUBLE UP</b> で倍プッシュ！</li>
       <li>ダブルアップ：次のカードが <b>BIG（8〜K）</b> か <b>SMALL（A〜6）</b> かを当てる。<b>7</b> は引き分け、<b>ジョーカー</b> は無条件で勝ち。</li>
-      <li>ジョーカー無しのロイヤルフラッシュを <b>5枚ベット</b> で揃えると <b>JACK POT</b>！ジャックポットはプレイごとに増えていきます。</li>
+      <li>ジョーカー無しのロイヤルフラッシュを <b>MAX BET</b> で揃えると <b>JACK POT</b>！支払いは表示額 ×（最大ベット÷5）。ジャックポットはプレイごとに増えていきます。</li>
+      <li>ダブルアップは勝ちが <b>10,000枚</b> に達すると自動でクレジットへ。</li>
     </ul>
-    <p class="en">Bet 1–5 medals, DEAL, HOLD the cards you want, DRAW. One wild Joker in a 53-card deck; lowest paying hand is Two Pair. After a win, TAKE SCORE or DOUBLE UP by guessing BIG (8–K) or SMALL (A–6) — 7 is a push, Joker always wins. A natural Royal Flush at MAX BET wins the progressive JACK POT.</p>
+    <p class="en">Switch the max bet with MAX (5 / 10 / 20 / 50), bet with BET (a fifth of the max) or MAX BET, DEAL, HOLD the cards you want, DRAW. One wild Joker in a 53-card deck; lowest paying hand is Two Pair. After a win, TAKE SCORE or DOUBLE UP by guessing BIG (8–K) or SMALL (A–6) — 7 is a push, Joker always wins. A natural Royal Flush at MAX BET wins the progressive JACK POT (× max ÷ 5). Double up stops at 10,000.</p>
     <h3>配当表 (1枚あたり)</h3>
     <table id="payHelp"></table>
-    <p class="keys" style="margin-top:8px">Keys: 1–5 HOLD · Space/Enter DEAL/DRAW · B BET ONE · M MAX BET · D DOUBLE UP · T TAKE SCORE · ← SMALL · → BIG</p>
+    <p class="keys" style="margin-top:8px">Keys: 1–5 HOLD · Space/Enter DEAL/DRAW · X MAX 5/10/20/50 · B BET · M MAX BET · D DOUBLE UP · T TAKE SCORE · ← SMALL · → BIG</p>
     <div class="acts">
       <button class="alt" id="closeBtn">閉じる</button>
       <button class="danger" id="resetBtn">リセット</button>
@@ -347,10 +351,13 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 const SUITS = ['♠', '♥', '♦', '♣'];
 const IS_RED = [false, true, true, false];
 const RANK_TXT = { 10: '10', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
-const MAX_BET = 5;
-const JP_BASE = 4000;
+// Bet modes, like the cabinet's bet-unit switch: the paytable shows 5 steps of
+// (max / 5) medals each, and MAX BET plays the whole max.
+const MODES = [5, 10, 20, 50];
+const JP_BASE = 4000;     // jackpot shown for a 5-medal max; bigger modes pay it × (max / 5)
+const DU_CAP = 10000;     // double-up stops and collects once a win reaches this
 
-// Pay per medal bet. A natural Royal Flush at MAX BET pays the progressive jackpot instead.
+// Pay per medal bet. A natural Royal Flush at the mode's MAX BET pays the progressive jackpot instead.
 const HANDS = [
   { k: 'RF', name: 'ROYAL FLUSH',     ja: 'ロイヤルフラッシュ',   pay: 250 },
   { k: '5K', name: 'FIVE OF A KIND',  ja: 'ファイブカード',       pay: 200 },
@@ -418,9 +425,10 @@ function evaluate(cs) {
   return best;
 }
 
-function payout(k, bet, jackpot) {
+const jpPay = (jackpot, maxBet) => jackpot * (maxBet / 5);
+function payout(k, bet, jackpot, maxBet = 5) {
   if (!k) return 0;
-  if (k === 'RF' && bet === MAX_BET) return jackpot;
+  if (k === 'RF' && bet === maxBet) return jpPay(jackpot, maxBet);
   return HANDS[HAND_IDX[k]].pay * bet;
 }
 
@@ -441,6 +449,7 @@ const st = {
   credit: 100,
   bet: 0,
   lastBet: 1,
+  maxBet: 5,
   jackpot: JP_BASE,
   jpFrac: 0,
   sound: true,
@@ -462,7 +471,8 @@ function load() {
     if (Number.isFinite(raw.credit)) st.credit = Math.max(0, Math.floor(raw.credit));
     if (Number.isFinite(raw.jackpot)) st.jackpot = Math.max(JP_BASE, Math.floor(raw.jackpot));
     if (Number.isFinite(raw.jpFrac)) st.jpFrac = raw.jpFrac;
-    if (raw.lastBet >= 1 && raw.lastBet <= MAX_BET) st.lastBet = raw.lastBet;
+    if (MODES.includes(raw.maxBet)) st.maxBet = raw.maxBet;
+    if (raw.lastBet >= 1 && raw.lastBet <= st.maxBet) st.lastBet = raw.lastBet;
     if (typeof raw.sound === 'boolean') st.sound = raw.sound;
     // A hand in progress survives a reload so it can't be used to dodge a bad deal.
     if (raw.inHand && Array.isArray(raw.inHand.hand) && raw.inHand.hand.length === 5) {
@@ -480,7 +490,7 @@ function save() {
     if (st.phase === 'idle') credit += st.bet;                         // bet not yet dealt: refund
     if (st.phase === 'win' || st.phase === 'double') credit += st.win; // pending win: collect
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      credit, jackpot: st.jackpot, jpFrac: st.jpFrac, lastBet: st.lastBet, sound: st.sound,
+      credit, jackpot: st.jackpot, jpFrac: st.jpFrac, lastBet: st.lastBet, maxBet: st.maxBet, sound: st.sound,
       inHand: st.phase === 'hold' ? { bet: st.bet, hand: st.hand, deck: st.deck, held: st.held } : null,
     }));
   } catch (e) {}
@@ -622,7 +632,7 @@ const payCells = [];
     nm.className = `nm row${i}`; nm.textContent = h.name;
     pay.append(nm);
     const cells = [nm];
-    for (let b = 1; b <= MAX_BET; b++) {
+    for (let b = 1; b <= 5; b++) {
       const v = document.createElement('div');
       v.className = `v c${b}`;
       pay.append(v); cells.push(v);
@@ -630,21 +640,25 @@ const payCells = [];
     payCells.push(cells);
   });
   $('payHelp').innerHTML = HANDS.map(h =>
-    `<tr><td>${h.ja}</td><td>${h.name}</td><td>${h.k === 'RF' ? `${h.pay} (MAX BET = JACK POT)` : h.pay}</td></tr>`).join('');
+    `<tr><td>${h.ja}</td><td>${h.name}</td><td>${h.k === 'RF' ? `${h.pay} (MAX BET = JACK POT)` : h.pay}</td></tr>`).join('') +
+    `<tr><td colspan="3">1枚あたりの配当。ベット枚数を掛けた額が払い出されます / Pays per medal bet</td></tr>`;
 })();
 
 // ---------------- render ----------------
+const unit = () => st.maxBet / 5;
 function renderPay() {
-  const col = st.bet || st.lastBet;
+  const u = unit(), bet = st.bet || st.lastBet;
+  const col = bet % u === 0 ? bet / u : 0;   // a partial bet (short on credit) lights no column
+  $('pay').classList.toggle('wide', st.maxBet >= 20);
   const lit = st.phase === 'win' || st.phase === 'double' ? st.result : null;
   const hint = st.phase === 'hold' ? evaluate(st.hand) : null;
   HANDS.forEach((h, i) => {
     const cells = payCells[i];
     cells[0].classList.toggle('lit', lit === h.k);
     cells[0].classList.toggle('hint', hint === h.k);
-    for (let b = 1; b <= MAX_BET; b++) {
+    for (let b = 1; b <= 5; b++) {
       const v = cells[b];
-      v.textContent = h.k === 'RF' && b === MAX_BET ? st.jackpot : h.pay * b;
+      v.textContent = h.k === 'RF' && b === 5 ? jpPay(st.jackpot, st.maxBet) : h.pay * b * u;
       v.classList.toggle('on', b === col);
       v.classList.toggle('lit', lit === h.k && b === col);
     }
@@ -671,15 +685,19 @@ function renderButtons() {
   const idle = st.phase === 'idle', hold = st.phase === 'hold', win = st.phase === 'win', dbl = st.phase === 'double';
   const b = st.busy;
   holdBtns.forEach(x => x.disabled = b || !hold);
-  $('betBtn').disabled = b || !((idle && st.bet < MAX_BET && st.credit > 0) || win);
-  $('maxBtn').disabled = b || !((idle && st.bet < MAX_BET && st.credit > 0) || win);
+  $('betBtn').disabled = b || !((idle && st.bet < st.maxBet && st.credit > 0) || win);
+  $('maxBtn').disabled = b || !((idle && st.bet < st.maxBet && st.credit > 0) || win);
+  $('modeBtn').disabled = b || !(idle || win);
+  $('modeBtn').innerHTML = `MAX<br>${st.maxBet}`;
+  $('betBtn').innerHTML = unit() === 1 ? 'BET<br>ONE' : `BET<br>+${unit()}`;
+  $('maxBtn').innerHTML = `MAX BET<br>${st.maxBet}`;
   $('dealBtn').disabled = b || !(idle || hold || win);
   $('dealBtn').textContent = hold ? 'DRAW' : 'DEAL';
   $('dealBtn').classList.toggle('lit', !b && (hold || (idle && st.bet > 0)));
   $('takeBtn').disabled = b || !win;
   $('takeBtn').classList.toggle('lit', !b && win);
-  $('dblBtn').disabled = b || !win;
-  $('dblBtn').classList.toggle('lit', !b && win);
+  $('dblBtn').disabled = b || !win || st.win >= DU_CAP;
+  $('dblBtn').classList.toggle('lit', !b && win && st.win < DU_CAP);
   $('smallBtn').disabled = b || !dbl;
   $('bigBtn').disabled = b || !dbl;
   $('smallBtn').classList.toggle('lit', !b && dbl);
@@ -700,14 +718,26 @@ function addBet(n) {
   if (st.busy) return;
   if (st.phase === 'win') { takeScore().then(() => addBet(n)); return; }
   if (st.phase !== 'idle') return;
-  const add = Math.min(n, MAX_BET - st.bet, st.credit);
+  const add = Math.min(n, st.maxBet - st.bet, st.credit);
   if (add <= 0) { sfx.deny(); return; }
   st.bet += add; st.credit -= add;
   st.lastBet = st.bet;
   sfx.coin();
   idleMessage();
   renderAll(); save();
-  if (n === MAX_BET && st.bet === MAX_BET) deal();
+  if (n === st.maxBet && st.bet === st.maxBet) deal();
+}
+// Cycle MAX 5 → 10 → 20 → 50. A bet already on the table above the new max is refunded.
+function switchMode() {
+  if (st.busy) return;
+  if (st.phase === 'win') { takeScore().then(switchMode); return; }
+  if (st.phase !== 'idle') return;
+  st.maxBet = MODES[(MODES.indexOf(st.maxBet) + 1) % MODES.length];
+  if (st.bet > st.maxBet) { st.credit += st.bet - st.maxBet; st.bet = st.maxBet; }
+  st.lastBet = Math.min(st.lastBet, st.maxBet);
+  sfx.hold(true);
+  setMsg(`MAX BET ${st.maxBet}`, 'gold', unit() === 1 ? 'BET ONE = 1' : `BET = +${unit()}`);
+  renderAll(); save();
 }
 
 async function deal() {
@@ -770,17 +800,17 @@ async function draw() {
   await sleep(120);
   const k = evaluate(st.hand);
   st.result = k;
-  st.win = payout(k, st.bet, st.jackpot);
+  st.win = payout(k, st.bet, st.jackpot, st.maxBet);
   st.busy = false;
   if (st.win > 0) {
-    const jp = k === 'RF' && st.bet === MAX_BET;
+    const jp = k === 'RF' && st.bet === st.maxBet;
     st.phase = 'win';
     if (jp) {
       st.jackpot = JP_BASE; st.jpFrac = 0;
-      setMsg('JACK POT!', 'rainbow', 'TAKE SCORE / DOUBLE UP');
+      setMsg('JACK POT!', 'rainbow', st.win >= DU_CAP ? 'TAKE SCORE' : 'TAKE SCORE / DOUBLE UP');
       sfx.jackpot();
     } else {
-      setMsg('WINNER!', HAND_IDX[k] <= HAND_IDX['4K'] ? 'rainbow' : 'blink', 'TAKE SCORE / DOUBLE UP');
+      setMsg('WINNER!', HAND_IDX[k] <= HAND_IDX['4K'] ? 'rainbow' : 'blink', st.win >= DU_CAP ? 'TAKE SCORE' : 'TAKE SCORE / DOUBLE UP');
       HAND_IDX[k] <= HAND_IDX['FH'] ? sfx.big() : sfx.win();
     }
   } else {
@@ -865,6 +895,13 @@ async function guess(big) {
     st.win >= 1000 ? sfx.big() : sfx.win();
     await sleep(1100);
     st.busy = false;
+    if (st.win >= DU_CAP) {   // limit reached: collect automatically
+      st.phase = 'win';
+      setMsg('DOUBLE UP LIMIT', 'rainbow', `WIN ${st.win}`);
+      renderAll();
+      await sleep(1200);
+      return takeScore();
+    }
     // Back to the TAKE / DOUBLE choice, keeping the double-up history on screen.
     st.phase = 'win';
     st.duCard = null;
@@ -895,14 +932,15 @@ async function guess(big) {
   }
 }
 function doubleAgainOrStart() {
-  if (st.busy || st.phase !== 'win') return;
+  if (st.busy || st.phase !== 'win' || st.win >= DU_CAP) return;
   if ($('du').classList.contains('show')) { st.phase = 'double'; nextDuCard(); }
   else startDouble();
 }
 
 // ---------------- input ----------------
-$('betBtn').onclick = () => addBet(1);
-$('maxBtn').onclick = () => addBet(MAX_BET);
+$('maxBtn').onclick = () => addBet(st.maxBet);
+$('betBtn').onclick = () => addBet(unit());
+$('modeBtn').onclick = () => switchMode();
 $('dealBtn').onclick = () => deal();
 $('takeBtn').onclick = () => takeScore();
 $('dblBtn').onclick = () => doubleAgainOrStart();
@@ -917,8 +955,9 @@ document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k >= '1' && k <= '5') toggleHold(+k - 1);
   else if (k === ' ' || k === 'enter') { e.preventDefault(); if (st.busy) skipCount = true; else deal(); }
-  else if (k === 'b') addBet(1);
-  else if (k === 'm') addBet(MAX_BET);
+  else if (k === 'b') addBet(unit());
+  else if (k === 'm') addBet(st.maxBet);
+  else if (k === 'x') switchMode();
   else if (k === 'd') doubleAgainOrStart();
   else if (k === 't') takeScore();
   else if (k === 'arrowleft') guess(false);
@@ -945,7 +984,7 @@ MedalBank.mountPanel($('bankPanel'), {
 $('resetBtn').onclick = () => {
   if (st.busy) return;
   if (!confirm(MedalBank.t('クレジットを0にして、ジャックポットもリセットしますか？\n（メダルを残したいときは先にバンクへ預けてください）', 'Reset credit to 0 and the jackpot?\n(Deposit to the bank first to keep your medals)'))) return;
-  Object.assign(st, { credit: 0, bet: 0, lastBet: 1, jackpot: JP_BASE, jpFrac: 0, phase: 'idle', win: 0, result: null, duHist: [] });
+  Object.assign(st, { credit: 0, bet: 0, lastBet: 1, maxBet: 5, jackpot: JP_BASE, jpFrac: 0, phase: 'idle', win: 0, result: null, duHist: [] });
   hideDouble();
   cardEls.forEach(el => paintCard(el, null));
   save(); idleMessage(); renderAll(); closeModal();
