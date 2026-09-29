@@ -100,6 +100,11 @@ button { cursor: pointer; }
   background: #fff; border: 2px solid #c8ccd2; border-radius: 8px; padding: 8px 4px;
 }
 .games a b { display: block; font-size: 18px; }
+.home { display: block; margin-top: 10px; text-align: center; text-decoration: none; color: #fff; font-size: 14px;
+  background: linear-gradient(#3a1d63, #170d2e); border-radius: 8px; padding: 10px; box-shadow: 0 0 10px rgba(255,79,163,.4); }
+.toprow { max-width: 460px; margin: -6px auto 8px; display: flex; justify-content: flex-end; }
+.langbtn { border: 1px solid rgba(255,255,255,.6); background: rgba(255,255,255,.85); color: #2c2400;
+  border-radius: 99px; padding: 4px 14px; font-size: 13px; font-weight: 900; }
 .feet { display: flex; justify-content: space-between; padding: 0 22px; }
 .feet i { width: 26px; height: 8px; background: #222; border-radius: 0 0 4px 4px; }
 .note { max-width: 460px; margin: 14px auto 0; font-size: 12px; font-weight: 700; color: #2b3647; line-height: 1.6; }
@@ -171,9 +176,10 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=2"></script>
+<script src="medal-bank.js?v=4"></script>
 </head>
 <body>
+<div class="toprow"><button class="langbtn" id="langBtn">English</button></div>
 <div class="cab">
   <div class="cap"></div>
   <div class="marquee">
@@ -182,7 +188,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
       <path d="M40,40 C90,6 220,6 270,30" fill="none" stroke="#ffe36b" stroke-width="2"/>
     </svg>
     <h1>MEDAL BANK</h1>
-    <p>メダル預け払い機</p>
+    <p data-en="Medal deposit machine">メダル預け払い機</p>
   </div>
   <div class="front">
     <div class="frame">
@@ -195,25 +201,34 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
     </div>
   </div>
   <div class="base">
-    <div class="tray">払い出しは各ゲームの設定から</div>
+    <div class="tray" data-en="Withdraw from each game's settings">払い出しは各ゲームの設定から</div>
     <div class="games" id="games"></div>
+    <a class="home" href="game-center.html" data-en="🏠 Back to Game Centre">🏠 Game Centre へもどる</a>
   </div>
   <div class="feet"><i></i><i></i></div>
 </div>
-<p class="note">
-  メダルの預け入れ・引き出しは、各ゲームのメニュー（≡ / ⚙）の「MEDAL BANK」欄から行います。<br>
-  データはこの端末のブラウザに保存されます。別の端末へ移すときは「引き継ぎ」でコードを発行し、移動先でパスワード（3桁）と一緒に読み込んでください。発行した時点でこの端末のアカウントはロックされます。
-</p>
+<p class="note" id="note"></p>
 
 <script>
 'use strict';
 const MB = MedalBank;
 const { esc, GAMES, TYPE_NAME, EFFECT } = MB;
+const T = MB.t || (ja => ja);   // T('日本語', 'English')
 const $ = id => document.getElementById(id);
 const lcd = $('lcd');
 
-$('games').innerHTML = Object.values(GAMES).map(g =>
-  `<a href="${g.url}"><b>${g.url.startsWith('janken') ? '✊' : g.url.startsWith('sigma') ? '🃏' : '🎡'}</b>${esc(g.short)}</a>`).join('');
+// Static labels on the cabinet carry their English text in data-en.
+document.querySelectorAll('[data-en]').forEach(el => { el.dataset.ja = el.textContent; });
+function renderStatic() {
+  document.querySelectorAll('[data-en]').forEach(el => { el.textContent = T(el.dataset.ja, el.dataset.en); });
+  $('note').innerHTML = T(
+    'メダルの預け入れ・引き出しは、各ゲームのメニュー（≡ / ⚙）の「MEDAL BANK」欄から行います。<br>データはこの端末のブラウザに保存されます。別の端末へ移すときは「引き継ぎ」でコードを発行し、移動先でパスワード（3桁）と一緒に読み込んでください。発行した時点でこの端末のアカウントはロックされます。',
+    'Deposit and withdraw medals from the MEDAL BANK section in each game\'s menu (≡ / ⚙).<br>Data is saved in this browser on this device. To move to another device, issue a code under "Transfer" and load it there with the 3-digit password. Once issued, the account is locked on this device.');
+  $('langBtn').textContent = T('English', '日本語');
+  $('games').innerHTML = Object.values(GAMES).map(g =>
+    `<a href="${g.url}"><b>${g.url.startsWith('janken') ? '✊' : g.url.startsWith('sigma') ? '🃏' : '🎡'}</b>${esc(T(g.short, g.en || g.short))}</a>`).join('');
+}
+$('langBtn').addEventListener('click', () => MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
 
 // ---------------- view state ----------------
 const view = {
@@ -233,19 +248,26 @@ function readHash() {
 readHash();
 window.addEventListener('hashchange', () => { if (readHash()) render(); });
 
-function flash(msg, ok = false) { view.flash = { msg, ok }; render(); }
+// After an error the screen is redrawn with what was typed still in place.
+function flash(msg, ok = false) { view.flash = { msg, ok }; render(!ok); }
 function run(fn) {
   return async (...a) => {
     try { await fn(...a); }
-    catch (e) { if (e instanceof MB.BankError) flash(e.message); else { console.error(e); flash('エラーが発生しました'); } }
+    catch (e) { if (e instanceof MB.BankError) flash(e.message); else { console.error(e); flash(T('エラーが発生しました', 'Something went wrong')); } }
   };
 }
 const val = sel => (lcd.querySelector(sel) || {}).value || '';
-const fmtTime = t => { const d = new Date(t); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-const gameName = g => (GAMES[g] || {}).short || 'バンク';
+const fmtTime = ms => { const d = new Date(ms); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const gameName = g => MB.gameName ? MB.gameName(g) : (GAMES[g] || {}).short || 'バンク';
+const typeName = k => MB.typeName ? MB.typeName(k) : TYPE_NAME[k];
+const noteText = n => MB.noteText ? MB.noteText(n) : n;
+const pin = (id, ph = T('3桁', '3 digits')) => `<input class="pin" id="${id}" type="password" inputmode="numeric" maxlength="3" placeholder="${ph}" autocomplete="off">`;
 
 // ---------------- screens ----------------
-function render() {
+function render(keepInputs = false) {
+  const typed = {};
+  if (keepInputs) lcd.querySelectorAll('input[id], textarea[id], select[id]').forEach(el => { typed[el.id] = el.value; });
+  renderStatic();
   const u = MB.current();
   let h;
   if (view.screen === 'create') h = createScreen();
@@ -255,60 +277,60 @@ function render() {
   if (view.flash) h += `<p class="flash ${view.flash.ok ? 'ok' : 'ng'}">${esc(view.flash.msg)}</p>`;
   view.flash = null;
   lcd.innerHTML = h;
+  for (const [id, v] of Object.entries(typed)) { const el = lcd.querySelector('#' + id); if (el) el.value = v; }
   if (view.code) drawQr();
 }
 
 function specialBox() {
   if (typeof MB.specialDay !== 'function') return '';   // stale cached medal-bank.js
-  if (MB.specialDay()) return `<div class="box"><b>★ スペシャルデー</b>
-    <p class="dim">きょうはサービスメダルを何回でも受け取れます（日付が変わると自動で元に戻ります）。</p>
-    <div class="row"><button class="btn sub" data-a="endSpecial">いま終了する</button></div></div>`;
-  return `<h3>スペシャルコード</h3>
-    <div class="row"><input id="special" type="text" autocomplete="off" autocapitalize="characters" placeholder="コード"><button class="btn" data-a="special">使う</button></div>`;
+  if (MB.specialDay()) return `<div class="box"><b>${T('★ スペシャルデー', '★ Special day')}</b>
+    <p class="dim">${T('きょうはサービスメダルを何回でも受け取れます（日付が変わると自動で元に戻ります）。', 'Service medals are unlimited today (back to normal automatically tomorrow).')}</p>
+    <div class="row"><button class="btn sub" data-a="endSpecial">${T('いま終了する', 'End now')}</button></div></div>`;
+  return `<h3>${T('スペシャルコード', 'Special code')}</h3>
+    <div class="row"><input id="special" type="text" autocomplete="off" autocapitalize="characters" placeholder="${T('コード', 'Code')}"><button class="btn" data-a="special">${T('使う', 'Use')}</button></div>`;
 }
 
 function loginScreen() {
   const list = MB.users();
-  let h = `<h2>ユーザーをえらんでください</h2><div class="users">`;
-  if (!list.length) h += `<p class="dim">まだユーザーがいません。「新しく作る」から始めましょう。</p>`;
+  let h = `<h2>${T('ユーザーをえらんでください', 'Choose a user')}</h2><div class="users">`;
+  if (!list.length) h += `<p class="dim">${T('まだユーザーがいません。「新しく作る」から始めましょう。', 'No users yet. Start with "New user".')}</p>`;
   for (const x of list) {
     if (x.moved) {
-      h += `<div class="user moved"><span class="nm">${esc(x.name)} <span class="tag">引き継ぎ済み</span><br><small>${fmtTime(x.movedAt)} にコード発行</small></span>
-        <span class="acts"><button class="mini" data-a="showCode" data-id="${x.id}">コード</button>
-        <button class="mini" data-a="cancelMove" data-id="${x.id}">取り消し</button>
-        <button class="mini" data-a="forget" data-id="${x.id}">削除</button></span></div>`;
+      h += `<div class="user moved"><span class="nm">${esc(x.name)} <span class="tag">${T('引き継ぎ済み', 'Moved')}</span><br><small>${T(`${fmtTime(x.movedAt)} にコード発行`, `Code issued ${fmtTime(x.movedAt)}`)}</small></span>
+        <span class="acts"><button class="mini" data-a="showCode" data-id="${x.id}">${T('コード', 'Code')}</button>
+        <button class="mini" data-a="cancelMove" data-id="${x.id}">${T('取り消し', 'Undo')}</button>
+        <button class="mini" data-a="forget" data-id="${x.id}">${T('削除', 'Remove')}</button></span></div>`;
     } else {
-      h += `<div class="user ${view.pick === x.id ? 'sel' : ''}" data-a="pick" data-id="${x.id}"><span class="nm">👤 ${esc(x.name)}</span><small>タップしてログイン</small></div>`;
-      if (view.pick === x.id) h += `<div class="row"><input class="pin" id="pin" type="password" inputmode="numeric" maxlength="3" placeholder="3桁" autocomplete="off"><button class="btn" data-a="login">ログイン</button></div>`;
+      h += `<div class="user ${view.pick === x.id ? 'sel' : ''}" data-a="pick" data-id="${x.id}"><span class="nm">👤 ${esc(x.name)}</span><small>${T('タップしてログイン', 'Tap to log in')}</small></div>`;
+      if (view.pick === x.id) h += `<div class="row">${pin('pin')}<button class="btn" data-a="login">${T('ログイン', 'Log in')}</button></div>`;
     }
   }
   h += `</div>`;
   if (view.code) h += codeBox(view.code);
-  h += `<div class="row" style="margin-top:12px"><button class="btn" data-a="toCreate">新しく作る</button><button class="btn sub" data-a="toImport">引き継ぎコードを読み込む</button></div>`;
+  h += `<div class="row" style="margin-top:12px"><button class="btn" data-a="toCreate">${T('新しく作る', 'New user')}</button><button class="btn sub" data-a="toImport">${T('引き継ぎコードを読み込む', 'Load a transfer code')}</button></div>`;
   return h;
 }
 
 function createScreen() {
-  return `<h2>ユーザー作成</h2>
-    <p class="dim">なまえ（12文字まで）と、数字3桁のパスワードを決めてください。パスワードはログインと引き継ぎに使います。</p>
-    <div class="row"><input id="name" type="text" maxlength="12" placeholder="なまえ" autocomplete="off"></div>
-    <div class="row"><input class="pin" id="pin" type="password" inputmode="numeric" maxlength="3" placeholder="3桁" autocomplete="off">
-      <input class="pin" id="pin2" type="password" inputmode="numeric" maxlength="3" placeholder="もう一度" autocomplete="off"></div>
-    <div class="row"><button class="btn" data-a="create">作成する</button><button class="btn sub" data-a="home">もどる</button></div>`;
+  return `<h2>${T('ユーザー作成', 'New user')}</h2>
+    <p class="dim">${T('なまえ（12文字まで）と、数字3桁のパスワードを決めてください。パスワードはログインと引き継ぎに使います。', 'Choose a name (up to 12 characters) and a 3-digit password. The password is used to log in and to transfer.')}</p>
+    <div class="row"><input id="name" type="text" maxlength="12" placeholder="${T('なまえ', 'Name')}" autocomplete="off"></div>
+    <div class="row">${pin('pin')}${pin('pin2', T('もう一度', 'Again'))}</div>
+    <div class="row"><button class="btn" data-a="create">${T('作成する', 'Create')}</button><button class="btn sub" data-a="home">${T('もどる', 'Back')}</button></div>`;
 }
 
 function importScreen() {
-  return `<h2>引き継ぎコードを読み込む</h2>
-    <p class="dim">元の端末で発行したコード（またはURL）を貼り付けて、そのユーザーのパスワードを入れてください。</p>
+  return `<h2>${T('引き継ぎコードを読み込む', 'Load a transfer code')}</h2>
+    <p class="dim">${T('元の端末で発行したコード（またはURL）を貼り付けて、そのユーザーのパスワードを入れてください。', 'Paste the code (or URL) issued on the other device, then enter that user\'s password.')}</p>
     <textarea id="code" rows="4" placeholder="MB1.…">${esc(view.importCode)}</textarea>
-    <div class="row"><input class="pin" id="pin" type="password" inputmode="numeric" maxlength="3" placeholder="3桁" autocomplete="off">
-      <button class="btn" data-a="doImport">読み込む</button><button class="btn sub" data-a="home">もどる</button></div>`;
+    <div class="row">${pin('pin')}
+      <button class="btn" data-a="doImport">${T('読み込む', 'Load')}</button><button class="btn sub" data-a="home">${T('もどる', 'Back')}</button></div>`;
 }
 
 function userScreen(u) {
-  let h = `<div class="who">👤 <b>${esc(u.name)}</b><button class="mini" data-a="logout">ログアウト / 切り替え</button></div>
-    <div class="bal"><span>預け入れ残高</span><output>${u.balance.toLocaleString()}<small style="font-size:14px"> 枚</small></output></div>
-    <div class="tabs">${[['log', '記録'], ['cards', 'カード'], ['user', '設定'], ['move', '引き継ぎ']].map(([k, l]) =>
+  let h = `<div class="who">👤 <b>${esc(u.name)}</b><button class="mini" data-a="logout">${T('ログアウト / 切り替え', 'Log out / switch')}</button></div>
+    <div class="bal"><span>${T('預け入れ残高', 'Balance')}</span><output>${u.balance.toLocaleString()}<small style="font-size:14px">${T(' 枚', '')}</small></output></div>
+    <div class="tabs">${[['log', T('記録', 'History')], ['cards', T('カード', 'Cards')], ['user', T('設定', 'Settings')], ['move', T('引き継ぎ', 'Transfer')]].map(([k, l]) =>
       `<button class="${view.tab === k ? 'on' : ''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`;
   if (view.tab === 'log') h += logTab();
   else if (view.tab === 'cards') h += cardsTab();
@@ -320,7 +342,7 @@ function userScreen(u) {
 function logTab() {
   const log = MB.log().reverse();
   let h = `<ul class="log">`;
-  if (!log.length) h += `<li class="empty" style="display:block;cursor:default">まだ記録がありません</li>`;
+  if (!log.length) h += `<li class="empty" style="display:block;cursor:default">${T('まだ記録がありません', 'No history yet')}</li>`;
   for (const e of log) {
     const eff = EFFECT[e.type] * e.n;
     const sign = e.type === 'service' ? `+${e.n}` : eff > 0 ? `+${eff}` : eff < 0 ? `${eff}` : '±0';
@@ -328,52 +350,53 @@ function logTab() {
     if (view.editing === e.id) {
       h += `<li class="editing"><span class="t">${fmtTime(e.t)}</span><span>${esc(gameName(e.game))}</span><span></span>
         <div class="edit">
-          <div class="row"><select id="eType">${Object.keys(TYPE_NAME).map(k => `<option value="${k}" ${k === e.type ? 'selected' : ''}>${TYPE_NAME[k]}</option>`).join('')}</select>
+          <div class="row"><select id="eType">${Object.keys(TYPE_NAME).map(k => `<option value="${k}" ${k === e.type ? 'selected' : ''}>${typeName(k)}</option>`).join('')}</select>
             <input id="eN" type="number" min="0" inputmode="numeric" value="${e.n}"></div>
-          <div class="row"><input id="eNote" type="text" maxlength="40" placeholder="メモ" value="${esc(e.note || '')}"></div>
-          <div class="row"><button class="btn" data-a="saveEdit" data-id="${e.id}">保存</button><button class="btn sub" data-a="cancelEdit">やめる</button><button class="btn ng" data-a="delEntry" data-id="${e.id}">削除</button></div>
-          <p class="dim">記録を変えると、残高もそれに合わせて計算しなおします。</p>
+          <div class="row"><input id="eNote" type="text" maxlength="40" placeholder="${T('メモ', 'Note')}" value="${esc(e.note || '')}"></div>
+          <div class="row"><button class="btn" data-a="saveEdit" data-id="${e.id}">${T('保存', 'Save')}</button><button class="btn sub" data-a="cancelEdit">${T('やめる', 'Cancel')}</button><button class="btn ng" data-a="delEntry" data-id="${e.id}">${T('削除', 'Delete')}</button></div>
+          <p class="dim">${T('記録を変えると、残高もそれに合わせて計算しなおします。', 'Changing a record recalculates the balance to match.')}</p>
         </div></li>`;
     } else {
-      h += `<li data-a="edit" data-id="${e.id}"><span class="ty ${e.type}">${TYPE_NAME[e.type]}</span><span>${esc(gameName(e.game))}</span><span class="n ${cls}">${sign}</span>
-        <span class="sub">${fmtTime(e.t)} ・ 残高 ${e.bal}${e.note ? ' ・ ' + esc(e.note) : ''}${e.edited ? ' ・ 編集済み' : ''}</span></li>`;
+      h += `<li data-a="edit" data-id="${e.id}"><span class="ty ${e.type}">${typeName(e.type)}</span><span>${esc(gameName(e.game))}</span><span class="n ${cls}">${sign}</span>
+        <span class="sub">${fmtTime(e.t)} ・ ${T('残高', 'bal.')} ${e.bal}${e.note ? ' ・ ' + esc(noteText(e.note)) : ''}${e.edited ? T(' ・ 編集済み', ' ・ edited') : ''}</span></li>`;
     }
   }
-  h += `</ul><h3>手動で追加（調整）</h3>
-    <div class="row"><input id="adjN" type="number" inputmode="numeric" placeholder="枚数（マイナス可）"><input id="adjNote" type="text" maxlength="40" placeholder="メモ"><button class="btn" data-a="addAdj">追加</button></div>
-    <p class="dim">記録をタップすると、種類・枚数・メモの編集や削除ができます。サービスメダルは手持ちに入るため残高は変わりません。</p>`;
+  h += `</ul><h3>${T('手動で追加（調整）', 'Add manually (adjustment)')}</h3>
+    <div class="row"><input id="adjN" type="number" inputmode="numeric" placeholder="${T('枚数（マイナス可）', 'Medals (± OK)')}"><input id="adjNote" type="text" maxlength="40" placeholder="${T('メモ', 'Note')}"><button class="btn" data-a="addAdj">${T('追加', 'Add')}</button></div>
+    <p class="dim">${T('記録をタップすると、種類・枚数・メモの編集や削除ができます。サービスメダルは手持ちに入るため残高は変わりません。', 'Tap a record to edit its type, amount or note, or delete it. Service medals go to your hand, so they don\'t change the balance.')}</p>`;
   return h;
 }
 
 function cardsTab() {
   const cards = MB.getCards('janken') || {};
   const owned = MB.JANKEN_CARDS.filter(c => cards[c.id]).length;
-  return `<p class="dim">じゃんけんポップのカード ${owned} / ${MB.JANKEN_CARDS.length} 種類</p>
+  return `<p class="dim">${T(`じゃんけんポップのカード ${owned} / ${MB.JANKEN_CARDS.length} 種類`, `JANKEN POP! cards: ${owned} / ${MB.JANKEN_CARDS.length} kinds`)}</p>
     <div class="cards">${MB.JANKEN_CARDS.map(c => cards[c.id]
       ? `<span>${c.em} ${esc(c.nm)} ×${cards[c.id]}</span>` : `<span class="off">？</span>`).join('')}</div>`;
 }
 
 function userTab(u) {
-  return `<h3>なまえを変える</h3>
-    <div class="row"><input id="newName" type="text" maxlength="12" value="${esc(u.name)}"><input class="pin" id="pinA" type="password" inputmode="numeric" maxlength="3" placeholder="3桁"><button class="btn" data-a="rename">変更</button></div>
-    <h3>パスワードを変える</h3>
-    <div class="row"><input class="pin" id="pinOld" type="password" inputmode="numeric" maxlength="3" placeholder="いま"><input class="pin" id="pinNew" type="password" inputmode="numeric" maxlength="3" placeholder="あたらしく"><button class="btn" data-a="repin">変更</button></div>
-    <h3>ユーザーを削除</h3>
-    <div class="row"><input class="pin" id="pinDel" type="password" inputmode="numeric" maxlength="3" placeholder="3桁"><button class="btn ng" data-a="delUser">削除する</button></div>
-    <p class="dim">削除すると残高・記録・カードはすべて消えます。</p>`;
+  return `<h3>${T('なまえを変える', 'Change name')}</h3>
+    <div class="row"><input id="newName" type="text" maxlength="12" value="${esc(u.name)}">${pin('pinA')}<button class="btn" data-a="rename">${T('変更', 'Change')}</button></div>
+    <h3>${T('パスワードを変える', 'Change password')}</h3>
+    <div class="row">${pin('pinOld', T('いま', 'Current'))}${pin('pinNew', T('あたらしく', 'New'))}<button class="btn" data-a="repin">${T('変更', 'Change')}</button></div>
+    <h3>${T('ユーザーを削除', 'Delete user')}</h3>
+    <div class="row">${pin('pinDel')}<button class="btn ng" data-a="delUser">${T('削除する', 'Delete')}</button></div>
+    <p class="dim">${T('削除すると残高・記録・カードはすべて消えます。', 'Deleting removes the balance, history and cards.')}</p>`;
 }
 
 function moveTab() {
-  return `<p class="dim">別の端末（iPad・別のスマホなど）へこのユーザーを移します。コードを発行すると、<b>この端末ではこのユーザーが使えなくなります</b>（同じメダルを二重に使えないように）。移動先で読み込めなかったときは、ログイン画面の「取り消し」で元に戻せます。</p>
-    <div class="row"><input class="pin" id="pinMove" type="password" inputmode="numeric" maxlength="3" placeholder="3桁"><button class="btn" data-a="doExport">引き継ぎコードを発行</button></div>`;
+  return `<p class="dim">${T('別の端末（iPad・別のスマホなど）へこのユーザーを移します。コードを発行すると、<b>この端末ではこのユーザーが使えなくなります</b>（同じメダルを二重に使えないように）。移動先で読み込めなかったときは、ログイン画面の「取り消し」で元に戻せます。',
+    'Move this user to another device (an iPad, another phone…). Once the code is issued, <b>this user can no longer be used on this device</b> (so the same medals can\'t be spent twice). If it can\'t be loaded on the other device, use "Undo" on the login screen.')}</p>
+    <div class="row">${pin('pinMove')}<button class="btn" data-a="doExport">${T('引き継ぎコードを発行', 'Issue a transfer code')}</button></div>`;
 }
 
 function codeBox(code) {
   const url = MB.transferUrl(code);
-  return `<div class="box"><b>引き継ぎコード</b>
-    <p class="dim">移動先の端末でこのURLを開くか、QRコードを読み取るか、コードを貼り付けてください。パスワード（3桁）も必要です。</p>
+  return `<div class="box"><b>${T('引き継ぎコード', 'Transfer code')}</b>
+    <p class="dim">${T('移動先の端末でこのURLを開くか、QRコードを読み取るか、コードを貼り付けてください。パスワード（3桁）も必要です。', 'On the other device, open this URL, scan the QR code, or paste the code. The 3-digit password is also needed.')}</p>
     <textarea rows="4" readonly id="codeText">${esc(url)}</textarea>
-    <div class="row"><button class="btn" data-a="copy">コピー</button>${navigator.share ? '<button class="btn sub" data-a="share">共有…</button>' : ''}<button class="btn sub" data-a="hideCode">とじる</button></div>
+    <div class="row"><button class="btn" data-a="copy">${T('コピー', 'Copy')}</button>${navigator.share ? `<button class="btn sub" data-a="share">${T('共有…', 'Share…')}</button>` : ''}<button class="btn sub" data-a="hideCode">${T('とじる', 'Close')}</button></div>
     <div class="qr" id="qr"></div></div>`;
 }
 
@@ -385,7 +408,7 @@ function drawQr() {
       const qr = qrcode(0, 'L');
       qr.addData(MB.transferUrl(view.code)); qr.make();
       el.innerHTML = qr.createSvgTag({ cellSize: 3, margin: 3, scalable: true });
-    } catch (e) { el.innerHTML = '<p class="dim">コードが長いためQRは表示できません。URLをコピーして送ってください。</p>'; }
+    } catch (e) { el.innerHTML = `<p class="dim">${T('コードが長いためQRは表示できません。URLをコピーして送ってください。', 'The code is too long for a QR code. Copy the URL and send it instead.')}</p>`; }
   };
   if (window.qrcode) return draw();
   if (!qrLib) qrLib = new Promise((res, rej) => {
@@ -400,77 +423,80 @@ function drawQr() {
 // ---------------- actions ----------------
 const actions = {
   pick(id) { view.pick = view.pick === id ? null : id; render(); $('pin')?.focus(); },
-  login() { const u = MB.login(view.pick, val('#pin')); view.pick = null; view.code = null; view.tab = 'log'; flash(`${u.name} さん、ようこそ！`, true); },
+  login() { const u = MB.login(view.pick, val('#pin')); view.pick = null; view.code = null; view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
   logout() { MB.logout(); view.editing = null; render(); },
   toCreate() { view.screen = 'create'; view.code = null; render(); $('name')?.focus(); },
   toImport() { view.screen = 'import'; view.code = null; render(); },
   home() { view.screen = 'home'; history.replaceState(null, '', location.pathname); render(); },
   create() {
-    if (val('#pin') !== val('#pin2')) throw new MB.BankError('パスワードが一致しません');
+    if (val('#pin') !== val('#pin2')) throw new MB.BankError(T('パスワードが一致しません', 'The passwords don\'t match'));
     const u = MB.createUser(val('#name'), val('#pin'));
     view.screen = 'home'; view.tab = 'log';
-    flash(`${u.name} さんを作成しました`, true);
+    flash(T(`${u.name} さんを作成しました`, `Created ${u.name}`), true);
   },
   async doImport() {
     const u = await MB.importCode(val('#code'), val('#pin'));
     view.screen = 'home'; view.importCode = ''; view.tab = 'log';
     history.replaceState(null, '', location.pathname);
-    flash(`${u.name} さんを受け取りました（残高 ${u.balance} 枚）`, true);
+    flash(T(`${u.name} さんを受け取りました（残高 ${u.balance} 枚）`, `Received ${u.name} (balance ${u.balance})`), true);
   },
   tab(id) { view.tab = id; view.editing = null; render(); },
   edit(id) { view.editing = id; render(); },
   cancelEdit() { view.editing = null; render(); },
   saveEdit(id) {
     MB.editLog(id, { type: val('#eType'), n: val('#eN'), note: val('#eNote') });
-    view.editing = null; flash('記録を更新しました', true);
+    view.editing = null; flash(T('記録を更新しました', 'Record updated'), true);
   },
   delEntry(id) {
-    if (!confirm('この記録を削除しますか？残高も計算しなおします。')) return;
-    MB.deleteLog(id); view.editing = null; flash('記録を削除しました', true);
+    if (!confirm(T('この記録を削除しますか？残高も計算しなおします。', 'Delete this record? The balance will be recalculated.'))) return;
+    MB.deleteLog(id); view.editing = null; flash(T('記録を削除しました', 'Record deleted'), true);
   },
-  addAdj() { MB.addAdjust(val('#adjN'), val('#adjNote')); flash('調整を追加しました', true); },
-  rename() { const u = MB.current(); MB.renameUser(u.id, val('#pinA'), val('#newName')); flash('なまえを変更しました', true); },
-  repin() { const u = MB.current(); MB.changePin(u.id, val('#pinOld'), val('#pinNew')); flash('パスワードを変更しました', true); },
+  addAdj() { MB.addAdjust(val('#adjN'), val('#adjNote')); flash(T('調整を追加しました', 'Adjustment added'), true); },
+  rename() { const u = MB.current(); MB.renameUser(u.id, val('#pinA'), val('#newName')); flash(T('なまえを変更しました', 'Name changed'), true); },
+  repin() { const u = MB.current(); MB.changePin(u.id, val('#pinOld'), val('#pinNew')); flash(T('パスワードを変更しました', 'Password changed'), true); },
   delUser() {
     const u = MB.current();
-    if (!MB.checkPin(u.id, val('#pinDel'))) throw new MB.BankError('パスワードがちがいます');
-    if (!confirm(`「${u.name}」を削除します。残高 ${u.balance} 枚・記録・カードはすべて消えます。よろしいですか？`)) return;
-    MB.deleteUser(u.id, val('#pinDel')); flash('削除しました', true);
+    if (!MB.checkPin(u.id, val('#pinDel'))) throw new MB.BankError(T('パスワードがちがいます', 'Wrong password'));
+    if (!confirm(T(`「${u.name}」を削除します。残高 ${u.balance} 枚・記録・カードはすべて消えます。よろしいですか？`,
+      `Delete "${u.name}"? The balance (${u.balance}), history and cards will all be removed.`))) return;
+    MB.deleteUser(u.id, val('#pinDel')); flash(T('削除しました', 'Deleted'), true);
   },
   async doExport() {
     const u = MB.current();
-    if (!MB.checkPin(u.id, val('#pinMove'))) throw new MB.BankError('パスワードがちがいます');
-    if (!confirm(`「${u.name}」の引き継ぎコードを発行します。発行後、この端末では「${u.name}」が使えなくなります。よろしいですか？`)) return;
+    if (!MB.checkPin(u.id, val('#pinMove'))) throw new MB.BankError(T('パスワードがちがいます', 'Wrong password'));
+    if (!confirm(T(`「${u.name}」の引き継ぎコードを発行します。発行後、この端末では「${u.name}」が使えなくなります。よろしいですか？`,
+      `Issue a transfer code for "${u.name}"? After this, "${u.name}" can no longer be used on this device.`))) return;
     view.code = await MB.exportUser(u.id, val('#pinMove'));
-    flash('引き継ぎコードを発行しました', true);
+    flash(T('引き継ぎコードを発行しました', 'Transfer code issued'), true);
   },
-  special() { MB.useSpecialCode(val('#special')); flash('スペシャルデー！きょうはサービスメダルが何回でも受け取れます', true); },
-  endSpecial() { MB.endSpecial(); flash('スペシャルデーを終了しました', true); },
+  special() { MB.useSpecialCode(val('#special')); flash(T('スペシャルデー！きょうはサービスメダルが何回でも受け取れます', 'Special day! Service medals are unlimited today'), true); },
+  endSpecial() { MB.endSpecial(); flash(T('スペシャルデーを終了しました', 'Special day ended'), true); },
   showCode(id) { view.code = MB.pendingCode(id); render(); },
   hideCode() { view.code = null; render(); },
   cancelMove(id) {
-    if (!confirm('引き継ぎを取り消して、この端末で使えるように戻しますか？\n※移動先ですでに読み込んだ場合は、同じメダルが二重になります。')) return;
-    MB.cancelExport(id); view.code = null; flash('取り消しました', true);
+    if (!confirm(T('引き継ぎを取り消して、この端末で使えるように戻しますか？\n※移動先ですでに読み込んだ場合は、同じメダルが二重になります。',
+      'Undo the transfer and use this user on this device again?\nNote: if it was already loaded on the other device, the medals will exist twice.'))) return;
+    MB.cancelExport(id); view.code = null; flash(T('取り消しました', 'Transfer undone'), true);
   },
   forget(id) {
-    if (!confirm('引き継ぎ済みのユーザーをこの端末から消しますか？（移動先のデータはそのままです）')) return;
+    if (!confirm(T('引き継ぎ済みのユーザーをこの端末から消しますか？（移動先のデータはそのままです）', 'Remove this moved user from this device? (The data on the other device stays.)'))) return;
     MB.deleteUser(id); view.code = null; render();
   },
   async copy() {
-    const t = $('codeText');
-    try { await navigator.clipboard.writeText(t.value); } catch (e) { t.select(); document.execCommand('copy'); }
-    flash('コピーしました', true);
+    const box = $('codeText');
+    try { await navigator.clipboard.writeText(box.value); } catch (e) { box.select(); document.execCommand('copy'); }
+    flash(T('コピーしました', 'Copied'), true);
   },
   async share() {
-    try { await navigator.share({ title: 'MEDAL BANK 引き継ぎ', url: MB.transferUrl(view.code) }); } catch (e) {}
+    try { await navigator.share({ title: T('MEDAL BANK 引き継ぎ', 'MEDAL BANK transfer'), url: MB.transferUrl(view.code) }); } catch (e) {}
   },
 };
 
 lcd.addEventListener('click', run(async e => {
-  const t = e.target.closest('[data-a]');
-  if (!t || !lcd.contains(t)) return;
-  if (t.closest('.editing') && t.dataset.a === 'edit') return;
-  await actions[t.dataset.a](t.dataset.id);
+  const el = e.target.closest('[data-a]');
+  if (!el || !lcd.contains(el)) return;
+  if (el.closest('.editing') && el.dataset.a === 'edit') return;
+  await actions[el.dataset.a](el.dataset.id);
 }));
 lcd.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName === 'TEXTAREA') return;
