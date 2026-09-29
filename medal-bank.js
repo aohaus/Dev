@@ -399,7 +399,7 @@ function mountPanel(el, opts) {
   function draw() {
     const u = current(), hand = opts.getHand();
     const svc = serviceAvailable(opts.game), special = specialDay();
-    let h = `<div class="mb-head"><span class="mb-logo">MEDAL BANK</span><a class="mb-link" href="medal-bank.html">バンクを開く ›</a></div>`;
+    let h = `<div class="mb-head"><span class="mb-logo">MEDAL BANK</span><span class="mb-links"><a class="mb-link" href="game-center.html">🏠 Game Centre</a><a class="mb-link" href="medal-bank.html">バンクを開く ›</a></span></div>`;
     if (mode === 'login') {
       const list = users().filter(x => !x.moved);
       h += `<div class="mb-box"><b>ユーザーをえらぶ</b><div class="mb-users">${
@@ -513,7 +513,8 @@ const css = `
 .mb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .mb-logo { font-family: 'Arial Black', Arial, sans-serif; font-style: italic; font-weight: 900; font-size: 16px; letter-spacing: .06em;
   color: #ffd21a; -webkit-text-stroke: 1px #3a2a00; paint-order: stroke fill; }
-.mb-link { color: inherit; font-size: 12px; opacity: .8; }
+.mb-links { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.mb-link { color: inherit; font-size: 12px; opacity: .8; white-space: nowrap; }
 .mb-user { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 .mb-user b { font-size: 16px; }
 .mb-mini { border: 1px solid currentColor; background: none; color: inherit; border-radius: 99px; padding: 1px 10px; font-size: 12px; cursor: pointer; }

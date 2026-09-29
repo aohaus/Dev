@@ -1,0 +1,17 @@
+{
+  "id": "./game-center.html",
+  "name": "Game Centre",
+  "short_name": "Game Centre",
+  "description": "メダルゲームのゲームセンター — ピカデリーサーカス・シグマポーカー・じゃんけんポップ・メダルバンク",
+  "start_url": "./game-center.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07050d",
+  "theme_color": "#07050d",
+  "icons": [
+    { "src": "icons/gc-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/gc-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/gc-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

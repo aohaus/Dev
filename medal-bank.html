@@ -100,6 +100,8 @@ button { cursor: pointer; }
   background: #fff; border: 2px solid #c8ccd2; border-radius: 8px; padding: 8px 4px;
 }
 .games a b { display: block; font-size: 18px; }
+.home { display: block; margin-top: 10px; text-align: center; text-decoration: none; color: #fff; font-size: 14px;
+  background: linear-gradient(#3a1d63, #170d2e); border-radius: 8px; padding: 10px; box-shadow: 0 0 10px rgba(255,79,163,.4); }
 .feet { display: flex; justify-content: space-between; padding: 0 22px; }
 .feet i { width: 26px; height: 8px; background: #222; border-radius: 0 0 4px 4px; }
 .note { max-width: 460px; margin: 14px auto 0; font-size: 12px; font-weight: 700; color: #2b3647; line-height: 1.6; }
@@ -171,7 +173,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=2"></script>
+<script src="medal-bank.js?v=3"></script>
 </head>
 <body>
 <div class="cab">
@@ -197,6 +199,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
   <div class="base">
     <div class="tray">払い出しは各ゲームの設定から</div>
     <div class="games" id="games"></div>
+    <a class="home" href="game-center.html">🏠 Game Centre へもどる</a>
   </div>
   <div class="feet"><i></i><i></i></div>
 </div>
