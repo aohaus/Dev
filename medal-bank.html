@@ -182,7 +182,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=5"></script>
+<script src="medal-bank.js?v=6"></script>
 </head>
 <body>
 <div class="toprow"><button class="langbtn" id="langBtn">English</button></div>
@@ -220,6 +220,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 const MB = MedalBank;
 const { esc, GAMES, TYPE_NAME, EFFECT } = MB;
 const T = MB.t || (ja => ja);   // T('日本語', 'English')
+const online = !!(MB.online && MB.online());   // bank balances kept on the server
 const $ = id => document.getElementById(id);
 const lcd = $('lcd');
 
@@ -255,7 +256,8 @@ readHash();
 window.addEventListener('hashchange', () => { if (readHash()) render(); });
 
 // After an error the screen is redrawn with what was typed still in place.
-function flash(msg, ok = false) { view.flash = { msg, ok }; render(!ok); }
+// Messages stay up for a few seconds even if a server reply redraws the screen meanwhile.
+function flash(msg, ok = false) { view.flash = { msg, ok, until: Date.now() + 5000 }; render(!ok); }
 function run(fn) {
   return async (...a) => {
     try { await fn(...a); }
@@ -280,8 +282,7 @@ function render(keepInputs = false) {
   else if (view.screen === 'import') h = importScreen();
   else h = u ? userScreen(u) : loginScreen();
   if (view.screen === 'home') h += specialBox();
-  if (view.flash) h += `<p class="flash ${view.flash.ok ? 'ok' : 'ng'}">${esc(view.flash.msg)}</p>`;
-  view.flash = null;
+  if (view.flash && Date.now() < view.flash.until) h += `<p class="flash ${view.flash.ok ? 'ok' : 'ng'}">${esc(view.flash.msg)}</p>`;
   lcd.innerHTML = h;
   for (const [id, v] of Object.entries(typed)) { const el = lcd.querySelector('#' + id); if (el) el.value = v; }
   if (view.code) drawQr();
@@ -331,7 +332,10 @@ function loginScreen() {
   }
   h += `</div>`;
   if (view.code) h += codeBox(view.code);
-  h += `<div class="row" style="margin-top:12px"><button class="btn" data-a="toCreate">${T('新しく作る', 'New user')}</button><button class="btn sub" data-a="toImport">${T('引き継ぎコードを読み込む', 'Load a transfer code')}</button></div>`;
+  if (online) h += `<h3>${T('ほかの端末のユーザーでログイン', 'Log in with a user from another device')}</h3>
+    <div class="row"><input id="lname" type="text" maxlength="12" placeholder="${T('なまえ', 'Name')}" autocomplete="off">${pin('lpin')}<button class="btn" data-a="loginName">${T('ログイン', 'Log in')}</button></div>`;
+  h += `<div class="row" style="margin-top:12px"><button class="btn" data-a="toCreate">${T('新しく作る', 'New user')}</button>${online ? '' : `<button class="btn sub" data-a="toImport">${T('引き継ぎコードを読み込む', 'Load a transfer code')}</button>`}</div>`;
+  if (online) h += `<p class="dim">${T('☁ メダルバンクの残高はサーバーに保存されます。どの端末でも、なまえとパスワードでログインできます（手持ちメダルは端末ごと）。', '☁ Bank balances are kept on the server: log in on any device with your name and password (medals in hand stay on each device).')}</p>`;
   return h;
 }
 
@@ -354,7 +358,7 @@ function importScreen() {
 function userScreen(u) {
   let h = `<div class="who">👤 <b>${esc(u.name)}</b><button class="mini" data-a="logout">${T('ログアウト / 切り替え', 'Log out / switch')}</button></div>
     ${counter(u)}
-    <div class="tabs">${[['log', T('記録', 'History')], ['cards', T('カード', 'Cards')], ['user', T('設定', 'Settings')], ['move', T('引き継ぎ', 'Transfer')]].map(([k, l]) =>
+    <div class="tabs">${[['log', T('記録', 'History')], ['cards', T('カード', 'Cards')], ['user', T('設定', 'Settings')], ...(online ? [] : [['move', T('引き継ぎ', 'Transfer')]])].map(([k, l]) =>
       `<button class="${view.tab === k ? 'on' : ''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`;
   if (view.tab === 'log') h += logTab();
   else if (view.tab === 'cards') h += cardsTab();
@@ -448,18 +452,19 @@ function drawQr() {
 const actions = {
   allIn() { $('depN').value = MB.hand(); },
   allOut() { $('wdN').value = MB.current().balance; },
-  dep() { const n = +val('#depN'); MB.deposit(n); flash(T(`${n} 枚 預けました`, `Deposited ${n}`), true); },
-  wd() { const n = +val('#wdN'); MB.withdraw(n); flash(T(`${n} 枚 引き出しました`, `Withdrew ${n}`), true); },
+  async dep() { const n = +val('#depN'); await MB.deposit(n); flash(T(`${n} 枚 預けました`, `Deposited ${n}`), true); },
+  async wd() { const n = +val('#wdN'); await MB.withdraw(n); flash(T(`${n} 枚 引き出しました`, `Withdrew ${n}`), true); },
   svc() { const n = MB.claimService(); flash(T(`サービスメダル ${n} 枚！手持ちに入りました`, `${n} service medals added to your hand!`), true); },
   pick(id) { view.pick = view.pick === id ? null : id; render(); $('pin')?.focus(); },
-  login() { const u = MB.login(view.pick, val('#pin')); view.pick = null; view.code = null; view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
-  logout() { MB.logout(); view.editing = null; render(); },
+  async login() { const u = await MB.login(view.pick, val('#pin')); view.pick = null; view.code = null; view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
+  async logout() { await MB.logout(); view.editing = null; render(); },
+  async loginName() { const u = await MB.loginByName(val('#lname'), val('#lpin')); view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
   toCreate() { view.screen = 'create'; view.code = null; render(); $('name')?.focus(); },
   toImport() { view.screen = 'import'; view.code = null; render(); },
   home() { view.screen = 'home'; history.replaceState(null, '', location.pathname); render(); },
-  create() {
+  async create() {
     if (val('#pin') !== val('#pin2')) throw new MB.BankError(T('パスワードが一致しません', 'The passwords don\'t match'));
-    const u = MB.createUser(val('#name'), val('#pin'));
+    const u = await MB.createUser(val('#name'), val('#pin'));
     view.screen = 'home'; view.tab = 'log';
     flash(T(`${u.name} さんを作成しました`, `Created ${u.name}`), true);
   },
@@ -472,23 +477,23 @@ const actions = {
   tab(id) { view.tab = id; view.editing = null; render(); },
   edit(id) { view.editing = id; render(); },
   cancelEdit() { view.editing = null; render(); },
-  saveEdit(id) {
-    MB.editLog(id, { type: val('#eType'), n: val('#eN'), note: val('#eNote') });
+  async saveEdit(id) {
+    await MB.editLog(id, { type: val('#eType'), n: val('#eN'), note: val('#eNote') });
     view.editing = null; flash(T('記録を更新しました', 'Record updated'), true);
   },
-  delEntry(id) {
+  async delEntry(id) {
     if (!confirm(T('この記録を削除しますか？残高も計算しなおします。', 'Delete this record? The balance will be recalculated.'))) return;
-    MB.deleteLog(id); view.editing = null; flash(T('記録を削除しました', 'Record deleted'), true);
+    await MB.deleteLog(id); view.editing = null; flash(T('記録を削除しました', 'Record deleted'), true);
   },
-  addAdj() { MB.addAdjust(val('#adjN'), val('#adjNote')); flash(T('調整を追加しました', 'Adjustment added'), true); },
-  rename() { const u = MB.current(); MB.renameUser(u.id, val('#pinA'), val('#newName')); flash(T('なまえを変更しました', 'Name changed'), true); },
-  repin() { const u = MB.current(); MB.changePin(u.id, val('#pinOld'), val('#pinNew')); flash(T('パスワードを変更しました', 'Password changed'), true); },
-  delUser() {
+  async addAdj() { await MB.addAdjust(val('#adjN'), val('#adjNote')); flash(T('調整を追加しました', 'Adjustment added'), true); },
+  async rename() { const u = MB.current(); await MB.renameUser(u.id, val('#pinA'), val('#newName')); flash(T('なまえを変更しました', 'Name changed'), true); },
+  async repin() { const u = MB.current(); await MB.changePin(u.id, val('#pinOld'), val('#pinNew')); flash(T('パスワードを変更しました', 'Password changed'), true); },
+  async delUser() {
     const u = MB.current();
-    if (!MB.checkPin(u.id, val('#pinDel'))) throw new MB.BankError(T('パスワードがちがいます', 'Wrong password'));
+    if (!online && !MB.checkPin(u.id, val('#pinDel'))) throw new MB.BankError(T('パスワードがちがいます', 'Wrong password'));
     if (!confirm(T(`「${u.name}」を削除します。残高 ${u.balance} 枚・記録・カードはすべて消えます。よろしいですか？`,
       `Delete "${u.name}"? The balance (${u.balance}), history and cards will all be removed.`))) return;
-    MB.deleteUser(u.id, val('#pinDel')); flash(T('削除しました', 'Deleted'), true);
+    await MB.deleteUser(u.id, val('#pinDel')); flash(T('削除しました', 'Deleted'), true);
   },
   async doExport() {
     const u = MB.current();
@@ -507,9 +512,9 @@ const actions = {
       'Undo the transfer and use this user on this device again?\nNote: if it was already loaded on the other device, the medals will exist twice.'))) return;
     MB.cancelExport(id); view.code = null; flash(T('取り消しました', 'Transfer undone'), true);
   },
-  forget(id) {
+  async forget(id) {
     if (!confirm(T('引き継ぎ済みのユーザーをこの端末から消しますか？（移動先のデータはそのままです）', 'Remove this moved user from this device? (The data on the other device stays.)'))) return;
-    MB.deleteUser(id); view.code = null; render();
+    await MB.deleteUser(id); view.code = null; render();
   },
   async copy() {
     const box = $('codeText');
@@ -534,6 +539,8 @@ lcd.addEventListener('keydown', e => {
 });
 MB.onChange(() => { if (!lcd.contains(document.activeElement) || document.activeElement === document.body) render(); });
 render();
+// Another device may have changed the balance since last time.
+if (MB.refresh) { MB.refresh(); addEventListener('pageshow', e => { if (e.persisted) MB.refresh(); }); }
 </script>
 </body>
 </html>

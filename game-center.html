@@ -300,7 +300,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 </style>
-<script src="medal-bank.js?v=5"></script>
+<script src="medal-bank.js?v=6"></script>
 </head>
 <body>
 <div id="app">
@@ -587,8 +587,8 @@ $('exitBtn').addEventListener('click', () => {
     return;
   }
   if (!confirm(T(`手持ち ${cup} 枚を ${u.name} さんのバンクに預けて帰りますか？`, `Deposit your ${cup} medals to ${u.name}'s bank before leaving?`))) return;
-  try { MB.deposit(cup); toast(T(`${cup} 枚 預けました。またきてね！👋`, `Deposited ${cup}. See you next time! 👋`)); }
-  catch (e) { toast(e.message); }
+  Promise.resolve().then(() => MB.deposit(cup))
+    .then(() => toast(T(`${cup} 枚 預けました。またきてね！👋`, `Deposited ${cup}. See you next time! 👋`)), e => toast(e.message));
 });
 
 $('langBtn').addEventListener('click', () => MB.setLang && MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
@@ -599,6 +599,7 @@ buildHall();
 layout();
 refresh();
 MB.onChange(refresh);
+if (MB.refresh) MB.refresh();   // pick up the latest bank balance from the server
 // Coming back from a game (including the back/forward cache) shows fresh counts.
 addEventListener('pageshow', refresh);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

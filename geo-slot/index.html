@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0618">
+<title>GEO SLOT — Game Centre</title>
+<link rel="icon" href="../icons/gc-favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=M+PLUS+Rounded+1c:wght@800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="machine" id="machine">
+  <header class="top">
+    <h1 class="title">Game Centre</h1>
+    <button class="icon-btn" id="sound" aria-label="Sound on">🔊</button>
+  </header>
+
+  <div class="marquee">
+    <span class="bulbs" aria-hidden="true"></span>
+    <h2>GEO SLOT</h2>
+    <p>Match the <b>flag</b>, the <b>name</b> and the <b>map</b>! · <span id="region">ASEAN</span></p>
+  </div>
+
+  <section class="cabinet" aria-label="Slot reels">
+    <div class="labels" aria-hidden="true"><span>FLAG</span><span>COUNTRY</span><span>MAP</span></div>
+    <div class="reels">
+      <div class="reel" id="reel0"><div class="strip"></div></div>
+      <div class="reel" id="reel1"><div class="strip"></div></div>
+      <div class="reel" id="reel2"><div class="strip"></div></div>
+      <div class="payline" aria-hidden="true"></div>
+    </div>
+    <div class="holds">
+      <button class="hold" id="hold0" aria-pressed="false">HOLD</button>
+      <button class="hold" id="hold1" aria-pressed="false">HOLD</button>
+      <button class="hold" id="hold2" aria-pressed="false">HOLD</button>
+    </div>
+  </section>
+
+  <p class="message" id="message" aria-live="polite"></p>
+
+  <section class="panel">
+    <div class="meter">
+      <span>In hand</span>
+      <output id="medals">100</output>
+    </div>
+    <button class="play" id="play">PLAY<small>10 medals</small></button>
+  </section>
+  <button class="refill" id="refill" hidden>Out of medals — get 100 more</button>
+
+  <p class="hint">Space = Play · 1 / 2 / 3 = Hold · 3 of the same country = JACKPOT +100</p>
+</main>
+
+<div class="jackpot" id="jackpot" hidden role="dialog" aria-label="Jackpot">
+  <div class="jackpot-box">
+    <div class="jackpot-title">JACKPOT!</div>
+    <div class="jackpot-country" id="jackpotCountry"></div>
+    <div class="jackpot-fact" id="jackpotFact"></div>
+    <div class="jackpot-amount" id="jackpotAmount"></div>
+    <button class="jackpot-ok">OK!</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
