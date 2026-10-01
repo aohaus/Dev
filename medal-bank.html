@@ -94,7 +94,7 @@ button { cursor: pointer; }
   background: linear-gradient(180deg, #666, #2b2d33); border: 5px solid #bfc3c8;
   display: grid; place-items: center; color: #d6d9de; font-size: 11px; letter-spacing: .08em;
 }
-.games { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.games { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .games a {
   display: block; text-align: center; text-decoration: none; color: #333; font-size: 12px; line-height: 1.3;
   background: #fff; border: 2px solid #c8ccd2; border-radius: 8px; padding: 8px 4px;
@@ -182,7 +182,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=6"></script>
+<script src="medal-bank.js?v=7"></script>
 </head>
 <body>
 <div class="toprow"><button class="langbtn" id="langBtn">English</button></div>
@@ -233,7 +233,7 @@ function renderStatic() {
     'Medals in hand are shared by every game. Withdraw here (or take service medals) before playing, and deposit when you leave.<br>Data is saved in this browser on this device. To move to another device, issue a code under "Transfer" and load it there with the 3-digit password. Once issued, the account is locked on this device.');
   $('langBtn').textContent = T('English', '日本語');
   $('games').innerHTML = Object.values(GAMES).map(g =>
-    `<a href="${g.url}"><b>${g.url.startsWith('janken') ? '✊' : g.url.startsWith('sigma') ? '🃏' : '🎡'}</b>${esc(T(g.short, g.en || g.short))}</a>`).join('');
+    `<a href="${g.url}"><b>${g.url.startsWith('janken') ? '✊' : g.url.startsWith('sigma') ? '🃏' : g.url.startsWith('geo') ? '🌏' : '🎡'}</b>${esc(T(g.short, g.en || g.short))}</a>`).join('');
 }
 $('langBtn').addEventListener('click', () => MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
 

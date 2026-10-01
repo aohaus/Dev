@@ -10,11 +10,14 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=M+PLUS+Rounded+1c:wght@800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script src="../medal-bank.js?v=7"></script>
 </head>
 <body>
 <main class="machine" id="machine">
   <header class="top">
-    <h1 class="title">Game Centre</h1>
+    <a class="title" href="../game-center.html" aria-label="Back to Game Centre">Game Centre</a>
+    <span class="player" id="player"></span>
+    <a class="icon-btn" href="../medal-bank.html" aria-label="MEDAL BANK">🏦</a>
     <button class="icon-btn" id="sound" aria-label="Sound on">🔊</button>
   </header>
 
@@ -50,7 +53,7 @@
   </section>
   <button class="refill" id="refill" hidden>Out of medals — get 100 more</button>
 
-  <p class="hint">Space = Play · 1 / 2 / 3 = Hold · 3 of the same country = JACKPOT +100</p>
+  <p class="hint">Space = Play · 1 / 2 / 3 = Hold · 3 of the same country = JACKPOT +100<br>Medals in hand are shared with every Game Centre game · 🏦 = MEDAL BANK</p>
 </main>
 
 <div class="jackpot" id="jackpot" hidden role="dialog" aria-label="Jackpot">

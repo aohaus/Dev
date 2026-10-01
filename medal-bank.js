@@ -24,6 +24,7 @@ const GAMES = {
   piccadilly: { name: 'ピカデリーサーカス', short: 'ピカデリー', en: 'Piccadilly', url: 'piccadilly-circus.html' },
   sigma:      { name: 'シグマポーカー',     short: 'シグマ',     en: 'Sigma',      url: 'sigma-poker.html' },
   janken:     { name: 'じゃんけんポップ',   short: 'じゃんけん', en: 'Janken',     url: 'janken-pop.html' },
+  geo:        { name: 'ジオスロット',       short: 'ジオスロット', en: 'Geo Slot', url: 'geo-slot/' },
 };
 const JANKEN_CARDS = [
   ['usa', '🐰', 'ウサピョン'], ['neko', '🐱', 'ネコマル'], ['inu', '🐶', 'ワンタ'],

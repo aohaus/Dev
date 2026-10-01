@@ -276,6 +276,21 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .hands span:nth-child(2) { animation-delay: .6s; }
 .hands span:nth-child(3) { animation-delay: 1.2s; }
 @keyframes hand { 0% { opacity: 1; } 33.3% { opacity: 0; } }
+/* GEO SLOT */
+.m-geo { --glow: #ff3fb4; }
+.m-geo .body { background: linear-gradient(180deg, #2a0f4a, #12082a); box-shadow: 0 0 30px color-mix(in srgb, var(--glow) 45%, transparent), inset 0 0 0 3px #ffe23f; }
+.m-geo .marquee { background: #12082a; border: 2px solid #ffe23f; }
+.m-geo .marquee span { font-family: 'Press Start 2P', monospace; font-size: clamp(8px, calc(var(--mw) * .065), 15px); color: #ffe23f; text-shadow: 2px 2px 0 #c0161c; }
+.m-geo .screen { background: #1d1238; }
+.minireels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5%; width: 90%; }
+.minireels i { position: relative; aspect-ratio: 3 / 4; border-radius: 4px; background: #fffdf7; display: grid; place-items: center; font-style: normal;
+  font-size: clamp(14px, calc(var(--mw) * .12), 30px); box-shadow: inset 0 4px 6px -3px rgba(0,0,0,.5), inset 0 -4px 6px -3px rgba(0,0,0,.5); }
+.minireels i.nm { font-size: clamp(7px, calc(var(--mw) * .05), 12px); color: #241640; }
+.minireels .cyc span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; animation: cyc 2.4s infinite steps(1); }
+.minireels .cyc span:nth-child(2) { animation-delay: .6s; }
+.minireels .cyc span:nth-child(3) { animation-delay: 1.2s; }
+.minireels .cyc span:nth-child(4) { animation-delay: 1.8s; }
+@keyframes cyc { 0% { opacity: 1; } 25% { opacity: 0; } }
 /* MEDAL BANK */
 .m-bk { --glow: #ffb13b; }
 .m-bk .body { background: linear-gradient(180deg, #e0261d 0 5%, #fff 5% 22%, #ea4a22 22% 70%, #e7e7e2 70%); }
@@ -300,7 +315,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 </style>
-<script src="medal-bank.js?v=6"></script>
+<script src="medal-bank.js?v=7"></script>
 </head>
 <body>
 <div id="app">
@@ -359,6 +374,8 @@ const MACHINES = [
     price: '1〜50' },
   { id: 'janken', cls: 'm-jk', url: 'janken-pop.html', title: '<span>JANKEN POP!</span>',
     screen: '<div class="hands"><span>✊</span><span>✌️</span><span>✋</span></div>', price: '1' },
+  { id: 'geo', cls: 'm-geo', url: 'geo-slot/', title: '<span>GEO SLOT</span>',
+    screen: '<div class="minireels"><i class="cyc"><span>🇹🇭</span><span>🇻🇳</span><span>🇲🇾</span><span>🇮🇩</span></i><i class="nm">ASEAN</i><i>🗺️</i></div>', price: '10' },
   { id: 'bank', cls: 'm-bk', url: 'medal-bank.html', title: '<span>MEDAL BANK</span>', screen: '', service: true },
   { id: 'soon', cls: 'm-cs', coming: true },
 ];
