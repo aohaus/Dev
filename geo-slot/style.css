@@ -101,7 +101,7 @@ button:disabled { cursor: default; }
 .face.name {
   font-size: clamp(13px, 4.2vw, 20px); color: #241640; text-align: center; line-height: 1.15; word-break: break-word;
 }
-.face.shape { width: 82%; height: 82%; fill: var(--c); stroke: #241640; stroke-width: 2; stroke-linejoin: round; }
+.face.shape { width: 90%; height: 90%; fill: var(--c); stroke: #241640; stroke-width: 1.2; stroke-linejoin: round; }
 .payline {
   position: absolute; left: -6px; right: -6px; top: 50%; height: 2px; pointer-events: none;
   background: var(--red); box-shadow: 0 0 8px var(--red); opacity: .55;
