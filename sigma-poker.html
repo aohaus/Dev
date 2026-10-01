@@ -44,7 +44,7 @@ button { font: inherit; color: inherit; border: none; background: none; cursor: 
 /* The cabinet is sized in container units so it scales as one piece. */
 #machine {
   container-type: inline-size;
-  width: min(100vw, calc(100dvh / 1.36), 640px);
+  width: min(100vw, calc((100dvh - var(--gc-nav-h, 0px)) / 1.36), 640px);
   display: flex;
   flex-direction: column;
   gap: 1.8cqw;
@@ -261,7 +261,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 .user-tag { position: absolute; left: 50%; bottom: -1.4cqw; transform: translateX(-50%); font-size: 2cqw; max-width: 50%; }
 .sheet .mb-panel { --mb-accent: #ff4a6a; margin-top: 0; }
 </style>
-<script src="medal-bank.js?v=8"></script>
+<script src="medal-bank.js?v=10"></script>
 </head>
 <body>
 <div id="machine">
@@ -978,6 +978,7 @@ $('closeBtn').onclick = closeModal;
 modal.onclick = e => { if (e.target === modal) closeModal(); };
 $('sndBtn').onclick = toggleSound;
 $('soundBtn').onclick = () => { toggleSound(); $('soundBtn').textContent = `サウンド: ${st.sound ? 'ON' : 'OFF'}`; };
+MedalBank.mountNav('sigma');
 MedalBank.mountBadge($('userTag'));
 MedalBank.mountPanel($('bankPanel'), { game: 'sigma' });
 // Pick up changes made elsewhere (the bank, another game, the back button).

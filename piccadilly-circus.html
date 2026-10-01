@@ -45,7 +45,7 @@ button { font: inherit; color: inherit; border: none; background: none; cursor: 
 #machine {
   container-type: inline-size;
   position: relative;
-  width: min(100vw, calc(100dvh / 1.8), 480px);
+  width: min(100vw, calc((100dvh - var(--gc-nav-h, 0px)) / 1.8), 480px);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -250,7 +250,7 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
 .user-tag { position: absolute; left: 0; top: 12.2cqw; font-size: 2.6cqw; }
 .sheet .mb-panel { --mb-accent: var(--blue); }
 </style>
-<script src="medal-bank.js?v=8"></script>
+<script src="medal-bank.js?v=10"></script>
 </head>
 <body>
 <div id="machine">
@@ -910,6 +910,7 @@ $('helpBtn').onclick = openModal;
 $('closeBtn').onclick = () => modal.classList.remove('show');
 modal.onclick = e => { if (e.target === modal) modal.classList.remove('show'); };
 $('soundBtn').onclick = () => { st.sound = !st.sound; openModal(); save(); };
+MedalBank.mountNav('piccadilly');
 MedalBank.mountBadge($('userTag'));
 MedalBank.mountPanel($('bankPanel'), { game: 'piccadilly' });
 $('resetBtn').onclick = () => {

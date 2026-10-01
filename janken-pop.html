@@ -48,7 +48,7 @@ body {
 #machine {
   container-type: inline-size;
   position: relative;
-  width: min(100vw, calc(100dvh / 1.78), 500px);
+  width: min(100vw, calc((100dvh - var(--gc-nav-h, 0px)) / 1.92), 500px);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -337,7 +337,7 @@ header { position: relative; text-align: center; line-height: .9; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 20px; margin-top: 6px; }
 .progress { font-size: 15px; margin-bottom: 4px; }
 </style>
-<script src="medal-bank.js?v=8"></script>
+<script src="medal-bank.js?v=10"></script>
 </head>
 <body>
 <div id="machine">
@@ -940,6 +940,7 @@ handBtns.forEach(b => b.addEventListener('pointerdown', e => {
 }));
 $('howtoBtn').addEventListener('click', () => openModal('howto'));
 $('gearBtn').addEventListener('click', () => { $('settingsTitle').textContent = MedalBank.t('せってい', 'Settings'); openModal('settings'); });
+MedalBank.mountNav('janken');
 MedalBank.mountBadge($('userTag'));
 MedalBank.mountPanel($('bankPanel'), { game: 'janken' });
 // Pick up changes made elsewhere (the bank, another game, the back button).

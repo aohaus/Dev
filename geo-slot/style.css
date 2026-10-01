@@ -203,3 +203,6 @@ button:disabled { cursor: default; }
   .bulbs, .machine.win .cabinet, .jackpot-box, .jackpot-title { animation: none; }
   .reel.spinning .strip { filter: none; }
 }
+
+/* Leave a little air under the shared Game Centre bar. */
+:root.has-gc-nav .machine { margin-top: 10px; }
