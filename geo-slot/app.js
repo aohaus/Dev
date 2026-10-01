@@ -1,7 +1,8 @@
 /* GEO SLOT — a medal slot machine for learning world geography.
  *
- * Three reels: flag, country name, map silhouette. Line all three up on the
- * same country for a JACKPOT. HOLD keeps a reel still on the next spin.
+ * Three reels: flag, country name, map outline. Each reel shows five rows;
+ * five paylines (three across, two diagonals) cross the middle three. Get the
+ * same country's flag, name and map on a line for a JACKPOT.
  *
  * Plain browser JavaScript, no build step. Sections:
  *   1. DATA     — regions and their countries (add new regions here)
@@ -9,7 +10,7 @@
  *   3. WALLET   — the medals in hand (the Game Centre's shared cup)
  *   4. SOUND    — tiny Web Audio synth
  *   5. REELS    — building and spinning the reel strips
- *   6. GAME     — play, hold, results
+ *   6. GAME     — paylines, play, results
  */
 (() => {
 'use strict';
@@ -18,34 +19,25 @@
 // 1. DATA
 // ============================================================
 // Each region is a list of countries. To add a region, add another entry to
-// REGIONS with the same shape:
-//   { id, name, flag, capital, color, shape }
-// `shape` is the silhouette: SVG markup drawn inside a 100×100 box. These are
-// simple placeholders for now — swap in real map outlines later.
+// REGIONS with the same fields:
+//   { id, name, flag, capital, color }
+// The MAP reel draws each country's real outline from shapes.js (keyed by id,
+// generated from Natural Earth). A country can also carry its own `shape`
+// (SVG markup in a 100×100 box) if it isn't in shapes.js.
 const REGIONS = {
   asean: {
     name: 'ASEAN',
     countries: [
-      { id: 'brunei',      name: 'Brunei',      flag: '🇧🇳', capital: 'Bandar Seri Begawan', color: '#ffd23f',
-        shape: '<path d="M30 30 L62 22 L74 48 L58 52 L60 76 L36 78 L40 52 L26 48 Z"/>' },
-      { id: 'cambodia',    name: 'Cambodia',    flag: '🇰🇭', capital: 'Phnom Penh',          color: '#ff5c8a',
-        shape: '<path d="M18 40 Q30 18 58 20 Q84 22 84 48 Q80 74 56 80 Q32 82 22 64 Z"/>' },
-      { id: 'indonesia',   name: 'Indonesia',   flag: '🇮🇩', capital: 'Jakarta',             color: '#ff6b3d',
-        shape: '<ellipse cx="16" cy="40" rx="12" ry="7" transform="rotate(35 16 40)"/><ellipse cx="38" cy="66" rx="16" ry="5"/><ellipse cx="44" cy="36" rx="12" ry="11"/><path d="M62 30 L70 28 L66 44 L74 52 L64 54 Z"/><ellipse cx="88" cy="50" rx="10" ry="7"/><ellipse cx="66" cy="70" rx="7" ry="3"/>' },
-      { id: 'laos',        name: 'Laos',        flag: '🇱🇦', capital: 'Vientiane',           color: '#3dd6ff',
-        shape: '<path d="M26 10 L46 14 L50 34 L66 44 L80 66 L74 90 L62 86 L60 66 L42 50 L36 34 L24 30 Z"/>' },
-      { id: 'malaysia',    name: 'Malaysia',    flag: '🇲🇾', capital: 'Kuala Lumpur',        color: '#7dff6a',
-        shape: '<path d="M10 22 L22 24 L28 46 L36 70 L30 76 L20 62 L14 42 Z"/><path d="M50 52 L66 34 L80 26 L92 34 L84 50 L66 58 Z"/>' },
-      { id: 'myanmar',     name: 'Myanmar',     flag: '🇲🇲', capital: 'Naypyidaw',           color: '#b07bff',
-        shape: '<path d="M44 4 L60 10 L66 30 L62 46 L50 52 L48 64 L56 80 L52 96 L44 86 L40 66 L28 58 L26 36 L36 20 Z"/>' },
-      { id: 'philippines', name: 'Philippines', flag: '🇵🇭', capital: 'Manila',              color: '#4f8bff',
-        shape: '<path d="M40 6 L54 10 L52 30 L58 42 L48 44 L42 28 Z"/><ellipse cx="50" cy="56" rx="6" ry="4"/><ellipse cx="64" cy="54" rx="5" ry="6"/><path d="M22 52 L30 56 L18 72 L12 70 Z"/><path d="M54 70 L74 66 L78 86 L64 92 L56 84 Z"/>' },
-      { id: 'singapore',   name: 'Singapore',   flag: '🇸🇬', capital: 'Singapore',           color: '#ff3b3b',
-        shape: '<path d="M18 50 Q30 32 56 34 Q80 36 84 50 Q78 64 54 66 Q30 66 18 50 Z"/>' },
-      { id: 'thailand',    name: 'Thailand',    flag: '🇹🇭', capital: 'Bangkok',             color: '#ffa53b',
-        shape: '<path d="M30 6 L52 10 L60 26 L76 30 L74 50 L56 52 L50 60 L44 58 L46 76 L54 92 L46 94 L36 76 L38 56 L30 40 L24 22 Z"/>' },
-      { id: 'vietnam',     name: 'Vietnam',     flag: '🇻🇳', capital: 'Hanoi',               color: '#ff4fd8',
-        shape: '<path d="M30 6 L56 8 L48 22 L44 36 L58 50 L66 66 L58 82 L40 94 L36 86 L48 74 L50 62 L36 46 L32 30 Z"/>' },
+      { id: 'brunei',      name: 'Brunei',      flag: '🇧🇳', capital: 'Bandar Seri Begawan', color: '#ffd23f' },
+      { id: 'cambodia',    name: 'Cambodia',    flag: '🇰🇭', capital: 'Phnom Penh',          color: '#ff5c8a' },
+      { id: 'indonesia',   name: 'Indonesia',   flag: '🇮🇩', capital: 'Jakarta',             color: '#ff6b3d' },
+      { id: 'laos',        name: 'Laos',        flag: '🇱🇦', capital: 'Vientiane',           color: '#3dd6ff' },
+      { id: 'malaysia',    name: 'Malaysia',    flag: '🇲🇾', capital: 'Kuala Lumpur',        color: '#7dff6a' },
+      { id: 'myanmar',     name: 'Myanmar',     flag: '🇲🇲', capital: 'Naypyidaw',           color: '#b07bff' },
+      { id: 'philippines', name: 'Philippines', flag: '🇵🇭', capital: 'Manila',              color: '#4f8bff' },
+      { id: 'singapore',   name: 'Singapore',   flag: '🇸🇬', capital: 'Singapore',           color: '#ff3b3b' },
+      { id: 'thailand',    name: 'Thailand',    flag: '🇹🇭', capital: 'Bangkok',             color: '#ffa53b' },
+      { id: 'vietnam',     name: 'Vietnam',     flag: '🇻🇳', capital: 'Hanoi',               color: '#ff4fd8' },
     ],
   },
   // europe: { name: 'Europe', countries: [ ... ] },
@@ -59,7 +51,7 @@ const CONFIG = {
   region: 'asean',
   startMedals: 100,   // only used if the page runs without ../medal-bank.js
   cost: 10,
-  jackpot: 100,
+  jackpot: 100,       // per winning line; all 5 lines are played every spin
   saveKey: 'geo-slot-v1',
   // Reel spin times (ms). Reels stop one after another, left to right.
   spinMs: [1200, 1700, 2200],
@@ -129,7 +121,6 @@ const sound = (() => {
     coin() { tone(1320, 0.06); tone(1760, 0.1, { at: 0.05 }); },
     tick() { tone(900 + Math.random() * 300, 0.025, { vol: 0.03 }); },
     stop() { tone(220, 0.08, { type: 'triangle', vol: 0.12 }); },
-    hold(on) { tone(on ? 988 : 660, 0.07, { vol: 0.05 }); },
     deny() { tone(150, 0.2, { type: 'sawtooth', vol: 0.05 }); },
     lose() { [392, 330, 262].forEach((f, i) => tone(f, 0.18, { type: 'triangle', vol: 0.07, at: i * 0.14 })); },
     jackpot() {
@@ -143,49 +134,68 @@ const sound = (() => {
 // ============================================================
 // 5. REELS
 // ============================================================
+// Each reel is a fixed strip holding every country once, in its own order
+// (like a real slot reel), so what you see above and below the middle is
+// what really comes next. Five rows show through each window: the middle
+// three are on the paylines, the outer two are a faint peek.
 const $ = id => document.getElementById(id);
 const countries = () => REGIONS[CONFIG.region].countries;
-const randomIndex = () => Math.floor(Math.random() * countries().length);
+const ROWS = 5, MID = 2;   // row 2 of 0..4 is the centre line
 
 // What each reel shows for a country.
 const FACES = [
   c => `<span class="face flag" role="img" aria-label="${c.name} flag">${c.flag}</span>`,
   c => `<span class="face name">${c.name}</span>`,
-  c => `<svg class="face shape" viewBox="0 0 100 100" role="img" aria-label="${c.name} map" style="--c:${c.color}">${c.shape}</svg>`,
+  c => `<svg class="face shape" viewBox="0 0 100 100" role="img" aria-label="${c.name} map" style="--c:${c.color}">${outline(c)}</svg>`,
 ];
-
-const reels = [0, 1, 2].map(i => ({
-  el: $(`reel${i}`),
-  strip: $(`reel${i}`).querySelector('.strip'),
-  index: randomIndex(),   // the country this reel is showing
-  held: false,
-}));
-
-function cell(reelNo, idx) { return `<div class="cell">${FACES[reelNo](countries()[idx])}</div>`; }
-function showStill(r, reelNo) {
-  r.strip.style.transition = 'none';
-  r.strip.style.transform = 'translateY(0)';
-  r.strip.innerHTML = cell(reelNo, r.index);
+function outline(c) {
+  const d = (window.GEO_SHAPES || {})[c.id];
+  return d ? `<path d="${d}"/>` : (c.shape || '<circle cx="50" cy="50" r="30"/>');
 }
 
-// Spin one reel to `target`: build a strip of random cells ending on the
-// target, then slide it up with an ease-out so it lands exactly there.
-function spinReel(r, reelNo, target, ms) {
+// Strip order: reel k steps through the countries by a different stride, so
+// the three reels are shuffled against each other and diagonals can line up.
+function makeStrip(k) {
+  const n = countries().length;
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  const strides = [];
+  for (let s = 1; s < n * 2 && strides.length < 3; s++) if (gcd(s, n) === 1 && !strides.includes(s % n || n)) strides.push(s % n || n);
+  const stride = strides[k % strides.length] || 1;
+  return Array.from({ length: n }, (_, i) => (i * stride + k * 3) % n);
+}
+
+const reels = [0, 1, 2].map(k => ({
+  el: $(`reel${k}`),
+  strip: $(`reel${k}`).querySelector('.strip'),
+  order: makeStrip(k),
+  pos: Math.floor(Math.random() * countries().length),   // strip position on the centre row
+}));
+const at = (r, p) => r.order[((p % r.order.length) + r.order.length) % r.order.length];
+// Country index showing on a row (0 = top … 4 = bottom) of a reel.
+const shown = (r, row) => at(r, r.pos + row - MID);
+
+function cell(k, idx) { return `<div class="cell">${FACES[k](countries()[idx])}</div>`; }
+function showStill(r, k) {
+  r.strip.style.transition = 'none';
+  r.strip.style.transform = 'translateY(0)';
+  r.strip.innerHTML = Array.from({ length: ROWS }, (_, row) => cell(k, shown(r, row))).join('');
+}
+
+// Spin a reel forward to strip position `target`, going round a few times.
+// The strip is laid out in real order, so it lands showing true neighbours.
+function spinReel(r, k, target, ms) {
   return new Promise(resolve => {
-    const n = countries().length;
-    const count = 14 + reelNo * 6;   // later reels travel further, so they stop later
-    const idxs = [r.index];
-    for (let i = 1; i < count; i++) idxs.push(Math.floor(Math.random() * n));
-    idxs.push(target);
+    const n = r.order.length;
+    const steps = (2 + k) * n + (((target - r.pos) % n) + n) % n;
+    const first = r.pos - MID;
     r.strip.style.transition = 'none';
     r.strip.style.transform = 'translateY(0)';
-    r.strip.innerHTML = idxs.map(i => cell(reelNo, i)).join('');
+    r.strip.innerHTML = Array.from({ length: steps + ROWS }, (_, i) => cell(k, at(r, first + i))).join('');
     r.el.classList.add('spinning');
-    const h = r.el.clientHeight;
+    const h = r.strip.firstElementChild.offsetHeight;
     void r.strip.offsetHeight;   // apply the start position before animating
     r.strip.style.transition = `transform ${ms}ms cubic-bezier(.15,.6,.25,1.02)`;
-    r.strip.style.transform = `translateY(${-(idxs.length - 1) * h}px)`;
-    // Ticking sound while the strip is moving fast.
+    r.strip.style.transform = `translateY(${-steps * h}px)`;
     const ticker = setInterval(sound.tick, 70);
     setTimeout(() => clearInterval(ticker), ms * 0.75);
     // Finish on transitionend, with a timer as backup (a background tab may skip the event).
@@ -194,9 +204,9 @@ function spinReel(r, reelNo, target, ms) {
       if (finished) return;
       finished = true;
       r.strip.removeEventListener('transitionend', done);
-      r.index = target;
+      r.pos = target;
       r.el.classList.remove('spinning');
-      showStill(r, reelNo);
+      showStill(r, k);
       sound.stop();
       resolve();
     };
@@ -208,6 +218,15 @@ function spinReel(r, reelNo, target, ms) {
 // ============================================================
 // 6. GAME
 // ============================================================
+// The five paylines, as the row (0..4) they cross on each reel.
+const LINES = [
+  { no: 1, rows: [2, 2, 2] },   // middle
+  { no: 2, rows: [1, 1, 1] },   // top
+  { no: 3, rows: [3, 3, 3] },   // bottom
+  { no: 4, rows: [1, 2, 3] },   // diagonal ↘
+  { no: 5, rows: [3, 2, 1] },   // diagonal ↗
+];
+
 const state = {
   medals: wallet.load(),
   busy: false,
@@ -220,15 +239,7 @@ function setMessage(text, kind = '') {
 }
 function render() {
   $('medals').textContent = state.medals;
-  const allHeld = reels.every(r => r.held);
-  $('play').disabled = state.busy || state.medals < CONFIG.cost || allHeld;
-  reels.forEach((r, i) => {
-    const b = $(`hold${i}`);
-    b.classList.toggle('on', r.held);
-    b.setAttribute('aria-pressed', r.held);
-    b.disabled = state.busy;
-    r.el.classList.toggle('held', r.held);
-  });
+  $('play').disabled = state.busy || state.medals < CONFIG.cost;
   $('refill').hidden = state.busy || state.medals >= CONFIG.cost;
   $('refill').textContent = wallet.shared ? 'Out of medals — get some at the MEDAL BANK 🏦' : `Out of medals — get ${CONFIG.startMedals} more`;
   if (MB) {
@@ -236,34 +247,42 @@ function render() {
     $('player').textContent = u ? `👤 ${u.name}` : '👤 Guest';
   }
 }
+function lightLines(wins) {
+  document.querySelectorAll('.lines [data-line]').forEach(el => el.classList.toggle('hit', wins.some(w => w.line.no === +el.dataset.line)));
+  document.querySelectorAll('.reel .cell').forEach(el => el.classList.remove('hit'));
+  for (const w of wins) w.line.rows.forEach((row, k) => reels[k].strip.children[row]?.classList.add('hit'));
+}
 
-function toggleHold(i) {
-  if (state.busy) return;
-  reels[i].held = !reels[i].held;
-  sound.hold(reels[i].held);
-  if (reels.every(r => r.held)) setMessage('Release at least one reel to spin!', 'warn');
-  else setMessage(`Cost: ${CONFIG.cost} medals per spin`);
-  render();
+// Which lines have the same country on all three reels.
+function findWins() {
+  const wins = [];
+  for (const line of LINES) {
+    const [a, b, c] = line.rows.map((row, k) => shown(reels[k], row));
+    if (a === b && b === c) wins.push({ line, country: countries()[a] });
+  }
+  return wins;
 }
 
 async function play() {
   if (state.busy) return;
   if (state.medals < CONFIG.cost) { sound.deny(); setMessage('Not enough medals!', 'warn'); return; }
-  if (reels.every(r => r.held)) { sound.deny(); return; }
 
   state.busy = true;
   state.medals -= CONFIG.cost;
   wallet.save(state.medals);
   sound.coin();
   setMessage('Spinning…');
+  lightLines([]);
   $('machine').classList.remove('win');
   render();
 
-  // Spin every reel that isn't held; they stop left to right.
-  await Promise.all(reels.map((r, i) => r.held ? null : spinReel(r, i, randomIndex(), CONFIG.spinMs[i])));
+  // All three reels spin and stop left to right.
+  const n = countries().length;
+  await Promise.all(reels.map((r, k) => spinReel(r, k, Math.floor(Math.random() * n), CONFIG.spinMs[k])));
 
-  const [a, b, c] = reels.map(r => r.index);
-  if (a === b && b === c) jackpot(countries()[a]);
+  const wins = findWins();
+  lightLines(wins);
+  if (wins.length) jackpot(wins);
   else {
     sound.lose();
     setMessage(near(), 'lose');
@@ -272,27 +291,30 @@ async function play() {
   render();
 }
 
-// A friendly hint after a miss: point out a pair the player could HOLD.
+// A friendly hint after a miss: point out a line that was one away.
 function near() {
-  const idx = reels.map(r => r.index);
-  const list = countries();
-  for (const [x, y] of [[0, 1], [0, 2], [1, 2]]) {
-    if (idx[x] === idx[y]) return `So close! Two reels show ${list[idx[x]].name}. Try HOLD on them!`;
+  for (const line of LINES) {
+    const idx = line.rows.map((row, k) => shown(reels[k], row));
+    if (idx[0] === idx[1] || idx[1] === idx[2] || idx[0] === idx[2]) {
+      const two = idx[0] === idx[1] || idx[0] === idx[2] ? idx[0] : idx[1];
+      return `So close! Two ${countries()[two].name} on line ${line.no}. Try again!`;
+    }
   }
   return 'No match — try again!';
 }
 
-function jackpot(country) {
-  state.medals += CONFIG.jackpot;
+function jackpot(wins) {
+  const total = CONFIG.jackpot * wins.length;
+  state.medals += total;
   wallet.save(state.medals);
   sound.jackpot();
   $('machine').classList.add('win');
-  $('jackpotCountry').textContent = `${country.flag} ${country.name}`;
-  $('jackpotFact').textContent = `The capital of ${country.name} is ${country.capital}.`;
-  $('jackpotAmount').textContent = `+${CONFIG.jackpot} medals`;
+  $('jackpotCountry').innerHTML = wins.map(w => `<div>${w.country.flag} ${w.country.name} <small>· line ${w.line.no}</small></div>`).join('');
+  const seen = [...new Map(wins.map(w => [w.country.id, w.country])).values()];
+  $('jackpotFact').innerHTML = seen.map(c => `<div>The capital of ${c.name} is ${c.capital}.</div>`).join('');
+  $('jackpotAmount').textContent = wins.length > 1 ? `${wins.length} lines! +${total} medals` : `+${total} medals`;
   $('jackpot').hidden = false;
-  setMessage(`JACKPOT! ${country.name}! +${CONFIG.jackpot} medals`, 'win');
-  reels.forEach(r => { r.held = false; });   // a fresh start after a win
+  setMessage(`JACKPOT! ${wins.map(w => w.country.name).join(' & ')}! +${total} medals`, 'win');
 }
 
 function closeJackpot() {
@@ -310,10 +332,7 @@ function refill() {
 }
 
 // ---------------- wiring ----------------
-reels.forEach((r, i) => {
-  showStill(r, i);
-  $(`hold${i}`).addEventListener('click', () => toggleHold(i));
-});
+reels.forEach((r, k) => showStill(r, k));
 $('play').addEventListener('click', play);
 $('refill').addEventListener('click', refill);
 $('jackpot').addEventListener('click', closeJackpot);
@@ -327,7 +346,6 @@ document.addEventListener('keydown', e => {
   if (e.repeat) return;
   if (!$('jackpot').hidden) { if (['Enter', ' ', 'Escape'].includes(e.key)) { e.preventDefault(); closeJackpot(); } return; }
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); play(); }
-  else if (['1', '2', '3'].includes(e.key)) toggleHold(Number(e.key) - 1);
 });
 
 // Pick up changes made elsewhere (the bank, another game, the back button).
@@ -340,9 +358,9 @@ if (MB) MB.onChange(syncWallet);
 addEventListener('pageshow', syncWallet);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) syncWallet(); });
 
-setMessage(`Cost: ${CONFIG.cost} medals per spin`);
+setMessage(`${CONFIG.cost} medals a spin · 5 lines · each line +${CONFIG.jackpot}`);
 render();
 
 // For testing in the browser console.
-window.geoSlot = { REGIONS, CONFIG, state, reels };
+window.geoSlot = { REGIONS, CONFIG, state, reels, LINES, shown, findWins };
 })();

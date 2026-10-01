@@ -29,16 +29,15 @@
 
   <section class="cabinet" aria-label="Slot reels">
     <div class="labels" aria-hidden="true"><span>FLAG</span><span>COUNTRY</span><span>MAP</span></div>
-    <div class="reels">
-      <div class="reel" id="reel0"><div class="strip"></div></div>
-      <div class="reel" id="reel1"><div class="strip"></div></div>
-      <div class="reel" id="reel2"><div class="strip"></div></div>
-      <div class="payline" aria-hidden="true"></div>
-    </div>
-    <div class="holds">
-      <button class="hold" id="hold0" aria-pressed="false">HOLD</button>
-      <button class="hold" id="hold1" aria-pressed="false">HOLD</button>
-      <button class="hold" id="hold2" aria-pressed="false">HOLD</button>
+    <div class="board">
+      <div class="nums left" aria-hidden="true"><span><b class="l2" data-line="2">2</b><b class="l4" data-line="4">4</b></span><span><b class="l1" data-line="1">1</b></span><span><b class="l3" data-line="3">3</b><b class="l5" data-line="5">5</b></span></div>
+      <div class="reels">
+        <div class="reel" id="reel0"><div class="strip"></div></div>
+        <div class="reel" id="reel1"><div class="strip"></div></div>
+        <div class="reel" id="reel2"><div class="strip"></div></div>
+        <svg class="lines" viewBox="0 0 300 500" preserveAspectRatio="none" aria-hidden="true"><polyline data-line="1" class="l1" points="0,250 50,250 150,250 250,250 300,250"/><polyline data-line="2" class="l2" points="0,150 50,150 150,150 250,150 300,150"/><polyline data-line="3" class="l3" points="0,350 50,350 150,350 250,350 300,350"/><polyline data-line="4" class="l4" points="0,150 50,150 150,250 250,350 300,350"/><polyline data-line="5" class="l5" points="0,350 50,350 150,250 250,150 300,150"/></svg>
+      </div>
+      <div class="nums right" aria-hidden="true"><span><b class="l2" data-line="2">2</b><b class="l5" data-line="5">5</b></span><span><b class="l1" data-line="1">1</b></span><span><b class="l3" data-line="3">3</b><b class="l4" data-line="4">4</b></span></div>
     </div>
   </section>
 
@@ -53,7 +52,7 @@
   </section>
   <button class="refill" id="refill" hidden>Out of medals — get 100 more</button>
 
-  <p class="hint">Space = Play · 1 / 2 / 3 = Hold · 3 of the same country = JACKPOT +100<br>Medals in hand are shared with every Game Centre game · 🏦 = MEDAL BANK</p>
+  <p class="hint">Space = Play · Every spin plays 5 lines: 3 across + 2 diagonals · Flag, name and map of the same country on a line = JACKPOT +100<br>Medals in hand are shared with every Game Centre game · 🏦 = MEDAL BANK</p>
 </main>
 
 <div class="jackpot" id="jackpot" hidden role="dialog" aria-label="Jackpot">
@@ -66,6 +65,7 @@
   </div>
 </div>
 
+<script src="shapes.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
