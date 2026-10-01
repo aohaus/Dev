@@ -441,7 +441,7 @@ function transferUrl(code) {
 // MEDAL BANK server (server/medal-bank-worker.js): the same name + password
 // works on any device. Medals in hand, cards and service medals stay on the
 // device. Without an address everything stays on this device as before.
-const SERVER_URL = '';   // e.g. 'https://medal-bank.example.workers.dev'
+const SERVER_URL = 'https://medal-bank.aohaus.workers.dev';
 const server = () => { try { return localStorage.getItem('mb-server') || SERVER_URL; } catch (e) { return SERVER_URL; } };
 const online = () => !!server();
 
