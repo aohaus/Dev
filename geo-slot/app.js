@@ -6,7 +6,7 @@
  * Plain browser JavaScript, no build step. Sections:
  *   1. DATA     — regions and their countries (add new regions here)
  *   2. CONFIG   — costs, payouts, timings
- *   3. WALLET   — the medals in hand (saved in this browser)
+ *   3. WALLET   — the medals in hand (the Game Centre's shared cup)
  *   4. SOUND    — tiny Web Audio synth
  *   5. REELS    — building and spinning the reel strips
  *   6. GAME     — play, hold, results
@@ -57,7 +57,7 @@ const REGIONS = {
 // ============================================================
 const CONFIG = {
   region: 'asean',
-  startMedals: 100,
+  startMedals: 100,   // only used if the page runs without ../medal-bank.js
   cost: 10,
   jackpot: 100,
   saveKey: 'geo-slot-v1',
@@ -66,19 +66,37 @@ const CONFIG = {
 };
 
 // ============================================================
-// 3. WALLET — medals in hand, saved in this browser
+// 3. WALLET — medals in hand
 // ============================================================
+// In the Game Centre the medals in hand are one cup shared by every game
+// (../medal-bank.js); you top it up at the MEDAL BANK. Opened on its own,
+// the game falls back to its own medals saved in this browser.
+const MB = window.MedalBank;
 const wallet = {
+  shared: !!MB,
   load() {
+    if (MB) return MB.hand();
     try {
       const n = Number(JSON.parse(localStorage.getItem(CONFIG.saveKey) || 'null')?.medals);
       return Number.isFinite(n) && n >= 0 ? Math.floor(n) : CONFIG.startMedals;
     } catch (e) { return CONFIG.startMedals; }
   },
   save(n) {
+    if (MB) { MB.setHand(n); return; }
     try { localStorage.setItem(CONFIG.saveKey, JSON.stringify({ medals: n })); } catch (e) {}
   },
 };
+// When GEO SLOT first joins the shared cup, medals won above its free 100 start move into the cup.
+if (MB) {
+  try {
+    const old = JSON.parse(localStorage.getItem(CONFIG.saveKey) || 'null');
+    if (old && !old.joined) {
+      const won = Math.max(0, Math.floor(Number(old.medals) || 0) - CONFIG.startMedals);
+      if (won > 0) MB.setHand(MB.hand() + won);
+      localStorage.setItem(CONFIG.saveKey, JSON.stringify({ joined: true }));
+    }
+  } catch (e) {}
+}
 
 // ============================================================
 // 4. SOUND — synthesized with the Web Audio API (no files)
@@ -212,6 +230,11 @@ function render() {
     r.el.classList.toggle('held', r.held);
   });
   $('refill').hidden = state.busy || state.medals >= CONFIG.cost;
+  $('refill').textContent = wallet.shared ? 'Out of medals — get some at the MEDAL BANK 🏦' : `Out of medals — get ${CONFIG.startMedals} more`;
+  if (MB) {
+    const u = MB.current();
+    $('player').textContent = u ? `👤 ${u.name}` : '👤 Guest';
+  }
 }
 
 function toggleHold(i) {
@@ -278,6 +301,7 @@ function closeJackpot() {
 }
 
 function refill() {
+  if (wallet.shared) { location.href = '../medal-bank.html'; return; }
   state.medals = CONFIG.startMedals;
   wallet.save(state.medals);
   sound.coin();
@@ -305,6 +329,16 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); play(); }
   else if (['1', '2', '3'].includes(e.key)) toggleHold(Number(e.key) - 1);
 });
+
+// Pick up changes made elsewhere (the bank, another game, the back button).
+function syncWallet() {
+  if (state.busy) return;
+  state.medals = wallet.load();
+  render();
+}
+if (MB) MB.onChange(syncWallet);
+addEventListener('pageshow', syncWallet);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncWallet(); });
 
 setMessage(`Cost: ${CONFIG.cost} medals per spin`);
 render();
