@@ -58,7 +58,7 @@ const CONFIG = {
   cost: 10,
   jackpot: 100,       // per winning line; all 5 lines are played every spin
   winChance: 0.07,    // chance a spin is drawn as a win (catch every one → about 70% back)
-  chanceLamp: 0.5,    // how often a winning draw lights the CHANCE lamp
+  chanceLamp: 1,      // how often a winning draw lights the CHANCE lamp (1 = every time)
   speed: 5,           // reel speed, cells per second
   slip: 4,            // how many cells a reel may slide after STOP
   autoStopMs: 30000,  // reels left spinning stop by themselves after this
