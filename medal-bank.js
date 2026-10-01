@@ -13,6 +13,9 @@
 'use strict';
 
 const KEY = 'medal-bank-v1';
+// Where the site's top-level pages live (medal-bank.js sits next to them), so
+// links work from pages in subfolders too (e.g. geo-slot/).
+const BASE = (() => { try { return new URL('.', document.currentScript.src).href; } catch (e) { return ''; } })();
 const LOG_MAX = 500;
 const EXPORT_LOG_MAX = 80;   // keeps transfer codes small enough for a QR code
 const CODE_PREFIX = 'MB1.';
@@ -603,6 +606,33 @@ async function addAdjust(n, note = '') {
   await authed('adjust', { n, note });
 }
 
+// ---------------- UI: shared navigation bar ----------------
+// A slim bar across the top of every game: Game Centre, the games, the bank.
+// Pages that size themselves to the screen subtract var(--gc-nav-h).
+const NAV_GAMES = [
+  ['piccadilly', '🎡', 'piccadilly-circus.html', 'ピカデリー', 'Piccadilly'],
+  ['sigma', '🃏', 'sigma-poker.html', 'シグマ', 'Sigma'],
+  ['janken', '✊', 'janken-pop.html', 'じゃんけん', 'Janken'],
+  ['geo', '🌏', 'geo-slot/', 'ジオ', 'Geo'],
+];
+function mountNav(currentGame) {
+  if (document.querySelector('.gc-nav')) return;
+  const nav = document.createElement('nav');
+  nav.className = 'gc-nav';
+  nav.setAttribute('aria-label', 'Game Centre');
+  const draw = () => {
+    const u = current();
+    nav.innerHTML = `<a class="gc-home" href="${BASE}game-center.html" aria-label="Game Centre">🏠 <span>Game Centre</span></a>
+      <span class="gc-games">${NAV_GAMES.map(([id, icon, url, ja, en]) =>
+        `<a href="${BASE}${url}" class="${id === currentGame ? 'on' : ''}" title="${t(ja, en)}" aria-label="${t(ja, en)}"${id === currentGame ? ' aria-current="page"' : ''}>${icon}<small>${t(ja, en)}</small></a>`).join('')}</span>
+      <a class="gc-bank" href="${BASE}medal-bank.html" title="MEDAL BANK" aria-label="MEDAL BANK">🏦<small>${u ? esc(u.name) : t('バンク', 'Bank')}</small></a>`;
+  };
+  draw();
+  listeners.add(draw);
+  document.body.prepend(nav);
+  document.documentElement.classList.add('has-gc-nav');
+}
+
 // ---------------- UI: name badge ----------------
 function mountBadge(el) {
   el.classList.add('mb-badge');
@@ -640,6 +670,26 @@ function mountPanel(el) {
 
 // ---------------- styles ----------------
 const css = `
+:root { --gc-nav-h: 0px; }
+:root.has-gc-nav { --gc-nav-h: calc(44px + env(safe-area-inset-top, 0px)); }
+:root.has-gc-nav body { padding-top: var(--gc-nav-h) !important; }
+.gc-nav { position: fixed; left: 0; right: 0; top: 0; z-index: 60; height: var(--gc-nav-h);
+  padding: env(safe-area-inset-top, 0px) max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
+  display: flex; align-items: center; gap: 6px; box-sizing: border-box;
+  background: rgba(8, 5, 18, .88); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid #ff4fa3; box-shadow: 0 0 12px rgba(255,79,163,.35);
+  font: 800 13px/1 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', system-ui, sans-serif; color: #fff; }
+.gc-nav a { color: inherit; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 4px;
+  height: 34px; border-radius: 10px; white-space: nowrap; }
+.gc-nav a:active { transform: translateY(1px); }
+.gc-home { padding: 0 10px; background: linear-gradient(#3a1d63, #1d1038); border: 1px solid #ff4fa3; color: #ffe4f2 !important;
+  text-shadow: 0 0 6px #ff4fa3; flex: 0 0 auto; }
+.gc-games { flex: 1 1 auto; display: flex; justify-content: center; gap: 6px; min-width: 0; }
+.gc-games a, .gc-bank { flex-direction: column; gap: 1px; min-width: 40px; padding: 0 6px; font-size: 18px; }
+.gc-nav small { font-size: 9px; font-weight: 800; opacity: .85; max-width: 56px; overflow: hidden; text-overflow: ellipsis; }
+.gc-games a.on { background: rgba(255,79,163,.25); box-shadow: inset 0 0 0 1px #ff4fa3; }
+.gc-bank { flex: 0 0 auto; background: rgba(255,177,59,.15); box-shadow: inset 0 0 0 1px rgba(255,177,59,.6); }
+@media (max-width: 380px) { .gc-home span { display: none; } .gc-games a { padding: 0 3px; min-width: 36px; } }
 .mb-badge { display: inline-block; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding: .1em .7em; border-radius: 99px; background: rgba(0,0,0,.45); color: #fff; font-weight: 800; line-height: 1.5;
   letter-spacing: 0; pointer-events: none; }
@@ -690,7 +740,7 @@ window.MedalBank = {
   GAMES, JANKEN_CARDS, TYPE_NAME, EFFECT, BankError,
   lang, setLang, t, typeName, gameName, noteText,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
-  hand, setHand, SERVICE_MEDALS, online, refresh, loginByName,
+  hand, setHand, SERVICE_MEDALS, online, refresh, loginByName, mountNav,
   deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
   getCards, setCards,

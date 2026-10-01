@@ -423,6 +423,7 @@ function refill() {
 }
 
 // ---------------- wiring ----------------
+if (MB && MB.mountNav) MB.mountNav('geo');
 reels.forEach(r => { drawStill(r); $(`stop${r.k}`).addEventListener('pointerdown', e => { e.preventDefault(); stopReel(r.k); }); });
 $('play').addEventListener('click', play);
 $('refill').addEventListener('click', refill);
