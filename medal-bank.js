@@ -445,7 +445,12 @@ function transferUrl(code) {
 // works on any device. Medals in hand, cards and service medals stay on the
 // device. Without an address everything stays on this device as before.
 const SERVER_URL = 'https://medal-bank.aohaus.workers.dev';
-const server = () => { try { return localStorage.getItem('mb-server') || SERVER_URL; } catch (e) { return SERVER_URL; } };
+// localStorage 'mb-server' overrides the address for testing ('off' = device-only mode).
+const server = () => {
+  let v = null;
+  try { v = localStorage.getItem('mb-server'); } catch (e) {}
+  return v === 'off' ? '' : (v || SERVER_URL);
+};
 const online = () => !!server();
 
 const API_MSG = {
@@ -547,7 +552,10 @@ async function logout() {
 }
 // Fetch the latest balance/history (another device may have changed it). Quiet when offline.
 async function refresh() {
-  if (!online() || !activeUser(read())) return;
+  const u = activeUser(read());
+  // A user who hasn't moved up to the server yet (no token) stays logged in on
+  // this device; they'll be asked for their password when they next use the bank.
+  if (!online() || !u || !u.token) return;
   try { await authed('me'); } catch (e) {}
 }
 async function renameUser(id, pin, name) {
