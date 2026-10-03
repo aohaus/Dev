@@ -102,9 +102,8 @@ button { cursor: pointer; }
 .games a b { display: block; font-size: 18px; }
 .home { display: block; margin-top: 10px; text-align: center; text-decoration: none; color: #fff; font-size: 14px;
   background: linear-gradient(#3a1d63, #170d2e); border-radius: 8px; padding: 10px; box-shadow: 0 0 10px rgba(255,79,163,.4); }
-.toprow { max-width: 460px; margin: -6px auto 8px; display: flex; justify-content: flex-end; }
-.langbtn { border: 1px solid rgba(255,255,255,.6); background: rgba(255,255,255,.85); color: #2c2400;
-  border-radius: 99px; padding: 4px 14px; font-size: 13px; font-weight: 900; }
+.lcd-top { display: flex; justify-content: flex-end; margin: -4px -4px 6px 0; }
+.mini.lang { background: #fff; border-color: #aab6c6; font-weight: 900; }
 .feet { display: flex; justify-content: space-between; padding: 0 22px; }
 .feet i { width: 26px; height: 8px; background: #222; border-radius: 0 0 4px 4px; }
 .note { max-width: 460px; margin: 14px auto 0; font-size: 12px; font-weight: 700; color: #2b3647; line-height: 1.6; }
@@ -182,10 +181,9 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=10"></script>
+<script src="medal-bank.js?v=11"></script>
 </head>
 <body>
-<div class="toprow"><button class="langbtn" id="langBtn">English</button></div>
 <div class="cab">
   <div class="cap"></div>
   <div class="marquee">
@@ -231,11 +229,9 @@ function renderStatic() {
   $('note').innerHTML = T(
     '手持ちメダルは全部のゲームで共通です。遊ぶ前にここで引き出し（またはサービスメダル）、帰るときに預けてください。<br>データはこの端末のブラウザに保存されます。別の端末へ移すときは「引き継ぎ」でコードを発行し、移動先でパスワード（3桁）と一緒に読み込んでください。発行した時点でこの端末のアカウントはロックされます。',
     'Medals in hand are shared by every game. Withdraw here (or take service medals) before playing, and deposit when you leave.<br>Data is saved in this browser on this device. To move to another device, issue a code under "Transfer" and load it there with the 3-digit password. Once issued, the account is locked on this device.');
-  $('langBtn').textContent = T('English', '日本語');
   $('games').innerHTML = Object.values(GAMES).map(g =>
     `<a href="${g.url}"><b>${g.url.startsWith('janken') ? '✊' : g.url.startsWith('sigma') ? '🃏' : g.url.startsWith('geo') ? '🌏' : '🎡'}</b>${esc(T(g.short, g.en || g.short))}</a>`).join('');
 }
-$('langBtn').addEventListener('click', () => MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
 
 // ---------------- view state ----------------
 const view = {
@@ -272,6 +268,7 @@ const noteText = n => MB.noteText ? MB.noteText(n) : n;
 const pin = (id, ph = T('3桁', '3 digits')) => `<input class="pin" id="${id}" type="password" inputmode="numeric" maxlength="3" placeholder="${ph}" autocomplete="off">`;
 
 // ---------------- screens ----------------
+const SEP = ' · ';
 function render(keepInputs = false) {
   const typed = {};
   if (keepInputs) lcd.querySelectorAll('input[id], textarea[id], select[id]').forEach(el => { typed[el.id] = el.value; });
@@ -283,6 +280,8 @@ function render(keepInputs = false) {
   else h = u ? userScreen(u) : loginScreen();
   if (view.screen === 'home') h += specialBox();
   if (view.flash && Date.now() < view.flash.until) h += `<p class="flash ${view.flash.ok ? 'ok' : 'ng'}">${esc(view.flash.msg)}</p>`;
+  // The language switch sits on the screen itself so it's always in view.
+  h = `<div class="lcd-top"><button class="mini lang" data-a="lang">🌐 ${T('English', '日本語')}</button></div>` + h;
   lcd.innerHTML = h;
   for (const [id, v] of Object.entries(typed)) { const el = lcd.querySelector('#' + id); if (el) el.value = v; }
   if (view.code) drawQr();
@@ -304,8 +303,8 @@ function counter(u) {
   if (u) h += `<div><span>${T('預け入れ残高', 'Balance')}</span><output>${u.balance.toLocaleString()}</output></div>`;
   h += `</div>`;
   if (u) h += `
-    <div class="row"><input id="depN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Medals')}"><button class="btn sub" data-a="allIn">${T('全部', 'All')}</button><button class="btn" data-a="dep">${T('預ける', 'Deposit')}</button></div>
-    <div class="row"><input id="wdN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Medals')}"><button class="btn sub" data-a="allOut">${T('全部', 'All')}</button><button class="btn" data-a="wd">${T('引き出す', 'Withdraw')}</button></div>`;
+    <div class="row"><input id="depN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Qty')}"><button class="btn sub" data-a="allIn">${T('全部', 'All')}</button><button class="btn" data-a="dep">${T('預ける', 'Deposit')}</button></div>
+    <div class="row"><input id="wdN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Qty')}"><button class="btn sub" data-a="allOut">${T('全部', 'All')}</button><button class="btn" data-a="wd">${T('引き出す', 'Withdraw')}</button></div>`;
   h += `<div class="row"><button class="btn svc" data-a="svc" ${svc ? '' : 'disabled'}>${
     sp ? T(`サービスメダル +${MB.SERVICE_MEDALS}（きょうは何回でも！）`, `Service medals +${MB.SERVICE_MEDALS} (unlimited today!)`)
     : svc ? T(`サービスメダル +${MB.SERVICE_MEDALS}（1日1回）`, `Service medals +${MB.SERVICE_MEDALS} (once a day)`)
@@ -380,13 +379,13 @@ function logTab() {
         <div class="edit">
           <div class="row"><select id="eType">${Object.keys(TYPE_NAME).map(k => `<option value="${k}" ${k === e.type ? 'selected' : ''}>${typeName(k)}</option>`).join('')}</select>
             <input id="eN" type="number" min="0" inputmode="numeric" value="${e.n}"></div>
-          <div class="row"><input id="eNote" type="text" maxlength="40" placeholder="${T('メモ', 'Note')}" value="${esc(e.note || '')}"></div>
+          <div class="row"><input id="eNote" type="text" maxlength="40" placeholder="${T('メモ', 'Note')}" value="${esc(noteText(e.note || ''))}" data-orig="${esc(e.note || '')}"></div>
           <div class="row"><button class="btn" data-a="saveEdit" data-id="${e.id}">${T('保存', 'Save')}</button><button class="btn sub" data-a="cancelEdit">${T('やめる', 'Cancel')}</button><button class="btn ng" data-a="delEntry" data-id="${e.id}">${T('削除', 'Delete')}</button></div>
           <p class="dim">${T('記録を変えると、残高もそれに合わせて計算しなおします。', 'Changing a record recalculates the balance to match.')}</p>
         </div></li>`;
     } else {
       h += `<li data-a="edit" data-id="${e.id}"><span class="ty ${e.type}">${typeName(e.type)}</span><span>${esc(gameName(e.game))}</span><span class="n ${cls}">${sign}</span>
-        <span class="sub">${fmtTime(e.t)} ・ ${T('残高', 'bal.')} ${e.bal}${e.note ? ' ・ ' + esc(noteText(e.note)) : ''}${e.edited ? T(' ・ 編集済み', ' ・ edited') : ''}</span></li>`;
+        <span class="sub">${fmtTime(e.t)}${SEP}${T('残高', 'bal.')} ${e.bal}${e.note ? SEP + esc(noteText(e.note)) : ''}${e.edited ? SEP + T('編集済み', 'edited') : ''}</span></li>`;
     }
   }
   h += `</ul><h3>${T('手動で追加（調整）', 'Add manually (adjustment)')}</h3>
@@ -400,7 +399,7 @@ function cardsTab() {
   const owned = MB.JANKEN_CARDS.filter(c => cards[c.id]).length;
   return `<p class="dim">${T(`じゃんけんポップのカード ${owned} / ${MB.JANKEN_CARDS.length} 種類`, `JANKEN POP! cards: ${owned} / ${MB.JANKEN_CARDS.length} kinds`)}</p>
     <div class="cards">${MB.JANKEN_CARDS.map(c => cards[c.id]
-      ? `<span>${c.em} ${esc(c.nm)} ×${cards[c.id]}</span>` : `<span class="off">？</span>`).join('')}</div>`;
+      ? `<span>${c.em} ${esc(T(c.nm, c.en || c.nm))} ×${cards[c.id]}</span>` : `<span class="off">？</span>`).join('')}</div>`;
 }
 
 function userTab(u) {
@@ -455,6 +454,7 @@ const actions = {
   async dep() { const n = +val('#depN'); await MB.deposit(n); flash(T(`${n} 枚 預けました`, `Deposited ${n}`), true); },
   async wd() { const n = +val('#wdN'); await MB.withdraw(n); flash(T(`${n} 枚 引き出しました`, `Withdrew ${n}`), true); },
   svc() { const n = MB.claimService(); flash(T(`サービスメダル ${n} 枚！手持ちに入りました`, `${n} service medals added to your hand!`), true); },
+  lang() { MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'); render(true); },
   pick(id) { view.pick = view.pick === id ? null : id; render(); $('pin')?.focus(); },
   async login() { const u = await MB.login(view.pick, val('#pin')); view.pick = null; view.code = null; view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
   async logout() { await MB.logout(); view.editing = null; render(); },
@@ -478,7 +478,10 @@ const actions = {
   edit(id) { view.editing = id; render(); },
   cancelEdit() { view.editing = null; render(); },
   async saveEdit(id) {
-    await MB.editLog(id, { type: val('#eType'), n: val('#eN'), note: val('#eNote') });
+    // A note shown translated and left as is keeps its original wording.
+    const noteEl = lcd.querySelector('#eNote');
+    const note = noteEl.value === noteText(noteEl.dataset.orig) ? noteEl.dataset.orig : noteEl.value;
+    await MB.editLog(id, { type: val('#eType'), n: val('#eN'), note });
     view.editing = null; flash(T('記録を更新しました', 'Record updated'), true);
   },
   async delEntry(id) {
