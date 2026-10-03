@@ -337,7 +337,7 @@ header { position: relative; text-align: center; line-height: .9; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 20px; margin-top: 6px; }
 .progress { font-size: 15px; margin-bottom: 4px; }
 </style>
-<script src="medal-bank.js?v=11"></script>
+<script src="medal-bank.js?v=12"></script>
 </head>
 <body>
 <div id="machine">
@@ -795,9 +795,14 @@ function beginThrow(aiko) {
   state = 'choose';
 }
 
+// The admin's difficulty setting (1-5, 3 = standard) sets the share of decided
+// throws you win; draws stay at ODDS.draw.
+const WIN_SHARE = [0.30, 0.37, 0.43, 0.50, 0.57];
 function rollOutcome() {
+  const decided = 1 - ODDS.draw;
+  const win = WIN_SHARE[(window.MedalBank && MedalBank.level ? MedalBank.level('janken') : 3) - 1] * decided;
   const r = Math.random();
-  return r < ODDS.win ? 'win' : r < ODDS.win + ODDS.draw ? 'draw' : 'lose';
+  return r < win ? 'win' : r < win + ODDS.draw ? 'draw' : 'lose';
 }
 
 async function throwHand(hand) {

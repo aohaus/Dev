@@ -250,7 +250,7 @@ header { position: relative; height: 15cqw; display: flex; justify-content: cent
 .user-tag { position: absolute; left: 0; top: 12.2cqw; font-size: 2.6cqw; }
 .sheet .mb-panel { --mb-accent: var(--blue); }
 </style>
-<script src="medal-bank.js?v=11"></script>
+<script src="medal-bank.js?v=12"></script>
 </head>
 <body>
 <div id="machine">
@@ -327,6 +327,11 @@ const COUNTS = { 2: 15, 4: 7, 6: 5, 8: 4, 10: 3, 30: 1, S: 1, 0: 24 };
 const OFFSETS = { 30: 0.0, S: 0.5, 2: 0.12, 4: 0.33, 6: 0.58, 8: 0.8, 10: 0.2, 0: 0.47 };
 // Odds lamp distributions for level 1..4 (multiplier = number × level).
 const DIST = { normal: [0.45, 0.30, 0.17, 0.08], event: [0.25, 0.30, 0.25, 0.20] };
+// Normal-mode odds by the admin's difficulty setting (1-5, 3 = standard):
+// average return roughly 70 / 82 / 94 / 105 / 120%.
+const DIST_BY_LEVEL = [
+  [0.70, 0.20, 0.08, 0.02], [0.55, 0.28, 0.12, 0.05], DIST.normal, [0.36, 0.31, 0.21, 0.12], [0.25, 0.30, 0.25, 0.20],
+];
 const MAX_BET_PER_NUM = 200;
 const SAVE_KEY = 'piccadilly-circus-v1';
 
@@ -559,7 +564,7 @@ function promptRefill() {
 
 // ---------------- game flow ----------------
 function rollLevel() {
-  const d = DIST[st.mode];
+  const d = st.mode === 'event' ? DIST.event : DIST_BY_LEVEL[(MedalBank.level ? MedalBank.level('piccadilly') : 3) - 1];
   let r = Math.random();
   for (let i = 0; i < 4; i++) { if ((r -= d[i]) < 0) return i + 1; }
   return 4;

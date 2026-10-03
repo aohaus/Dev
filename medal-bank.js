@@ -614,6 +614,32 @@ async function addAdjust(n, note = '') {
   await authed('adjust', { n, note });
 }
 
+// ---------------- admin: difficulty settings ----------------
+// Only ADMIN_NAME sees the settings. With the server on, that name is unique
+// and password-protected, so it must be a server account. Settings are kept
+// on this device; 3 is the standard, 5 the most generous to players.
+const ADMIN_NAME = 'はやと';
+const LEVEL_KEY = 'gc-settings';
+const LEVEL_GAMES = ['piccadilly', 'sigma', 'janken', 'geo'];
+function isAdmin() {
+  const u = activeUser(read());
+  return !!u && u.name === ADMIN_NAME && (!online() || !!u.sid);
+}
+function levels() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(LEVEL_KEY) || '{}') || {}; } catch (e) {}
+  return Object.fromEntries(LEVEL_GAMES.map(g => [g, [1, 2, 3, 4, 5].includes(s[g]) ? s[g] : 3]));
+}
+const level = game => levels()[game] || 3;
+function setLevel(game, n) {
+  if (!isAdmin()) fail(t('管理者だけが変更できます', 'Only the admin can change this'));
+  if (!LEVEL_GAMES.includes(game) || ![1, 2, 3, 4, 5].includes(n)) fail(t('設定が正しくありません', 'Invalid setting'));
+  const s = levels(); s[game] = n;
+  try { localStorage.setItem(LEVEL_KEY, JSON.stringify(s)); } catch (e) {}
+  emit();
+}
+window.addEventListener('storage', e => { if (e.key === LEVEL_KEY) emit(); });
+
 // ---------------- UI: shared navigation bar ----------------
 // A slim bar across the top of every game: Game Centre, the games, the bank.
 // Pages that size themselves to the screen subtract var(--gc-nav-h).
@@ -749,6 +775,7 @@ window.MedalBank = {
   lang, setLang, t, typeName, gameName, noteText,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
   hand, setHand, SERVICE_MEDALS, online, refresh, loginByName, mountNav,
+  ADMIN_NAME, isAdmin, level, levels, setLevel,
   deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
   getCards, setCards,
