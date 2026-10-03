@@ -57,7 +57,9 @@ const CONFIG = {
   startMedals: 100,   // only used if the page runs without ../medal-bank.js
   cost: 10,
   jackpot: 100,       // per winning line; all 5 lines are played every spin
-  winChance: 0.07,    // chance a spin is drawn as a win (catch every one → about 70% back)
+  winChance: 0.07,    // chance a spin is drawn as a win (catch every one → about 70% back) — standard setting
+  // By the admin's difficulty setting 1-5 (3 = standard, uses winChance above).
+  winChanceByLevel: [0.04, 0.055, 0.07, 0.09, 0.12],
   chanceLamp: 1,      // how often a winning draw lights the CHANCE lamp (1 = every time)
   speed: 5,           // reel speed, cells per second
   slip: 4,            // how many cells a reel may slide after STOP
@@ -336,7 +338,9 @@ function play() {
 
   // The secret draw for this spin.
   const list = countries();
-  state.prize = Math.random() < CONFIG.winChance
+  const lv = MB && MB.level ? MB.level('geo') : 3;
+  const chanceNow = lv === 3 ? CONFIG.winChance : CONFIG.winChanceByLevel[lv - 1];
+  state.prize = Math.random() < chanceNow
     ? { line: LINES[Math.floor(Math.random() * LINES.length)], country: list[Math.floor(Math.random() * list.length)] }
     : null;
   const chance = state.prize && Math.random() < CONFIG.chanceLamp;

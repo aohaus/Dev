@@ -128,6 +128,9 @@ button { cursor: pointer; }
 .cards span.off { opacity: .3; }
 .tabs { display: flex; gap: 4px; margin: 12px 0 8px; border-bottom: 2px solid var(--lcd-line); }
 .tabs button { flex: 1 1 0; white-space: nowrap; border: 0; background: none; padding: 6px 2px; font-size: 12.5px; color: var(--lcd-dim); border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.levels { display: flex; gap: 4px; }
+.levels button { flex: 1 1 0; border: 1px solid var(--lcd-line); background: none; border-radius: 6px; padding: 6px 0; font-size: 12.5px; color: var(--lcd-dim); }
+.levels button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 900; }
 .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
 .row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .row > input, .row > select { flex: 1 1 90px; min-width: 0; }
@@ -181,7 +184,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=11"></script>
+<script src="medal-bank.js?v=12"></script>
 </head>
 <body>
 <div class="cab">
@@ -355,13 +358,16 @@ function importScreen() {
 }
 
 function userScreen(u) {
+  const admin = !!(MB.isAdmin && MB.isAdmin());
+  if (view.tab === 'admin' && !admin) view.tab = 'log';
   let h = `<div class="who">👤 <b>${esc(u.name)}</b><button class="mini" data-a="logout">${T('ログアウト / 切り替え', 'Log out / switch')}</button></div>
     ${counter(u)}
-    <div class="tabs">${[['log', T('記録', 'History')], ['cards', T('カード', 'Cards')], ['user', T('設定', 'Settings')], ...(online ? [] : [['move', T('引き継ぎ', 'Transfer')]])].map(([k, l]) =>
+    <div class="tabs">${[['log', T('記録', 'History')], ['cards', T('カード', 'Cards')], ['user', T('設定', 'Settings')], ...(online ? [] : [['move', T('引き継ぎ', 'Transfer')]]), ...(admin ? [['admin', T('⚙ 管理', '⚙ Admin')]] : [])].map(([k, l]) =>
       `<button class="${view.tab === k ? 'on' : ''}" data-a="tab" data-id="${k}">${l}</button>`).join('')}</div>`;
   if (view.tab === 'log') h += logTab();
   else if (view.tab === 'cards') h += cardsTab();
   else if (view.tab === 'user') h += userTab(u);
+  else if (view.tab === 'admin') h += adminTab();
   else h += moveTab();
   return h;
 }
@@ -412,6 +418,22 @@ function userTab(u) {
     <p class="dim">${T('削除すると残高・記録・カードはすべて消えます。', 'Deleting removes the balance, history and cards.')}</p>`;
 }
 
+// Admin only (はやと): per-device payout level for each game. 3 = standard, higher = more generous.
+const LEVEL_INFO = [
+  ['piccadilly', 'ピカデリーサーカス', 'Piccadilly Circus', '払い戻し率 約', 'Return about ', ['70%', '82%', '94%', '105%', '120%']],
+  ['sigma', 'シグマポーカー', 'Sigma Poker', '配当', 'Payouts ', ['×0.6', '×0.8', '×1.0', '×1.2', '×1.5']],
+  ['janken', 'じゃんけんポップ', 'JANKEN POP!', '勝ち率（あいこ以外）', 'Win rate (excl. draws) ', ['30%', '37%', '43%', '50%', '57%']],
+  ['geo', 'ジオスロット', 'GEO SLOT', '当たり確率', 'Win chance ', ['4%', '5.5%', '7%', '9%', '12%']],
+];
+function adminTab() {
+  const lv = MB.levels();
+  return `<p class="dim">${T('各ゲームの設定（難易度）を5段階で決めます。設定3がふつう、数字が大きいほどプレイヤーに有利です。この端末だけに保存され、プレイヤーには表示されません。',
+    'Set each game\'s level (1–5). Level 3 is standard; higher is kinder to players. Saved on this device only and never shown to players.')}</p>
+    ${LEVEL_INFO.map(([g, ja, en, dja, den, vals]) => `<h3>${T(ja, en)}</h3>
+    <div class="levels">${[1, 2, 3, 4, 5].map(n => `<button class="${lv[g] === n ? 'on' : ''}" data-a="setLevel" data-id="${g}:${n}">${T('設定', 'Lv ')}${n}</button>`).join('')}</div>
+    <p class="dim">${T(dja, den)}${vals[lv[g] - 1]}${lv[g] === 3 ? T('（ふつう）', ' (standard)') : ''}</p>`).join('')}`;
+}
+
 function moveTab() {
   return `<p class="dim">${T('別の端末（iPad・別のスマホなど）へこのユーザーを移します。コードを発行すると、<b>この端末ではこのユーザーが使えなくなります</b>（同じメダルを二重に使えないように）。移動先で読み込めなかったときは、ログイン画面の「取り消し」で元に戻せます。',
     'Move this user to another device (an iPad, another phone…). Once the code is issued, <b>this user can no longer be used on this device</b> (so the same medals can\'t be spent twice). If it can\'t be loaded on the other device, use "Undo" on the login screen.')}</p>
@@ -457,6 +479,7 @@ const actions = {
   lang() { MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'); render(true); },
   pick(id) { view.pick = view.pick === id ? null : id; render(); $('pin')?.focus(); },
   async login() { const u = await MB.login(view.pick, val('#pin')); view.pick = null; view.code = null; view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
+  setLevel(id) { const [g, n] = id.split(':'); MB.setLevel(g, +n); flash(T(`設定${n} にしました`, `Set to level ${n}`), true); },
   async logout() { await MB.logout(); view.editing = null; render(); },
   async loginName() { const u = await MB.loginByName(val('#lname'), val('#lpin')); view.tab = 'log'; flash(T(`${u.name} さん、ようこそ！`, `Welcome, ${u.name}!`), true); },
   toCreate() { view.screen = 'create'; view.code = null; render(); $('name')?.focus(); },

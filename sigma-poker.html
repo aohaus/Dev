@@ -261,7 +261,7 @@ header { position: relative; height: 10cqw; display: flex; align-items: center; 
 .user-tag { position: absolute; left: 50%; bottom: -1.4cqw; transform: translateX(-50%); font-size: 2cqw; max-width: 50%; }
 .sheet .mb-panel { --mb-accent: #ff4a6a; margin-top: 0; }
 </style>
-<script src="medal-bank.js?v=11"></script>
+<script src="medal-bank.js?v=12"></script>
 </head>
 <body>
 <div id="machine">
@@ -426,10 +426,12 @@ function evaluate(cs) {
 }
 
 const jpPay = (jackpot, maxBet) => jackpot * (maxBet / 5);
-function payout(k, bet, jackpot, maxBet = 5) {
+// mult: the admin's difficulty setting scales every pay (the jackpot excepted).
+const handPay = (pay, bet, mult = 1) => Math.max(1, Math.round(pay * bet * mult));
+function payout(k, bet, jackpot, maxBet = 5, mult = 1) {
   if (!k) return 0;
   if (k === 'RF' && bet === maxBet) return jpPay(jackpot, maxBet);
-  return HANDS[HAND_IDX[k]].pay * bet;
+  return handPay(HANDS[HAND_IDX[k]].pay, bet, mult);
 }
 
 // Double up: A–6 SMALL, 8–K BIG, 7 push, joker always wins.
@@ -650,6 +652,9 @@ const payCells = [];
 
 // ---------------- render ----------------
 const unit = () => st.maxBet / 5;
+// Pay multiplier from the admin's difficulty setting (1-5, 3 = standard).
+const PAY_MULT = [0.6, 0.8, 1, 1.2, 1.5];
+const payMult = () => PAY_MULT[(MedalBank.level ? MedalBank.level('sigma') : 3) - 1];
 function renderPay() {
   const u = unit(), bet = st.bet || st.lastBet;
   const col = bet % u === 0 ? bet / u : 0;   // a partial bet (short on credit) lights no column
@@ -662,7 +667,7 @@ function renderPay() {
     cells[0].classList.toggle('hint', hint === h.k);
     for (let b = 1; b <= 5; b++) {
       const v = cells[b];
-      v.textContent = h.k === 'RF' && b === 5 ? jpPay(st.jackpot, st.maxBet) : h.pay * b * u;
+      v.textContent = h.k === 'RF' && b === 5 ? jpPay(st.jackpot, st.maxBet) : handPay(h.pay, b * u, payMult());
       v.classList.toggle('on', b === col);
       v.classList.toggle('lit', lit === h.k && b === col);
     }
@@ -804,7 +809,7 @@ async function draw() {
   await sleep(120);
   const k = evaluate(st.hand);
   st.result = k;
-  st.win = payout(k, st.bet, st.jackpot, st.maxBet);
+  st.win = payout(k, st.bet, st.jackpot, st.maxBet, payMult());
   st.busy = false;
   if (st.win > 0) {
     const jp = k === 'RF' && st.bet === st.maxBet;
