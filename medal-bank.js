@@ -30,11 +30,11 @@ const GAMES = {
   geo:        { name: 'ジオスロット',       short: 'ジオスロット', en: 'Geo Slot', url: 'geo-slot/' },
 };
 const JANKEN_CARDS = [
-  ['usa', '🐰', 'ウサピョン'], ['neko', '🐱', 'ネコマル'], ['inu', '🐶', 'ワンタ'],
-  ['hiyo', '🐤', 'ピヨコ'], ['kaeru', '🐸', 'ケロスケ'], ['pen', '🐧', 'ペンタ'],
-  ['kitsu', '🦊', 'コンキチ'], ['panda', '🐼', 'パンダン'], ['tako', '🐙', 'タコハチ'],
-  ['uni', '🦄', 'ユニコーン'], ['dora', '🐉', 'ドラゴン'], ['king', '👑', 'ジャンケンキング'],
-].map(([id, em, nm]) => ({ id, em, nm }));
+  ['usa', '🐰', 'ウサピョン', 'Hoppy Bunny'], ['neko', '🐱', 'ネコマル', 'Kitty Maru'], ['inu', '🐶', 'ワンタ', 'Wanta Pup'],
+  ['hiyo', '🐤', 'ピヨコ', 'Piyo Chick'], ['kaeru', '🐸', 'ケロスケ', 'Kero Frog'], ['pen', '🐧', 'ペンタ', 'Penta Penguin'],
+  ['kitsu', '🦊', 'コンキチ', 'Konkichi Fox'], ['panda', '🐼', 'パンダン', 'Pandan Panda'], ['tako', '🐙', 'タコハチ', 'Takohachi Octopus'],
+  ['uni', '🦄', 'ユニコーン', 'Unicorn'], ['dora', '🐉', 'ドラゴン', 'Dragon'], ['king', '👑', 'ジャンケンキング', 'Janken King'],
+].map(([id, em, nm, en]) => ({ id, em, nm, en }));
 
 // How each log entry type moves the bank balance.
 const EFFECT = { deposit: 1, withdraw: -1, adjust: 1, service: 0 };
@@ -73,7 +73,7 @@ function setLang(v) {
 }
 const t = (ja, en) => lang() === 'en' ? en : ja;
 // Notes written into the log are stored in Japanese; show them in English when asked.
-const NOTE_EN = { 'スペシャル': 'special day', '手持ちへ': 'to hand', '手動調整': 'manual adjustment', '切り替え時': 'on user switch', '引き継ぎで受け取り': 'received by transfer' };
+const NOTE_EN = { 'スペシャル': 'special day', '手持ちへ': 'to hand', '手動調整': 'manual adjustment', '切り替え時': 'on user switch', '引き継ぎで受け取り': 'received by transfer', '端末から移行': 'moved up from this device', 'テスト': 'test' };
 const noteText = note => (lang() === 'en' && NOTE_EN[note]) || note;
 const typeName = type => t(TYPE_NAME[type], TYPE_EN[type]);
 const gameName = g => GAMES[g] ? t(GAMES[g].short, GAMES[g].en) : t('バンク', 'Bank');
