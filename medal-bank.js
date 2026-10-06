@@ -648,6 +648,7 @@ const NAV_GAMES = [
   ['sigma', '🃏', 'sigma-poker.html', 'シグマ', 'Sigma'],
   ['janken', '✊', 'janken-pop.html', 'じゃんけん', 'Janken'],
   ['geo', '🌏', 'geo-slot/', 'ジオ', 'Geo'],
+  ['ma', '🏪', 'ma-shoutengai.html', 'M&A', 'M&A'],
 ];
 function mountNav(currentGame) {
   if (document.querySelector('.gc-nav')) return;
