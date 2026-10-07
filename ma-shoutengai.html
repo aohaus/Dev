@@ -180,6 +180,12 @@ table.bk tr.tot td { border-top: 3px double var(--ink); border-bottom: none; fon
 .gloss div b { color: var(--purple); }
 @media (max-width: 420px) { .gloss div { grid-template-columns: 1fr; gap: 0; } }
 
+/* English labels for the CSS-drawn badges */
+html[lang=en] .word::before { content: '🎓 In grown-up words…'; }
+html[lang=en] .shop.on::after { content: 'Top pick ✔'; }
+html[lang=en] .shop.out::after { content: 'Said no'; }
+.langbtn { color: var(--ink); }
+
 .fade { animation: fade .3s ease-out; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -194,7 +200,8 @@ table.bk tr.tot td { border-top: 3px double var(--ink); border-bottom: none; fon
  * The player is an "おみせつなぎ屋さん" (an M&A advisor) helping a bakery buy
  * another shop. Each screen is one step of real buy-side M&A, retold for
  * 6th graders, and ends with the grown-up word for what they just did.
- * All money is in 万円. */
+ * Japanese and English: L('日本語', 'English'); ?lang=en opens in English.
+ * Money is kept in 万円 and shown as dollars (×100) in English. */
 
 const BUDGET = 600;          // the bakery's budget
 const FREE_DD = 3;           // free investigation points
@@ -204,30 +211,59 @@ const PATIENCE = 3;          // how many asks the seller will listen to
 const PMI_POINTS = 3;
 const YEARS = 5;
 
+// ─── language ───
+const LANG_KEY = 'ma-shoutengai-lang';
+let lang = (() => {
+  const q = new URLSearchParams(location.search).get('lang');
+  if (q === 'ja' || q === 'en') return q;
+  try { const v = localStorage.getItem(LANG_KEY); if (v === 'ja' || v === 'en') return v; } catch (e) {}
+  return /^ja/i.test(navigator.language || '') ? 'ja' : 'en';
+})();
+const L = (ja, en) => lang === 'en' ? en : ja;
+const tx = (o, k) => lang === 'en' && o.en && o.en[k] !== undefined ? o.en[k] : o[k];
+function setLang(v) {
+  lang = v;
+  try { localStorage.setItem(LANG_KEY, v); } catch (e) {}
+  const u = new URL(location.href);
+  u.searchParams.set('lang', v);
+  history.replaceState(null, '', u);
+  render();
+}
+
 const GOALS = {
-  product: { ic: '🥪', name: 'あたらしい商品を売りたい', desc: 'パンだけでなく、サンドイッチやおべんとうも売りたい' },
-  station: { ic: '🚉', name: '駅前にお店を出したい', desc: '人がたくさん通る駅前で、もっと多くの人に食べてほしい' },
-  factory: { ic: '🏭', name: 'たくさん作れるようにしたい', desc: 'パンを作る力を大きくして、スーパーにもならべたい' },
+  product: { ic: '🥪', name: 'あたらしい商品を売りたい', desc: 'パンだけでなく、サンドイッチやおべんとうも売りたい',
+    en: { name: 'Sell new kinds of food', desc: 'Not just bread — sandwiches and lunch boxes too' } },
+  station: { ic: '🚉', name: '駅前にお店を出したい', desc: '人がたくさん通る駅前で、もっと多くの人に食べてほしい',
+    en: { name: 'Open a shop by the station', desc: 'Lots of people walk past the station every day' } },
+  factory: { ic: '🏭', name: 'たくさん作れるようにしたい', desc: 'パンを作る力を大きくして、スーパーにもならべたい',
+    en: { name: 'Bake much more bread', desc: 'Make enough bread to sell in supermarkets too' } },
 };
 
 const CRITERIA = {
-  budget:  { name: '予算（600万円）で買えそう', test: s => s.ask <= BUDGET },
-  profit:  { name: 'しっかりもうかっている（1年50万円以上）', test: s => s.profit >= 50 },
-  fit:     { name: '目的にピッタリ', test: s => s.fit[S.goal] >= 2 },
-  popular: { name: 'お客さんに人気（★4つ以上）', test: s => s.pop >= 4 },
+  budget:  { name: '予算（600万円）で買えそう', short: '予算で買えそう', test: s => s.ask <= BUDGET,
+    en: { name: 'Fits the budget ($60,000)', short: 'Fits budget' } },
+  profit:  { name: 'しっかりもうかっている（1年50万円以上）', short: 'しっかりもうかっている', test: s => s.profit >= 50,
+    en: { name: 'Makes good profit ($5,000+ a year)', short: 'Good profit' } },
+  fit:     { name: '目的にピッタリ', short: '目的にピッタリ', test: s => s.fit[S.goal] >= 2,
+    en: { name: 'Matches our goal', short: 'Matches goal' } },
+  popular: { name: 'お客さんに人気（★4つ以上）', short: 'お客さんに人気', test: s => s.pop >= 4,
+    en: { name: 'Popular with customers (4★ or more)', short: 'Popular' } },
+};
+
+const CATS = {
+  money: { ic: '💰', name: 'お金', en: { name: 'Money' } },
+  rules: { ic: '📜', name: '約束ごと', en: { name: 'Contracts' } },
+  tax:   { ic: '🧾', name: '税金', en: { name: 'Taxes' } },
+  biz:   { ic: '🛒', name: '商売', en: { name: 'Business' } },
+  people:{ ic: '👩‍🍳', name: '人', en: { name: 'People' } },
+  tools: { ic: '🔧', name: '道具・建物', en: { name: 'Equipment' } },
 };
 
 // Each shop: public flyer info, a hidden lowest price the seller accepts,
 // how well it fits each goal (0–3), and six face-down investigation cards.
-// Card: [category, title, detail, value change, risk tag]
-const CATS = {
-  money: { ic: '💰', name: 'お金', word: '財務' },
-  rules: { ic: '📜', name: '約束ごと', word: '法務' },
-  tax:   { ic: '🧾', name: '税金', word: '税務' },
-  biz:   { ic: '🛒', name: '商売', word: 'ビジネス' },
-  people:{ ic: '👩‍🍳', name: '人', word: '人事' },
-  tools: { ic: '🔧', name: '道具・建物', word: '設備' },
-};
+// Card: [category, title, detail, value change, risk tag]; en.dd holds [title, detail].
+const OK_TAX = ['税金はきちんと払っている', '問題なし。安心！'];
+const OK_TAX_EN = ['Taxes are all paid', 'No problems here. Phew!'];
 const SHOPS = [
   { id: 'sand', ic: '🥪', name: 'サンドイッチのハムハム亭', place: '商店街', owner: '🐹', ownerName: 'ハムじいさん',
     profit: 70, assets: 40, ask: 380, min: 300, pop: 4, staff: 3,
@@ -236,11 +272,22 @@ const SHOPS = [
     dd: [
       ['money', 'レジの記録がばらばら', '毎日の売上の記録がところどころぬけていて、本当のもうけは少し少ないかも。', -30],
       ['rules', '建物を借りる約束があと1年で終わる', '大家さんが「その後は家賃を上げたい」と言っている。', -60],
-      ['tax', '税金はきちんと払っている', '問題なし。安心！', 0],
+      ['tax', ...OK_TAX, 0],
       ['biz', '高校生が毎朝買いに来る', '近くの高校の生徒に大人気。これからも売れそう。', 40],
       ['people', 'ひみつのレシピは店長しか知らない', 'たまごサンドの味を出せるのはハムじいさんだけ…。', -50, 'recipe'],
       ['tools', '冷蔵庫がこわれかけ', 'そろそろ買いかえが必要。', -20],
-    ] },
+    ],
+    en: { name: 'Hamham Sandwich House', place: 'Shopping street', ownerName: 'Grandpa Hammy',
+      reason: 'The owner is getting old and wants to retire',
+      note: 'Famous for its egg sandwich. 3 staff. The building is rented.',
+      dd: [
+        ['The cash register records are a mess', 'Some days of sales are missing, so the real profit may be a little lower.'],
+        ['The building lease ends in 1 year', 'The landlord says he wants to raise the rent after that.'],
+        OK_TAX_EN,
+        ['High school students come every morning', 'Very popular with the school nearby. Sales should keep going.'],
+        ['Only the owner knows the secret recipe', 'Only Grandpa Hammy can make the egg sandwich taste right…'],
+        ['The fridge is about to break', 'It needs replacing soon.'],
+      ] } },
   { id: 'bento', ic: '🍱', name: 'まんぷく弁当', place: '商店街', owner: '🐷', ownerName: 'ブタやまさん',
     profit: 90, assets: 60, ask: 520, min: 400, pop: 3, staff: 5,
     reason: '大きなお店の仲間になって、配達をふやしたい', fit: { product: 2, station: 0, factory: 1 },
@@ -252,7 +299,18 @@ const SHOPS = [
       ['biz', 'となりにライバル店ができる', '来月、となりに大きなおべんとう屋さんがオープンする。', -40],
       ['people', '店員さんはみんなベテラン', '仕事が早くて、教えるのも上手。', 20],
       ['tools', '大きなかまどは新品', '去年買いかえたばかり。', 10],
-    ] },
+    ],
+    en: { name: 'Manpuku Lunch Box', place: 'Shopping street', ownerName: 'Mr. Piggy',
+      reason: 'Wants to join a bigger shop and deliver more',
+      note: 'Delivers lunch boxes to offices nearby. 5 staff.',
+      dd: [
+        ['The shop owes the bank $10,000', 'If you buy the shop, you take over this debt too!'],
+        ['A deal to deliver lunch to an office every day', 'An office nearby will order every day for 3 years.'],
+        ['Some of last year\'s tax was not paid', 'It still has to be paid later.'],
+        ['A rival shop is opening next door', 'A big lunch box shop opens next month.'],
+        ['The staff are all experts', 'They work fast and are good at teaching.'],
+        ['The big oven is brand new', 'It was replaced last year.'],
+      ] } },
   { id: 'coffee', ic: '☕', name: 'えきまえ珈琲', place: '駅前', owner: '🦉', ownerName: 'フクロウさん',
     profit: 50, assets: 30, ask: 280, min: 210, pop: 4, staff: 2,
     reason: '店長が遠くの町に引っこす', fit: { product: 1, station: 3, factory: 0 },
@@ -260,11 +318,22 @@ const SHOPS = [
     dd: [
       ['money', 'お客さんの数はチラシ通り', '数字にうそはなかった。', 0],
       ['rules', 'コーヒーマシンは借りもの', '返すときに、お金がかかる約束になっている。', -20],
-      ['tax', '税金はきちんと払っている', '問題なし。安心！', 0],
+      ['tax', ...OK_TAX, 0],
       ['biz', '駅の工事で入口がふさがる', '来年、半年間ほど駅の工事があって、お客さんがへりそう。', -40],
       ['people', 'アルバイトさんが2人とも辞めるかも', '「店長がいなくなるなら…」と迷っている。', -30, 'staff'],
       ['tools', '朝はいつも行列', '場所がとてもよくて、朝は行列ができる。', 50],
-    ] },
+    ],
+    en: { name: 'Station Coffee', place: 'By the station', ownerName: 'Mr. Owl',
+      reason: 'The owner is moving to a faraway town',
+      note: 'A small coffee stand right outside the station. 2 part-timers.',
+      dd: [
+        ['Customer numbers match the flyer', 'The numbers were honest.'],
+        ['The coffee machine is rented', 'Giving it back will cost money.'],
+        OK_TAX_EN,
+        ['Station works will block the entrance', 'Next year, about 6 months of building work may mean fewer customers.'],
+        ['Both part-timers might quit', '"If the owner leaves…" they are not sure they will stay.'],
+        ['There is a line every morning', 'A great spot — people line up every morning.'],
+      ] } },
   { id: 'cake', ic: '🍰', name: 'いちごケーキのストロベリー堂', place: '駅前', owner: '🐰', ownerName: 'ウサギさん',
     profit: 100, assets: 80, ask: 650, min: 470, pop: 5, staff: 4,
     reason: 'お店を広げたいけど、お金が足りない', fit: { product: 2, station: 2, factory: 1 },
@@ -272,11 +341,22 @@ const SHOPS = [
     dd: [
       ['money', '去年からもうけがへってきている', 'チラシの数字は2年前のもの。今はもっと少ない…。', -80],
       ['rules', '人気キャラクターとコラボする約束', '来年、人気キャラのケーキを売れる。', 40],
-      ['tax', '税金はきちんと払っている', '問題なし。安心！', 0],
+      ['tax', ...OK_TAX, 0],
       ['biz', 'SNSで大人気', '写真をとりに来るお客さんが多い。', 30],
       ['people', '人気パティシエが辞めると言っている', '「お店が売られるなら辞めようかな」と話している。', -70, 'staff'],
       ['tools', 'オーブンが古い', 'もうすぐ買いかえが必要。', -30],
-    ] },
+    ],
+    en: { name: 'Strawberry Cake House', place: 'By the station', ownerName: 'Ms. Bunny',
+      reason: 'Wants to grow but doesn\'t have enough money',
+      note: 'A popular cake shop by the station, with one famous pastry chef.',
+      dd: [
+        ['Profit has been falling since last year', 'The flyer numbers are 2 years old. It earns less now…'],
+        ['A deal with a famous cartoon character', 'Next year they can sell character cakes.'],
+        OK_TAX_EN,
+        ['Super popular on social media', 'Lots of people come to take photos.'],
+        ['The star pastry chef says she will quit', '"If the shop is sold, maybe I\'ll leave."'],
+        ['The oven is old', 'It needs replacing soon.'],
+      ] } },
   { id: 'factory', ic: '🏭', name: 'もぐもぐパン工場', place: '町はずれ', owner: '🐻‍❄️', ownerName: 'シロクマ工場長',
     profit: 60, assets: 120, ask: 420, min: 340, pop: 2, staff: 6,
     reason: '後をつぐ人がいない', fit: { product: 0, station: 0, factory: 3 },
@@ -284,11 +364,22 @@ const SHOPS = [
     dd: [
       ['money', 'お金の記録はきれい', '数字はぜんぶ正しかった。', 0],
       ['rules', 'となりの家と土地のさかい目でもめている', 'どこまでが工場の土地か、話し合いが終わっていない。', -40],
-      ['tax', '税金はきちんと払っている', '問題なし。安心！', 0],
+      ['tax', ...OK_TAX, 0],
       ['biz', 'スーパーにパンをおろす約束', '町のスーパーに毎日パンを届けている。', 50],
       ['people', '工場の人はパン作りの名人', 'すぐにいっしょに働ける。', 20],
       ['tools', '大きなオーブンの修理が必要', 'このままだと来年こわれるかも。', -60],
-    ] },
+    ],
+    en: { name: 'Mogumogu Bread Factory', place: 'Edge of town', ownerName: 'Boss Polar Bear',
+      reason: 'No one to take over',
+      note: 'A factory with a huge oven. 6 workers. No shop.',
+      dd: [
+        ['The money records are clean', 'All the numbers were correct.'],
+        ['An argument with the neighbor about the land line', 'They still disagree about where the factory\'s land ends.'],
+        OK_TAX_EN,
+        ['A deal to supply a supermarket', 'They deliver bread to the town supermarket every day.'],
+        ['The workers are bread-making masters', 'They can start working together right away.'],
+        ['The big oven needs repairs', 'It might break next year if nothing is done.'],
+      ] } },
   { id: 'flour', ic: '🌾', name: 'こなや製粉', place: '町はずれ', owner: '🐭', ownerName: 'ネズミのこなやさん',
     profit: 40, assets: 100, ask: 300, min: 240, pop: 2, staff: 3,
     reason: '子どもは別の仕事をしたいと言っている', fit: { product: 0, station: 0, factory: 2 },
@@ -300,7 +391,18 @@ const SHOPS = [
       ['biz', '小麦の値段が上がっている', '外国の小麦が高くなって、もうけがへりそう。', -40],
       ['people', '職人さんはまじめ', '長く働いてくれそう。', 10],
       ['tools', '倉庫にネズミが！', '小麦粉がかじられている…。そうじと修理が必要。', -30],
-    ] },
+    ],
+    en: { name: 'Konaya Flour Mill', place: 'Edge of town', ownerName: 'Mr. Mouse',
+      reason: 'The owner\'s children want to do other jobs',
+      note: 'Makes flour. Bread ingredients could get cheaper.',
+      dd: [
+        ['The money records are clean', 'All the numbers were correct.'],
+        ['No problems with contracts', 'All the important promises are being kept.'],
+        ['A mistake in the tax math', 'A little more tax must be paid later.'],
+        ['Wheat prices are going up', 'Wheat from abroad is getting expensive, so profit may drop.'],
+        ['The workers are hard-working', 'They will probably stay for a long time.'],
+        ['Mice in the storehouse!', 'They are nibbling the flour… Cleaning and repairs are needed.'],
+      ] } },
   { id: 'fish', ic: '🐟', name: '魚屋うおまる', place: '商店街', owner: '🐧', ownerName: 'ペンギンさん',
     profit: 50, assets: 20, ask: 220, min: 180, pop: 3, staff: 2,
     reason: 'すぐにお金がほしい', fit: { product: 0, station: 0, factory: 0 },
@@ -308,11 +410,22 @@ const SHOPS = [
     dd: [
       ['money', 'お金の記録はきれい', '数字はぜんぶ正しかった。', 0],
       ['rules', '漁港との約束が来年終わる', '魚を安く買える約束がなくなるかも。', -40],
-      ['tax', '税金はきちんと払っている', '問題なし。安心！', 0],
+      ['tax', ...OK_TAX, 0],
       ['biz', '常連さんが多い', '毎日来てくれるお客さんがいる。', 20],
       ['people', '店員さんは魚のプロ', 'でもパンのことは分からない。', 0],
       ['tools', '冷凍庫の電気代がとても高い', '古い冷凍庫で、電気代がかかりすぎ。', -30],
-    ] },
+    ],
+    en: { name: 'Uomaru Fish Shop', place: 'Shopping street', ownerName: 'Mr. Penguin',
+      reason: 'Needs money quickly',
+      note: 'Proud of its fresh fish. Not much to do with bread…?',
+      dd: [
+        ['The money records are clean', 'All the numbers were correct.'],
+        ['The deal with the fishing port ends next year', 'They may lose their cheap fish deal.'],
+        OK_TAX_EN,
+        ['Lots of regular customers', 'Some customers come every day.'],
+        ['The staff are fish experts', 'But they don\'t know anything about bread.'],
+        ['The freezer\'s electricity bill is huge', 'An old freezer that uses too much power.'],
+      ] } },
   { id: 'toy', ic: '🧸', name: 'わくわくトイ', place: '商店街', owner: '🦊', ownerName: 'キツネさん',
     profit: 30, assets: 50, ask: 200, min: 150, pop: 5, staff: 2,
     reason: '別の町で新しいお店を始めたい', fit: { product: 0, station: 0, factory: 0 },
@@ -320,20 +433,37 @@ const SHOPS = [
     dd: [
       ['money', 'もうけはチラシ通り', '数字にうそはなかった。', 0],
       ['rules', '約束ごとに問題なし', '大事な約束はぜんぶ守られている。', 0],
-      ['tax', '税金はきちんと払っている', '問題なし。安心！', 0],
+      ['tax', ...OK_TAX, 0],
       ['biz', '売れのこりのおもちゃが倉庫にいっぱい', '古いおもちゃが売れずにのこっている。', -40],
       ['people', '店員さんは子どもにやさしい', 'お客さんにすかれている。', 10],
       ['tools', 'ネット通販のサイトがある', '遠くの人にも売れている。', 20],
-    ] },
+    ],
+    en: { name: 'Wakuwaku Toys', place: 'Shopping street', ownerName: 'Ms. Fox',
+      reason: 'Wants to start a new shop in another town',
+      note: 'Kids love this toy shop. But it has nothing to do with bread…?',
+      dd: [
+        ['Profit matches the flyer', 'The numbers were honest.'],
+        ['No problems with contracts', 'All the important promises are being kept.'],
+        OK_TAX_EN,
+        ['The storehouse is full of unsold toys', 'Old toys that nobody is buying.'],
+        ['The staff are kind to kids', 'Customers love them.'],
+        ['It has an online shop', 'It sells to people far away too.'],
+      ] } },
 ];
 
 const PMI_ACTIONS = {
-  talk:  { ic: '🗣️', name: '店員さんとじっくり話す', desc: 'これからどうなるか、不安に思っていることを聞く' },
-  menu:  { ic: '🍞', name: '商品やお客さんを合体させる', desc: 'おたがいの商品をいっしょに売る・紹介しあう' },
-  plan:  { ic: '📅', name: '合体の予定表（100日プラン）を作る', desc: 'だれが・いつ・何をするか決めておく' },
-  buy:   { ic: '📦', name: '仕入れやレジをまとめる', desc: '材料をまとめて買って安くする' },
-  teach: { ic: '🧑‍🏫', name: '前の店長に教えてもらう', desc: 'しばらく残ってもらい、コツやレシピを教わる' },
-  sign:  { ic: '🪧', name: '看板をぜんぶ「ふわふわ」に変える', desc: 'お店の名前を「ふわふわベーカリー」にそろえる' },
+  talk:  { ic: '🗣️', name: '店員さんとじっくり話す', desc: 'これからどうなるか、不安に思っていることを聞く',
+    en: { name: 'Talk with the staff', desc: 'Listen to their worries about what happens next' } },
+  menu:  { ic: '🍞', name: '商品やお客さんを合体させる', desc: 'おたがいの商品をいっしょに売る・紹介しあう',
+    en: { name: 'Combine products and customers', desc: 'Sell each other\'s products and share customers' } },
+  plan:  { ic: '📅', name: '合体の予定表（100日プラン）を作る', desc: 'だれが・いつ・何をするか決めておく',
+    en: { name: 'Make a 100-day plan', desc: 'Decide who does what, and when' } },
+  buy:   { ic: '📦', name: '仕入れやレジをまとめる', desc: '材料をまとめて買って安くする',
+    en: { name: 'Share buying and registers', desc: 'Buy ingredients together to make them cheaper' } },
+  teach: { ic: '🧑‍🏫', name: '前の店長に教えてもらう', desc: 'しばらく残ってもらい、コツやレシピを教わる',
+    en: { name: 'Learn from the old owner', desc: 'Ask them to stay a while and teach tips and recipes' } },
+  sign:  { ic: '🪧', name: '看板をぜんぶ「ふわふわ」に変える', desc: 'お店の名前を「ふわふわベーカリー」にそろえる',
+    en: { name: 'Change every sign to "Fuwafuwa"', desc: 'Rename the shop "Fuwafuwa Bakery"' } },
 };
 
 // ─── state ───
@@ -350,168 +480,191 @@ reset();
 const $ = id => document.getElementById(id);
 const shop = id => SHOPS.find(s => s.id === id);
 const T = () => shop(S.target);
-const yen = n => `${n.toLocaleString()}万円`;
-const signed = n => n > 0 ? `<span class="plus">+${yen(n)}</span>` : n < 0 ? `<span class="minus">−${yen(-n)}</span>` : `±0`;
+const card = (s, i) => {   // [category, title, detail, value, tag] in the current language
+  const c = s.dd[i];
+  return lang === 'en' ? [c[0], s.en.dd[i][0], s.en.dd[i][1], c[3], c[4]] : c;
+};
+const money = n => L(`${n.toLocaleString()}万円`, `$${(n * 100).toLocaleString('en-US')}`);
+const signed = n => n > 0 ? `<span class="plus">+${money(n)}</span>` : n < 0 ? `<span class="minus">−${money(-n)}</span>` : `±0`;
 const stars = n => `<span class="stars">${'★'.repeat(n)}${'☆'.repeat(5 - n)}</span>`;
 const estimate = s => s.profit * 4 + s.assets;   // desktop valuation: 4 years of profit + things the shop owns
 const ddCost = () => S.extra * EXTRA_DD_COST + S.sunk;   // includes investigations of shops we walked away from
 const usedPatience = () => Object.values(S.nego).filter(v => v !== 'keep').length;
 const priceCuts = () => T().dd.reduce((a, c, i) => a + (S.nego[i] === 'price' ? -c[3] : 0), 0);
+const bakery = () => L('ふわふわベーカリー', 'Fuwafuwa Bakery');
 
 function talk(face, who, html, seller) {
   return `<div class="talk${seller ? ' seller' : ''}"><div class="face">${face}</div><div class="bubble"><span class="who">${who}</span>${html}</div></div>`;
 }
-const kuma = html => talk('🐻', 'ふわふわベーカリーの店長 くまさん', html);
+const kuma = html => talk('🐻', L('ふわふわベーカリーの店長 くまさん', 'Mr. Kuma, owner of Fuwafuwa Bakery'), html);
 const word = html => `<div class="word">${html}</div>`;
+const langBtn = () => `<button class="pill langbtn" data-lang="${L('en', 'ja')}" aria-label="${L('Switch to English', '日本語にする')}">${L('🌐 English', '🌐 日本語')}</button>`;
 
 const PHASE_OF = { goal: 0, list: 0, nda: 1, loi: 1, loiOk: 1, dd: 2, nego: 2, da: 2, closing: 3, pmi: 3, result: 4 };
-const PHASES = ['① 作戦と<br>お店さがし', '② 声かけと<br>値段の手紙', '③ 調査と<br>話し合い', '④ 引きつぎと<br>合体'];
+const PHASES = () => L(['① 作戦と<br>お店さがし', '② 声かけと<br>値段の手紙', '③ 調査と<br>話し合い', '④ 引きつぎと<br>合体'],
+  ['① Plan &amp;<br>search', '② Contact &amp;<br>offer', '③ Check &amp;<br>negotiate', '④ Hand over<br>&amp; combine']);
 
 function render() {
+  document.documentElement.lang = lang;
+  document.title = L('商店街M&A おみせつなぎ屋さん', 'Shop Street M&A — The Shop Matchmaker');
   const ph = PHASE_OF[S.screen];
-  const head = S.screen === 'title' ? '' : `
-    <div class="topbar"><span class="brand">🏪 商店街M&amp;A</span><span class="sp"></span>
-      <span class="pill">💰 予算 ${yen(BUDGET)}</span>${S.target ? `<span class="pill">${T().ic} ${T().name}</span>` : ''}</div>
-    <div class="phases">${PHASES.map((p, i) => `<div class="${i === ph ? 'on' : i < ph ? 'done' : ''}">${p}</div>`).join('')}</div>`;
+  const head = S.screen === 'title' ? `<div class="topbar"><span class="sp"></span>${langBtn()}</div>` : `
+    <div class="topbar"><span class="brand">🏪 ${L('商店街M&amp;A', 'Shop Street M&amp;A')}</span><span class="sp"></span>
+      <span class="pill">💰 ${L('予算', 'Budget')} ${money(BUDGET)}</span>${S.target ? `<span class="pill">${T().ic} ${tx(T(), 'name')}</span>` : ''}${langBtn()}</div>
+    <div class="phases">${PHASES().map((p, i) => `<div class="${i === ph ? 'on' : i < ph ? 'done' : ''}">${p}</div>`).join('')}</div>`;
   $('app').innerHTML = head + `<div class="fade">${SCREENS[S.screen]()}</div>`;
-  window.scrollTo({ top: 0 });
 }
-function go(screen) { S.screen = screen; render(); }
+function go(screen) { S.screen = screen; render(); window.scrollTo({ top: 0 }); }
 
 // ─── screens ───
 const SCREENS = {
   title: () => `
-    <div class="card center" style="margin-top:20px">
+    <div class="card center" style="margin-top:8px">
       <div style="font-size:64px;line-height:1.1">🏪🤝🏪</div>
-      <h1>商店街M&amp;A</h1>
-      <p class="big" style="color:var(--orange)">おみせつなぎ屋さん</p>
-      <p style="margin-top:10px">お店をまるごと「ゆずってもらう」ことを、<b>M&amp;A（エム・アンド・エー）</b>といいます。</p>
-      <p>あなたは、お店とお店をつなぐ <b>おみせつなぎ屋さん</b>。<br>パン屋の店長くまさんの相談にのって、お店を買うお手伝いをしよう！</p>
+      <h1>${L('商店街M&amp;A', 'Shop Street M&amp;A')}</h1>
+      <p class="big" style="color:var(--orange)">${L('おみせつなぎ屋さん', 'The Shop Matchmaker')}</p>
+      ${L(`<p style="margin-top:10px">お店をまるごと「ゆずってもらう」ことを、<b>M&amp;A（エム・アンド・エー）</b>といいます。</p>
+      <p>あなたは、お店とお店をつなぐ <b>おみせつなぎ屋さん</b>。<br>パン屋の店長くまさんの相談にのって、お店を買うお手伝いをしよう！</p>`,
+      `<p style="margin-top:10px">When one business buys a whole other business, it's called <b>M&amp;A</b> (Mergers &amp; Acquisitions).</p>
+      <p>You are <b>the Shop Matchmaker</b> — you help shops find each other.<br>Help Mr. Kuma the baker buy a shop!</p>`)}
     </div>
-    ${kuma('こんにちは！わたしの「ふわふわベーカリー」を、もっと大きくしたいんです。<br>どこかのお店をゆずってもらいたいんだけど、何から始めたらいいか分からなくて…。手伝ってくれますか？')}
-    <button class="btn" data-act="start">お手伝いする！ ▶</button>`,
+    ${kuma(L('こんにちは！わたしの「ふわふわベーカリー」を、もっと大きくしたいんです。<br>どこかのお店をゆずってもらいたいんだけど、何から始めたらいいか分からなくて…。手伝ってくれますか？',
+      'Hello! I want my Fuwafuwa Bakery to grow bigger.<br>I\'d like to buy another shop, but I don\'t know where to start… Can you help me?'))}
+    <button class="btn" data-act="start">${L('お手伝いする！ ▶', 'I\'ll help! ▶')}</button>`,
 
   goal: () => `
     <div class="card">
-      <h2><span class="no">1</span>作戦会議：何のために買う？</h2>
-      ${kuma('お店を大きくするって言っても、いろいろあって…。いちばんやりたいのはどれだろう？')}
+      <h2><span class="no">1</span>${L('作戦会議：何のために買う？', 'Planning: why buy a shop?')}</h2>
+      ${kuma(L('お店を大きくするって言っても、いろいろあって…。いちばんやりたいのはどれだろう？', 'There are lots of ways to grow… Which one do I want most?'))}
       <div class="choices">${Object.entries(GOALS).map(([k, g]) => `
-        <button class="choice${S.goal === k ? ' on' : ''}" data-goal="${k}"><span class="ic">${g.ic}</span><span><b>${g.name}</b>${g.desc}</span></button>`).join('')}
+        <button class="choice${S.goal === k ? ' on' : ''}" data-goal="${k}"><span class="ic">${g.ic}</span><span><b>${tx(g, 'name')}</b>${tx(g, 'desc')}</span></button>`).join('')}
       </div>
-      <h3>こだわりポイントを2つえらぼう</h3>
-      <p class="dim">お店さがしのときに、この条件に合うかチェックできるよ。</p>
+      <h3>${L('こだわりポイントを2つえらぼう', 'Pick 2 must-haves')}</h3>
+      <p class="dim">${L('お店さがしのときに、この条件に合うかチェックできるよ。', 'You can check each shop against them while you search.')}</p>
       <div class="choices">${Object.entries(CRITERIA).map(([k, c]) => {
         const on = S.criteria.includes(k);
-        return `<button class="choice${on ? ' on' : ''}" data-crit="${k}" ${!on && S.criteria.length >= 2 ? 'disabled' : ''}><span class="ic">${on ? '✅' : '⬜'}</span><span><b>${c.name}</b></span></button>`;
+        return `<button class="choice${on ? ' on' : ''}" data-crit="${k}" ${!on && S.criteria.length >= 2 ? 'disabled' : ''}><span class="ic">${on ? '✅' : '⬜'}</span><span><b>${tx(c, 'name')}</b></span></button>`;
       }).join('')}</div>
-      ${word('目的を決めることを <b>「M&amp;Aの目的の整理」</b>、こだわりポイントを <b>「買収基準」</b> といいます。目的がはっきりしないと、買ったあとに「何のために買ったんだっけ？」となってしまいます。')}
-      <button class="btn" data-act="toList" ${S.goal && S.criteria.length === 2 ? '' : 'disabled'}>お店をさがしに行く ▶</button>
+      ${word(L('目的を決めることを <b>「M&amp;Aの目的の整理」</b>、こだわりポイントを <b>「買収基準」</b> といいます。目的がはっきりしないと、買ったあとに「何のために買ったんだっけ？」となってしまいます。',
+        'Deciding why you are buying is <b>setting the deal rationale</b>, and the must-haves are your <b>acquisition criteria</b>. Without a clear goal, you end up asking "Why did we buy this again?"'))}
+      <button class="btn" data-act="toList" ${S.goal && S.criteria.length === 2 ? '' : 'disabled'}>${L('お店をさがしに行く ▶', 'Go find shops ▶')}</button>
     </div>`,
 
   list: () => `
     <div class="card">
-      <h2><span class="no">1</span>お店さがし：気になるお店リスト</h2>
-      ${kuma(`「お店をゆずってもいいよ」というお店が8つあるみたい。チラシを見て、<b>本命のお店を3つ</b>えらんでください！<br><span class="dim">目的：${GOALS[S.goal].ic} ${GOALS[S.goal].name}</span>`)}
-      <p class="dim">本命 ${S.short.length} / 3</p>
+      <h2><span class="no">1</span>${L('お店さがし：気になるお店リスト', 'Search: the list of shops')}</h2>
+      ${kuma(L(`「お店をゆずってもいいよ」というお店が8つあるみたい。チラシを見て、<b>本命のお店を3つ</b>えらんでください！`,
+        `Looks like 8 shops might be willing to sell. Read their flyers and pick your <b>top 3</b>!`)
+        + `<br><span class="dim">${L('目的：', 'Goal: ')}${GOALS[S.goal].ic} ${tx(GOALS[S.goal], 'name')}</span>`)}
+      <p class="dim">${L('本命', 'Top picks')} ${S.short.length} / 3</p>
       <div class="shops">${SHOPS.map(s => {
         const on = S.short.includes(s.id);
         return `<button class="shop${on ? ' on' : ''}" data-short="${s.id}">
-          <div class="head"><span class="ic">${s.ic}</span><span><b>${s.name}</b><small>📍${s.place}</small></span></div>
-          <dl><dt>1年のもうけ</dt><dd>${yen(s.profit)}</dd><dt>売りたい値段</dt><dd>${yen(s.ask)}</dd><dt>人気</dt><dd>${stars(s.pop)}</dd><dt>売る理由</dt><dd>${s.reason}</dd></dl>
-          <div class="checks">${S.criteria.map(k => `<span class="chk ${CRITERIA[k].test(s) ? 'ok' : 'ng'}">${CRITERIA[k].test(s) ? '○' : '×'} ${CRITERIA[k].name.replace(/（.*）/, '')}</span>`).join('')}</div>
+          <div class="head"><span class="ic">${s.ic}</span><span><b>${tx(s, 'name')}</b><small>📍${tx(s, 'place')}</small></span></div>
+          <dl><dt>${L('1年のもうけ', 'Profit / year')}</dt><dd>${money(s.profit)}</dd><dt>${L('売りたい値段', 'Asking price')}</dt><dd>${money(s.ask)}</dd><dt>${L('人気', 'Popularity')}</dt><dd>${stars(s.pop)}</dd><dt>${L('売る理由', 'Why selling')}</dt><dd>${tx(s, 'reason')}</dd></dl>
+          <div class="checks">${S.criteria.map(k => `<span class="chk ${CRITERIA[k].test(s) ? 'ok' : 'ng'}">${CRITERIA[k].test(s) ? '○' : '×'} ${tx(CRITERIA[k], 'short')}</span>`).join('')}</div>
         </button>`;
       }).join('')}</div>
-      ${word('ゆずってくれそうなお店を全部ならべたリストを <b>「ロングリスト」</b>、そこからしぼった本命を <b>「ショートリスト」</b> といいます。')}
-      <button class="btn" data-act="toNda" ${S.short.length === 3 ? '' : 'disabled'}>この3つに声をかける ▶</button>
+      ${word(L('ゆずってくれそうなお店を全部ならべたリストを <b>「ロングリスト」</b>、そこからしぼった本命を <b>「ショートリスト」</b> といいます。',
+        'The full list of possible shops is the <b>long list</b>. Your top picks are the <b>short list</b>.'))}
+      <button class="btn" data-act="toNda" ${S.short.length === 3 ? '' : 'disabled'}>${L('この3つに声をかける ▶', 'Contact these 3 ▶')}</button>
     </div>`,
 
   nda: () => {
-    const signed = S.ndaSigned;
+    const done = S.ndaSigned;
     return `<div class="card">
-      <h2><span class="no">2</span>声かけ：ひみつを守る約束</h2>
-      ${talk('🐿️', '本命のお店の人たち', 'くわしいことを教えてもいいけど、「お店を売るかも」ってことは、お客さんや店員さんにはまだ<b>ないしょ</b>にしてね。', true)}
+      <h2><span class="no">2</span>${L('声かけ：ひみつを守る約束', 'Contact: the secret-keeping promise')}</h2>
+      ${talk('🐿️', L('本命のお店の人たち', 'The owners of your top 3'), L('くわしいことを教えてもいいけど、「お店を売るかも」ってことは、お客さんや店員さんにはまだ<b>ないしょ</b>にしてね。',
+        'We can tell you the details, but please keep it a <b>secret</b> that we might sell. Our customers and staff don\'t know yet.'), true)}
       <div class="paper">
-        <h3>ひみつを守る約束書</h3>
-        <ol><li>教えてもらったお店のひみつは、ほかの人に話しません。</li><li>お店を買うかどうか考えるためだけに使います。</li><li>買わないことになったら、もらった資料は返します。</li></ol>
-        <p style="margin-top:10px">ふわふわベーカリー　くま</p>
-        ${signed ? '<div class="hanko">くま<br>約束</div>' : ''}
+        <h3>${L('ひみつを守る約束書', 'Secret-Keeping Promise')}</h3>
+        <ol>${L(['教えてもらったお店のひみつは、ほかの人に話しません。', 'お店を買うかどうか考えるためだけに使います。', '買わないことになったら、もらった資料は返します。'],
+          ['I will not tell anyone the shop\'s secrets.', 'I will only use them to decide whether to buy.', 'If I don\'t buy, I will give the papers back.']).map(x => `<li>${x}</li>`).join('')}</ol>
+        <p style="margin-top:10px">${L('ふわふわベーカリー　くま', 'Fuwafuwa Bakery — Kuma')}</p>
+        ${done ? `<div class="hanko">${L('くま<br>約束', 'KUMA<br>✔')}</div>` : ''}
       </div>
-      ${signed ? '' : '<button class="btn" data-act="signNda">はんこを押す 🔴</button>'}
-      ${signed ? word('この約束を <b>「NDA（秘密保持契約）」</b> といいます。売る側は、うわさが広まると店員さんやお客さんが不安になるので、とても大事にしています。') : ''}
+      ${done ? '' : `<button class="btn" data-act="signNda">${L('はんこを押す 🔴', 'Sign it 🔴')}</button>`}
+      ${done ? word(L('この約束を <b>「NDA（秘密保持契約）」</b> といいます。売る側は、うわさが広まると店員さんやお客さんが不安になるので、とても大事にしています。',
+        'This promise is an <b>NDA (Non-Disclosure Agreement)</b>. Sellers care a lot about it — if rumors spread, staff and customers get worried.')) : ''}
     </div>
-    ${signed ? `<div class="card">
-      <h2><span class="no">2</span>くわしい紹介ノートを読もう</h2>
-      <p>約束したので、くわしいことを教えてもらえました。<b>声をかけるお店を1つ</b>えらぼう。</p>
+    ${done ? `<div class="card">
+      <h2><span class="no">2</span>${L('くわしい紹介ノートを読もう', 'Read the detailed info book')}</h2>
+      <p>${L('約束したので、くわしいことを教えてもらえました。<b>声をかけるお店を1つ</b>えらぼう。', 'Now that you promised, they shared the details. Pick <b>one shop</b> to make an offer to.')}</p>
       <div class="shops" style="margin-top:8px">${S.short.map(id => {
         const s = shop(id), out = S.refused.includes(id);
         return `<button class="shop${out ? ' out' : ''}" data-target="${id}" ${out ? 'disabled' : ''}>
-          <div class="head"><span class="ic">${s.ic}</span><span><b>${s.name}</b><small>📍${s.place}・店長 ${s.owner}${s.ownerName}</small></span></div>
-          <dl><dt>1年のもうけ</dt><dd>${yen(s.profit)}</dd><dt>持ち物</dt><dd>${yen(s.assets)}（道具・材料など）</dd><dt>売りたい値段</dt><dd>${yen(s.ask)}</dd><dt>店員さん</dt><dd>${s.staff}人</dd></dl>
-          <p style="margin-top:4px">📝 ${s.note}</p>
+          <div class="head"><span class="ic">${s.ic}</span><span><b>${tx(s, 'name')}</b><small>📍${tx(s, 'place')}${L('・店長', ' · Owner')} ${s.owner}${tx(s, 'ownerName')}</small></span></div>
+          <dl><dt>${L('1年のもうけ', 'Profit / year')}</dt><dd>${money(s.profit)}</dd><dt>${L('持ち物', 'Things it owns')}</dt><dd>${money(s.assets)}${L('（道具・材料など）', ' (tools, stock, etc.)')}</dd><dt>${L('売りたい値段', 'Asking price')}</dt><dd>${money(s.ask)}</dd><dt>${L('店員さん', 'Staff')}</dt><dd>${s.staff}${L('人', '')}</dd></dl>
+          <p style="margin-top:4px">📝 ${tx(s, 'note')}</p>
         </button>`;
       }).join('')}</div>
-      ${word('くわしい紹介ノートは <b>「IM（インフォメーション・メモランダム）」</b> といいます。NDAを結んだ人だけが読めます。')}
+      ${word(L('くわしい紹介ノートは <b>「IM（インフォメーション・メモランダム）」</b> といいます。NDAを結んだ人だけが読めます。',
+        'The detailed info book is called an <b>IM (Information Memorandum)</b>. Only people who signed the NDA can read it.'))}
     </div>` : ''}`;
   },
 
   loi: () => {
     const s = T(), est = estimate(s);
     const lo = 100, hi = BUDGET, pct = v => `${Math.min(100, Math.max(0, (v - lo) / (hi - lo) * 100))}%`;
-    const msg = S.sellerMsg;
     return `<div class="card">
-      <h2><span class="no">2</span>ざっくり値段予想</h2>
-      ${kuma(`${s.name}は、いくらぐらいの価値があるんだろう？`)}
-      <p>お店の値段は、ざっくりこう考えます。<br><b>「何年分のもうけがあれば、元が取れる？」＋「お店の持ち物」</b></p>
+      <h2><span class="no">2</span>${L('ざっくり値段予想', 'A quick price guess')}</h2>
+      ${kuma(L(`${s.name}は、いくらぐらいの価値があるんだろう？`, `How much is ${s.en.name} worth?`))}
+      <p>${L('お店の値段は、ざっくりこう考えます。<br><b>「何年分のもうけがあれば、元が取れる？」＋「お店の持ち物」</b>',
+        'A simple way to guess a shop\'s price:<br><b>"How many years of profit to earn it back?" + "the things the shop owns"</b>')}</p>
       <div class="calc" style="margin-top:8px">
-        <span>1年のもうけ ${yen(s.profit)} × 4年分</span><span class="r">${yen(s.profit * 4)}</span>
-        <span>お店の持ち物（道具・材料など）</span><span class="r">${yen(s.assets)}</span>
-        <span class="tot">お店の価値の目安</span><span class="r tot">${yen(est)}</span>
-        <span class="dim">お店の人が売りたい値段</span><span class="r dim">${yen(s.ask)}</span>
+        <span>${L(`1年のもうけ ${money(s.profit)} × 4年分`, `Profit ${money(s.profit)} × 4 years`)}</span><span class="r">${money(s.profit * 4)}</span>
+        <span>${L('お店の持ち物（道具・材料など）', 'Things it owns (tools, stock, etc.)')}</span><span class="r">${money(s.assets)}</span>
+        <span class="tot">${L('お店の価値の目安', 'Estimated value')}</span><span class="r tot">${money(est)}</span>
+        <span class="dim">${L('お店の人が売りたい値段', 'The owner\'s asking price')}</span><span class="r dim">${money(s.ask)}</span>
       </div>
-      ${word('チラシや資料だけで、ざっくり値段を考えることを <b>「デスクトップ・バリュエーション（簡易的な企業価値評価）」</b> といいます。本物では、もっといろいろな計算方法を組み合わせます。')}
+      ${word(L('チラシや資料だけで、ざっくり値段を考えることを <b>「デスクトップ・バリュエーション（簡易的な企業価値評価）」</b> といいます。本物では、もっといろいろな計算方法を組み合わせます。',
+        'Guessing the price from papers only is a <b>desktop valuation</b>. Real advisors combine several different methods.'))}
     </div>
     <div class="card">
-      <h2><span class="no">2</span>「このくらいで考えてます」の手紙</h2>
-      <p>いくらで買いたいか、手紙に書いてわたそう。<br><span class="dim">高すぎると、買ったあとに元を取るのが大変。安すぎると、ことわられちゃうかも。</span></p>
-      <div class="offer" id="offerOut">${yen(S.offer)}</div>
-      <input class="slider" type="range" id="offer" min="${lo}" max="${hi}" step="10" value="${S.offer}" aria-label="手紙に書く値段">
+      <h2><span class="no">2</span>${L('「このくらいで考えてます」の手紙', 'The "We\'re thinking about this price" letter')}</h2>
+      <p>${L('いくらで買いたいか、手紙に書いてわたそう。', 'Write the price you\'d like to pay and send the letter.')}<br><span class="dim">${L('高すぎると、買ったあとに元を取るのが大変。安すぎると、ことわられちゃうかも。', 'Too high, and it\'s hard to earn it back. Too low, and they might say no.')}</span></p>
+      <div class="offer" id="offerOut">${money(S.offer)}</div>
+      <input class="slider" type="range" id="offer" min="${lo}" max="${hi}" step="10" value="${S.offer}" aria-label="${L('手紙に書く値段', 'Price in the letter')}">
       <div class="gauge"><i class="est" style="left:${pct(est)}"></i>${s.ask <= hi ? `<i class="ask" style="left:${pct(s.ask)}"></i>` : ''}<i id="offerMark" style="left:${pct(S.offer)}"></i></div>
-      <div class="gauge-legend"><span>${yen(lo)}</span><span><span class="plus">｜目安</span>　<span class="minus">｜売りたい値段</span>　｜手紙</span><span>${yen(hi)}</span></div>
-      ${msg ? talk(s.owner, s.ownerName, msg, true) : ''}
-      <p class="dim" style="margin-top:6px">手紙をわたせるのはあと ${3 - S.loiTries} 回</p>
-      <button class="btn blue" data-act="sendLoi">手紙をわたす ✉️</button>
-      ${word('この手紙を <b>「意向表明書（LOI）」</b> といいます。「この値段・この条件で買いたいと思っています」と伝えるものです。まだ<b>最終決定ではありません</b>。')}
+      <div class="gauge-legend"><span>${money(lo)}</span><span><span class="plus">｜${L('目安', 'Estimate')}</span>　<span class="minus">｜${L('売りたい値段', 'Asking')}</span>　｜${L('手紙', 'Yours')}</span><span>${money(hi)}</span></div>
+      ${S.sellerMsg ? talk(s.owner, tx(s, 'ownerName'), sellerText(S.sellerMsg), true) : ''}
+      <p class="dim" style="margin-top:6px">${L(`手紙をわたせるのはあと ${3 - S.loiTries} 回`, `Letters left: ${3 - S.loiTries}`)}</p>
+      <button class="btn blue" data-act="sendLoi">${L('手紙をわたす ✉️', 'Send the letter ✉️')}</button>
+      ${word(L('この手紙を <b>「意向表明書（LOI）」</b> といいます。「この値段・この条件で買いたいと思っています」と伝えるものです。まだ<b>最終決定ではありません</b>。',
+        'This letter is an <b>LOI (Letter of Intent)</b>. It says "We\'d like to buy at about this price." It is <b>not the final decision</b> yet.'))}
     </div>`;
   },
 
   loiOk: () => {
     const s = T();
     return `<div class="card">
-      <h2><span class="no">2</span>手紙を受け取ってもらえた！</h2>
-      ${talk(s.owner, s.ownerName, S.sellerMsg, true)}
-      <p>手紙の値段：<b class="big">${yen(S.offer)}</b></p>
-      ${kuma('やったー！これで決まり…じゃないんですよね？')}
-      <p>そう、まだです！チラシやノートに書いていない<b>「かくれたこと」</b>がないか、これから<b>お店の健康診断</b>をします。</p>
-      <button class="btn" data-act="toDd">お店の健康診断へ ▶</button>
+      <h2><span class="no">2</span>${L('手紙を受け取ってもらえた！', 'They accepted your letter!')}</h2>
+      ${talk(s.owner, tx(s, 'ownerName'), sellerText(S.sellerMsg), true)}
+      <p>${L('手紙の値段：', 'Price in the letter: ')}<b class="big">${money(S.offer)}</b></p>
+      ${kuma(L('やったー！これで決まり…じゃないんですよね？', 'Hooray! So it\'s decided… oh wait, not yet?'))}
+      <p>${L('そう、まだです！チラシやノートに書いていない<b>「かくれたこと」</b>がないか、これから<b>お店の健康診断</b>をします。',
+        'Right, not yet! Next we give the shop a <b>health check</b> to find <b>hidden things</b> that weren\'t in the flyer or info book.')}</p>
+      <button class="btn" data-act="toDd">${L('お店の健康診断へ ▶', 'Start the health check ▶')}</button>
     </div>`;
   },
 
   dd: () => {
     const s = T(), left = FREE_DD + S.extra - S.opened.length;
     return `<div class="card">
-      <h2><span class="no">3</span>お店の健康診断（たんけん調査）</h2>
-      ${kuma('ここには、お店のかくれた「いいこと」や「こまったこと」がかくれています。でも全部調べる時間はない…どこを調べますか？')}
-      <div class="meter"><span class="pill">🔍 調べられる回数 あと <b>${left}</b> 回</span>
-        <button class="btn sub" style="width:auto;margin:0;padding:4px 12px" data-act="moreDd" ${S.extra >= MAX_EXTRA_DD ? 'disabled' : ''}>＋1回ふやす（${yen(EXTRA_DD_COST)}）</button>
-        ${ddCost() ? `<span class="dim">調査代 ${yen(ddCost())}</span>` : ''}</div>
-      <div class="dd" style="margin-top:12px">${s.dd.map((c, i) => {
-        const cat = CATS[c[0]];
-        if (!S.opened.includes(i)) return `<button class="ddc closed" data-dd="${i}" ${left <= 0 ? 'disabled' : ''}><span><span class="cat">${cat.ic}</span><b>${cat.name}</b><br><span class="dim">をしらべる</span></span></button>`;
-        const k = c[3] > 0 ? 'good' : c[3] < 0 ? 'bad' : 'good';
-        return `<div class="ddc ${k}${S.justOpened === i ? ' flip' : ''}"><span class="tag">${cat.ic} ${cat.name}</span><span class="ttl">${c[3] < 0 ? '⚠️' : '✅'} ${c[1]}</span>${c[2]}<span class="val">お店の価値 ${signed(c[3])}</span></div>`;
+      <h2><span class="no">3</span>${L('お店の健康診断（たんけん調査）', 'The shop health check')}</h2>
+      ${kuma(L('ここには、お店のかくれた「いいこと」や「こまったこと」がかくれています。でも全部調べる時間はない…どこを調べますか？',
+        'Good things and problems are hiding under these cards. But there\'s no time to check them all… Which ones will you look at?'))}
+      <div class="meter"><span class="pill">🔍 ${L(`調べられる回数 あと <b>${left}</b> 回`, `Checks left: <b>${left}</b>`)}</span>
+        <button class="btn sub" style="width:auto;margin:0;padding:4px 12px" data-act="moreDd" ${S.extra >= MAX_EXTRA_DD ? 'disabled' : ''}>${L(`＋1回ふやす（${money(EXTRA_DD_COST)}）`, `+1 check (${money(EXTRA_DD_COST)})`)}</button>
+        ${ddCost() ? `<span class="dim">${L('調査代', 'Check costs')} ${money(ddCost())}</span>` : ''}</div>
+      <div class="dd" style="margin-top:12px">${s.dd.map((_, i) => {
+        const c = card(s, i), cat = CATS[c[0]];
+        if (!S.opened.includes(i)) return `<button class="ddc closed" data-dd="${i}" ${left <= 0 ? 'disabled' : ''}><span><span class="cat">${cat.ic}</span>${L(`<b>${cat.name}</b><br><span class="dim">をしらべる</span>`, `<span class="dim">Check</span><br><b>${cat.en.name}</b>`)}</span></button>`;
+        return `<div class="ddc ${c[3] < 0 ? 'bad' : 'good'}${S.justOpened === i ? ' flip' : ''}"><span class="tag">${cat.ic} ${tx(cat, 'name')}</span><span class="ttl">${c[3] < 0 ? '⚠️' : '✅'} ${c[1]}</span>${c[2]}<span class="val">${L('お店の価値', 'Shop value')} ${signed(c[3])}</span></div>`;
       }).join('')}</div>
-      ${word(`お店の健康診断を <b>「デューデリジェンス（DD）」</b> といいます。お金＝<b>財務</b>、約束ごと＝<b>法務</b>、税金＝<b>税務</b>、商売＝<b>ビジネス</b> など、分野ごとに専門家が調べます。調査にはお金と時間がかかるので、<b>どこが大事か考えて</b>調べるのがポイントです。`)}
-      <button class="btn" data-act="toNego" ${S.opened.length ? '' : 'disabled'}>調査おわり！話し合いへ ▶</button>
+      ${word(L('お店の健康診断を <b>「デューデリジェンス（DD）」</b> といいます。お金＝<b>財務</b>、約束ごと＝<b>法務</b>、税金＝<b>税務</b>、商売＝<b>ビジネス</b> など、分野ごとに専門家が調べます。調査にはお金と時間がかかるので、<b>どこが大事か考えて</b>調べるのがポイントです。',
+        'This health check is called <b>due diligence (DD)</b>. Experts check each area: <b>financial</b> (money), <b>legal</b> (contracts), <b>tax</b>, <b>commercial</b> (business) and more. Checking costs time and money, so the trick is to <b>think about what matters most</b>.'))}
+      <button class="btn" data-act="toNego" ${S.opened.length ? '' : 'disabled'}>${L('調査おわり！話し合いへ ▶', 'Done checking — time to negotiate ▶')}</button>
     </div>`;
   },
 
@@ -520,91 +673,103 @@ const SCREENS = {
     const left = PATIENCE - usedPatience();
     const price = S.offer - priceCuts();
     return `<div class="card">
-      <h2><span class="no">3</span>話し合い：見つけたことをどうする？</h2>
-      ${issues.length ? kuma('こまったことが見つかったね…。このまま買っていいのかな？') : kuma('調べたところには、こまったことは見つからなかったよ！')}
-      <div class="meter"><span>${s.owner} ${s.ownerName}のがまん：</span><span class="hearts">${'💗'.repeat(left)}${'🤍'.repeat(PATIENCE - left)}</span></div>
-      <p class="dim">お願いするたびに、がまんが1つへるよ。大事なことから話し合おう。</p>
+      <h2><span class="no">3</span>${L('話し合い：見つけたことをどうする？', 'Negotiate: what about the problems?')}</h2>
+      ${issues.length ? kuma(L('こまったことが見つかったね…。このまま買っていいのかな？', 'We found some problems… Should we still buy it like this?'))
+        : kuma(L('調べたところには、こまったことは見つからなかったよ！', 'No problems in the places we checked!'))}
+      <div class="meter"><span>${s.owner} ${L(`${s.ownerName}のがまん`, `${s.en.ownerName}'s patience`)}${L('：', ':')}</span><span class="hearts">${'💗'.repeat(left)}${'🤍'.repeat(PATIENCE - left)}</span></div>
+      <p class="dim">${L('お願いするたびに、がまんが1つへるよ。大事なことから話し合おう。', 'Each request uses up one heart. Start with the most important problems.')}</p>
       <div style="margin-top:10px">${issues.map(i => {
-        const c = s.dd[i], v = S.nego[i] || 'keep', staffish = c[4] === 'recipe' || c[4] === 'staff';
+        const c = card(s, i), v = S.nego[i] || 'keep', staffish = c[4] === 'recipe' || c[4] === 'staff';
         const opt = (k, ic, label) => `<button class="opt${v === k ? ' on' : ''}" data-nego="${i}" data-v="${k}" ${v !== k && k !== 'keep' && v === 'keep' && left <= 0 ? 'disabled' : ''}><span>${ic}</span>${label}</button>`;
-        return `<div class="issue"><span class="ttl">⚠️ ${c[1]}</span>（${signed(c[3])}）
-          <div class="opts">${opt('price', '💸', `値段を${yen(-c[3])}下げてもらう`)}${opt('contract', '📜', staffish ? '残ってもらう約束を約束書に書く' : '売る前に直してもらう約束を書く')}${opt('keep', '🙆', 'そのままでOK')}</div></div>`;
+        return `<div class="issue"><span class="ttl">⚠️ ${c[1]}</span>${L('（', ' (')}${signed(c[3])}${L('）', ')')}
+          <div class="opts">${opt('price', '💸', L(`値段を${money(-c[3])}下げてもらう`, `Lower the price by ${money(-c[3])}`))}${opt('contract', '📜', staffish ? L('残ってもらう約束を約束書に書く', 'Write "please stay" into the contract') : L('売る前に直してもらう約束を書く', 'Write "fix it before selling" into the contract'))}${opt('keep', '🙆', L('そのままでOK', 'Leave it'))}</div></div>`;
       }).join('')}</div>
       <div class="calc" style="margin-top:8px">
-        <span>手紙の値段</span><span class="r">${yen(S.offer)}</span>
-        <span>値下げしてもらった分</span><span class="r">${priceCuts() ? '−' + yen(priceCuts()) : '0'}</span>
-        <span class="tot">さいごの値段</span><span class="r tot">${yen(price)}</span>
+        <span>${L('手紙の値段', 'Price in the letter')}</span><span class="r">${money(S.offer)}</span>
+        <span>${L('値下げしてもらった分', 'Price cuts')}</span><span class="r">${priceCuts() ? '−' + money(priceCuts()) : '0'}</span>
+        <span class="tot">${L('さいごの値段', 'Final price')}</span><span class="r tot">${money(price)}</span>
       </div>
-      ${word('見つかったこまったことをもとに、値段や条件を話し合うことを <b>「条件交渉」</b> といいます。「売る前に直してね」「何かあったらお金を返してね」という約束は、さいごの約束書（<b>最終譲渡契約書</b>）に書きこみます。')}
-      <button class="btn" data-act="toDa">この条件で約束書を作る ▶</button>
-      <button class="btn sub" data-act="walkAway">このお店を買うのはやめる…</button>
-      <p class="dim center" style="margin-top:6px">調べた結果「買わない」と決めるのも、大事な判断です。</p>
+      ${word(L('見つかったこまったことをもとに、値段や条件を話し合うことを <b>「条件交渉」</b> といいます。「売る前に直してね」「何かあったらお金を返してね」という約束は、さいごの約束書（<b>最終譲渡契約書</b>）に書きこみます。',
+        'Talking about price and terms based on what you found is <b>negotiation</b>. Promises like "fix it before selling" or "pay us back if something goes wrong" go into the final contract (the <b>purchase agreement</b>).'))}
+      <button class="btn" data-act="toDa">${L('この条件で約束書を作る ▶', 'Write the contract with these terms ▶')}</button>
+      <button class="btn sub" data-act="walkAway">${L('このお店を買うのはやめる…', 'Don\'t buy this shop…')}</button>
+      <p class="dim center" style="margin-top:6px">${L('調べた結果「買わない」と決めるのも、大事な判断です。', 'Deciding not to buy after checking is an important choice too.')}</p>
     </div>`;
   },
 
   da: () => {
-    const s = T(), clauses = s.dd.map((c, i) => [c, S.nego[i]]).filter(([, v]) => v === 'contract');
+    const s = T(), clauses = s.dd.map((_, i) => i).filter(i => S.nego[i] === 'contract').map(i => card(s, i));
+    const owner = tx(s, 'ownerName');
     return `<div class="card">
-      <h2><span class="no">3</span>さいごの約束書</h2>
+      <h2><span class="no">3</span>${L('さいごの約束書', 'The final contract')}</h2>
       <div class="paper">
-        <h3>お店をゆずる約束書</h3>
+        <h3>${L('お店をゆずる約束書', 'Shop Sale Contract')}</h3>
         <ol>
-          <li>${s.owner} ${s.ownerName}は、${s.name}を、ふわふわベーカリーにゆずります。</li>
-          <li>ふわふわベーカリーは、<b>${yen(S.price)}</b>を払います。</li>
-          <li>お金を払った日に、お店のカギと書類をわたします。</li>
-          ${clauses.map(([c]) => `<li>${c[4] === 'recipe' ? '前の店長は、しばらくお店に残ってレシピを教えます。' : c[4] === 'staff' ? '大事な店員さんに残ってもらえるよう、前の店長も協力します。' : `「${c[1]}」は、ゆずる前に${s.ownerName}が直します（直せないときはお金を返します）。`}</li>`).join('')}
+          <li>${L(`${s.owner} ${owner}は、${s.name}を、ふわふわベーカリーにゆずります。`, `${s.owner} ${owner} sells ${s.en.name} to Fuwafuwa Bakery.`)}</li>
+          <li>${L(`ふわふわベーカリーは、<b>${money(S.price)}</b>を払います。`, `Fuwafuwa Bakery pays <b>${money(S.price)}</b>.`)}</li>
+          <li>${L('お金を払った日に、お店のカギと書類をわたします。', 'On the day of payment, the shop keys and papers are handed over.')}</li>
+          ${clauses.map(c => `<li>${c[4] === 'recipe' ? L('前の店長は、しばらくお店に残ってレシピを教えます。', 'The old owner stays for a while to teach the recipes.')
+            : c[4] === 'staff' ? L('大事な店員さんに残ってもらえるよう、前の店長も協力します。', 'The old owner helps make sure key staff stay.')
+            : L(`「${c[1]}」は、ゆずる前に${owner}が直します（直せないときはお金を返します）。`, `"${c[1]}" — ${owner} fixes this before the sale (or pays the money back).`)}</li>`).join('')}
         </ol>
-        <p style="margin-top:10px">${s.ownerName}　／　ふわふわベーカリー くま</p>
-        ${S.daSigned ? '<div class="hanko">けいやく<br>成立</div>' : ''}
+        <p style="margin-top:10px">${owner}　／　${L('ふわふわベーカリー くま', 'Fuwafuwa Bakery — Kuma')}</p>
+        ${S.daSigned ? `<div class="hanko">${L('けいやく<br>成立', 'DEAL<br>✔')}</div>` : ''}
       </div>
-      ${S.daSigned ? '' : '<button class="btn" data-act="signDa">両方がはんこを押す 🔴</button>'}
-      ${S.daSigned ? word('この約束書を <b>「最終譲渡契約書（DA）」</b> といいます。LOIとちがって、<b>はんこを押したら守らなければいけない</b>本番の約束です。') + '<button class="btn" data-act="toClosing">お金を払う日へ ▶</button>' : ''}
+      ${S.daSigned ? '' : `<button class="btn" data-act="signDa">${L('両方がはんこを押す 🔴', 'Both sides sign 🔴')}</button>`}
+      ${S.daSigned ? word(L('この約束書を <b>「最終譲渡契約書（DA）」</b> といいます。LOIとちがって、<b>はんこを押したら守らなければいけない</b>本番の約束です。',
+        'This is the <b>definitive agreement (DA)</b>, also called the purchase agreement. Unlike the LOI, <b>once signed, it must be kept</b>.'))
+        + `<button class="btn" data-act="toClosing">${L('お金を払う日へ ▶', 'Go to payment day ▶')}</button>` : ''}
     </div>`;
   },
 
   closing: () => `
     <div class="card center">
-      <h2><span class="no">4</span>お金を払ってカギを受け取る日</h2>
-      <div class="swap"><span class="go">💴</span><span style="font-size:32px">⇄</span><span class="back">🔑</span></div>
-      <p>くまさんが <b class="big">${yen(S.price)}</b> を払い、${T().ownerName}からお店のカギを受け取りました！</p>
-      ${talk(T().owner, T().ownerName, 'お店のこと、よろしくお願いしますね。', true)}
-      ${word('お金を払って、お店（株式）を受け取る日を <b>「クロージング」</b> といいます。でもM&amp;Aはここで終わりではありません。<b>ここからが本番</b>です！')}
-      <button class="btn" data-act="toPmi">2つのお店を1チームにする作戦へ ▶</button>
+      <h2><span class="no">4</span>${L('お金を払ってカギを受け取る日', 'Pay the money, get the keys')}</h2>
+      <div class="swap"><span class="go">${L('💴', '💵')}</span><span style="font-size:32px">⇄</span><span class="back">🔑</span></div>
+      <p>${L(`くまさんが <b class="big">${money(S.price)}</b> を払い、${T().ownerName}からお店のカギを受け取りました！`,
+        `Mr. Kuma paid <b class="big">${money(S.price)}</b> and got the shop keys from ${T().en.ownerName}!`)}</p>
+      ${talk(T().owner, tx(T(), 'ownerName'), L('お店のこと、よろしくお願いしますね。', 'Please take good care of my shop.'), true)}
+      ${word(L('お金を払って、お店（株式）を受け取る日を <b>「クロージング」</b> といいます。でもM&amp;Aはここで終わりではありません。<b>ここからが本番</b>です！',
+        'The day you pay and receive the business (its shares) is called <b>closing</b>. But M&amp;A doesn\'t end here — <b>the real work starts now</b>!'))}
+      <button class="btn" data-act="toPmi">${L('2つのお店を1チームにする作戦へ ▶', 'Plan how to make one team ▶')}</button>
     </div>`,
 
   pmi: () => {
     const left = PMI_POINTS - S.pmi.length;
     return `<div class="card">
-      <h2><span class="no">4</span>合体作戦：2つのお店を1チームに</h2>
-      ${kuma(`${T().name}が仲間になりました！でも、ただ買っただけでは、<b>合体ボーナス</b>は出ないんですよね…。何から始めましょう？`)}
-      <p><span class="pill">⭐ 作戦ポイント あと <b>${left}</b></span></p>
+      <h2><span class="no">4</span>${L('合体作戦：2つのお店を1チームに', 'Combine: two shops, one team')}</h2>
+      ${kuma(L(`${T().name}が仲間になりました！でも、ただ買っただけでは、<b>合体ボーナス</b>は出ないんですよね…。何から始めましょう？`,
+        `${T().en.name} has joined us! But just buying it won't give us a <b>combo bonus</b>… Where should we start?`))}
+      <p><span class="pill">⭐ ${L(`作戦ポイント あと <b>${left}</b>`, `Plan points left: <b>${left}</b>`)}</span></p>
       <div class="choices" style="margin-top:10px">${Object.entries(PMI_ACTIONS).map(([k, a]) => {
         const on = S.pmi.includes(k);
-        return `<button class="choice${on ? ' on' : ''}" data-pmi="${k}" ${!on && left <= 0 ? 'disabled' : ''}><span class="ic">${a.ic}</span><span><b>${a.name}</b>${a.desc}</span></button>`;
+        return `<button class="choice${on ? ' on' : ''}" data-pmi="${k}" ${!on && left <= 0 ? 'disabled' : ''}><span class="ic">${a.ic}</span><span><b>${tx(a, 'name')}</b>${tx(a, 'desc')}</span></button>`;
       }).join('')}</div>
-      ${word('買ったあとに2つの会社を1つのチームにまとめることを <b>「PMI（買収後の統合）」</b>、1＋1が2より大きくなる合体ボーナスを <b>「シナジー」</b> といいます。M&amp;Aが成功するかどうかは、PMIで決まるとも言われています。')}
-      <button class="btn" data-act="toResult" ${left === 0 ? '' : 'disabled'}>${YEARS}年後のようすを見る ▶</button>
+      ${word(L('買ったあとに2つの会社を1つのチームにまとめることを <b>「PMI（買収後の統合）」</b>、1＋1が2より大きくなる合体ボーナスを <b>「シナジー」</b> といいます。M&amp;Aが成功するかどうかは、PMIで決まるとも言われています。',
+        'Bringing two businesses together after the deal is <b>PMI (Post-Merger Integration)</b>. The combo bonus, where 1 + 1 becomes more than 2, is called <b>synergy</b>. Many say PMI decides whether an M&amp;A succeeds.'))}
+      <button class="btn" data-act="toResult" ${left === 0 ? '' : 'disabled'}>${L(`${YEARS}年後のようすを見る ▶`, `See ${YEARS} years later ▶`)}</button>
     </div>`;
   },
 
   result: () => {
     const r = score();
     const n = r.net >= 200 ? 3 : r.net >= 100 ? 2 : r.net >= 0 ? 1 : 0;
-    const title = ['ざんねん…赤字になっちゃった', 'まずまず！元は取れた', 'いいM&amp;Aだった！', '大成功！すごいM&amp;A！'][n];
+    const title = L(['ざんねん…赤字になっちゃった', 'まずまず！元は取れた', 'いいM&amp;Aだった！', '大成功！すごいM&amp;A！'],
+      ['Oh no… we lost money', 'Not bad! We earned it back', 'A good M&amp;A!', 'Huge success! An amazing M&amp;A!'])[n];
     return `<div class="card">
-      <h2 class="center">${YEARS}年後のふわふわベーカリー</h2>
+      <h2 class="center">${L(`${YEARS}年後のふわふわベーカリー`, `Fuwafuwa Bakery, ${YEARS} years later`)}</h2>
       <div class="resstars">${'★'.repeat(n)}${'☆'.repeat(3 - n)}</div>
       <p class="center big">${title}</p>
       ${kuma(r.comment)}
       <table class="bk">${r.rows.map(([l, v]) => `<tr><td>${l}</td><td>${signed(v)}</td></tr>`).join('')}
-        <tr class="tot"><td>トータル</td><td>${signed(r.net)}</td></tr></table>
+        <tr class="tot"><td>${L('トータル', 'Total')}</td><td>${signed(r.net)}</td></tr></table>
     </div>
-    ${r.hidden.length ? `<div class="card"><h3>🔍 調べなかったところに、こんなことがかくれていた！</h3>
-      ${r.hidden.map(c => `<p>${CATS[c[0]].ic} <b>${c[1]}</b>（${signed(c[3])}）</p>`).join('')}</div>` : ''}
-    <div class="card"><h3>💡 ふりかえり</h3>${r.tips.map(t => `<p>・${t}</p>`).join('')}</div>
+    ${r.hidden.length ? `<div class="card"><h3>🔍 ${L('調べなかったところに、こんなことがかくれていた！', 'Hidden in the cards you didn\'t check:')}</h3>
+      ${r.hidden.map(c => `<p>${CATS[c[0]].ic} <b>${c[1]}</b>${L('（', ' (')}${signed(c[3])}${L('）', ')')}</p>`).join('')}</div>` : ''}
+    <div class="card"><h3>💡 ${L('ふりかえり', 'Looking back')}</h3>${r.tips.map(t => `<p>${L('・', '• ')}${t}</p>`).join('')}</div>
     <div class="card">
-      <h3>🎓 今日やったことは、おとなの世界ではこう言います</h3>
-      <div class="gloss">${[
+      <h3>🎓 ${L('今日やったことは、おとなの世界ではこう言います', 'What you did today, in grown-up words')}</h3>
+      <div class="gloss">${L([
         ['目的の整理・買収基準', '何のために買うか、どんなお店がいいかを決めた'],
         ['ロングリスト／ショートリスト', '気になるお店リストから、本命を3つえらんだ'],
         ['NDA（秘密保持契約）', 'ひみつを守る約束をした'],
@@ -617,9 +782,22 @@ const SCREENS = {
         ['クロージング', 'お金を払ってカギを受け取った'],
         ['PMI（買収後の統合）', '2つのお店を1チームにした'],
         ['シナジー', '合体ボーナス（1＋1が3になる）'],
-      ].map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('')}</div>
+      ], [
+        ['Deal rationale &amp; acquisition criteria', 'Decided why to buy and what kind of shop you want'],
+        ['Long list / short list', 'Picked your top 3 from all the possible shops'],
+        ['NDA', 'Made a promise to keep secrets'],
+        ['IM (Information Memorandum)', 'Read the detailed info book'],
+        ['Desktop valuation', 'Guessed the price from papers only'],
+        ['LOI (Letter of Intent)', 'Sent the "We\'re thinking about this price" letter'],
+        ['Due diligence (DD)', 'Gave the shop a health check'],
+        ['Negotiation', 'Talked about price and promises based on what you found'],
+        ['Definitive agreement (DA)', 'Signed the final contract'],
+        ['Closing', 'Paid the money and got the keys'],
+        ['PMI (Post-Merger Integration)', 'Made two shops into one team'],
+        ['Synergy', 'The combo bonus (1 + 1 = 3)'],
+      ]).map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('')}</div>
     </div>
-    <button class="btn" data-act="again">もう一度あそぶ 🔁</button>`;
+    <button class="btn" data-act="again">${L('もう一度あそぶ 🔁', 'Play again 🔁')}</button>`;
   },
 };
 
@@ -635,71 +813,93 @@ function score() {
   // hidden things: good ones always count; bad ones count unless handled
   let hiddenSum = 0, handledStaff = true;
   const hidden = [];
-  s.dd.forEach((c, i) => {
-    const v = c[3], opened = S.opened.includes(i), how = S.nego[i];
+  s.dd.forEach((_, i) => {
+    const c = card(s, i), v = c[3], opened = S.opened.includes(i), how = S.nego[i];
     if (!opened && v < 0) hidden.push(c);
     if (v >= 0) { hiddenSum += v; return; }
     if (how === 'price' || how === 'contract') return;
     let hit = v;
-    if (c[4] === 'recipe' && has('teach')) { hit = 0; tips.push('前の店長にレシピを教えてもらったので、名物の味を守れました。'); }
-    if (c[4] === 'staff') { handledStaff = false; if (has('talk')) { hit = Math.round(v / 2); tips.push('店員さんとじっくり話したので、辞める人を少なくできました。'); } }
+    if (c[4] === 'recipe' && has('teach')) { hit = 0; tips.push(L('前の店長にレシピを教えてもらったので、名物の味を守れました。', 'The old owner taught you the recipe, so the famous taste was saved.')); }
+    if (c[4] === 'staff') { handledStaff = false; if (has('talk')) { hit = Math.round(v / 2); tips.push(L('店員さんとじっくり話したので、辞める人を少なくできました。', 'You talked with the staff, so fewer people quit.')); } }
     hiddenSum += hit;
   });
   if (!handledStaff && !has('talk')) morale -= 1;
 
   const moraleMult = morale <= 1 ? 0.7 : 1;
   const base = Math.round(s.profit * YEARS * moraleMult);
-  let mult = (has('menu') ? 0.5 : 0) + (has('plan') ? 0.5 : 0) + (morale >= 4 && (has('menu') || has('plan')) ? 0.2 : 0);
+  const mult = (has('menu') ? 0.5 : 0) + (has('plan') ? 0.5 : 0) + (morale >= 4 && (has('menu') || has('plan')) ? 0.2 : 0);
   const synergy = Math.round(fit * 15 * mult * YEARS);
   const saving = has('buy') ? 10 * YEARS : 0;
   const signV = has('sign') ? (s.pop >= 4 ? -50 : 25) : 0;
+  const name = tx(s, 'name');
 
   const rows = [
-    [`${s.name}の${YEARS}年分のもうけ${moraleMult < 1 ? '（店員さんが元気をなくして3割へった）' : ''}`, base],
-    ['合体ボーナス（シナジー）', synergy],
+    [L(`${name}の${YEARS}年分のもうけ`, `${YEARS} years of profit from ${name}`)
+      + (moraleMult < 1 ? L('（店員さんが元気をなくして3割へった）', ' (down 30% — the staff lost heart)') : ''), base],
+    [L('合体ボーナス（シナジー）', 'Combo bonus (synergy)'), synergy],
   ];
-  if (saving) rows.push(['仕入れをまとめて安くなった分', saving]);
-  if (signV) rows.push([signV > 0 ? '看板をそろえて知ってもらえた' : '看板を変えたら常連さんがへった', signV]);
-  rows.push(['かくれていたこと（いいこと・こまったこと）', hiddenSum]);
-  rows.push(['払った値段', -S.price]);
-  if (ddCost()) rows.push([S.sunk ? '追加の調査代（やめたお店の分もふくむ）' : '追加の調査代', -ddCost()]);
+  if (saving) rows.push([L('仕入れをまとめて安くなった分', 'Savings from buying together'), saving]);
+  if (signV) rows.push([signV > 0 ? L('看板をそろえて知ってもらえた', 'The new signs made the shop better known') : L('看板を変えたら常連さんがへった', 'Regulars left after the signs changed'), signV]);
+  rows.push([L('かくれていたこと（いいこと・こまったこと）', 'Hidden things (good and bad)'), hiddenSum]);
+  rows.push([L('払った値段', 'Price paid'), -S.price]);
+  if (ddCost()) rows.push([S.sunk ? L('追加の調査代（やめたお店の分もふくむ）', 'Extra checks (including shops you walked away from)') : L('追加の調査代', 'Extra checks'), -ddCost()]);
   const net = rows.reduce((a, r) => a + r[1], 0);
 
   // advice
-  if (fit === 0) tips.push(`${s.name}は、くまさんの目的「${GOALS[S.goal].name}」とあまり関係がなかったので、合体ボーナスが出ませんでした。<b>目的に合うお店をえらぶ</b>ことが大切です。`);
-  else if (!has('menu') && !has('plan')) tips.push('合体ボーナスは自動では出ません。<b>商品の合体</b>や<b>100日プラン</b>など、買ったあとの作戦が大事です。');
-  else if (synergy > 0) tips.push(`目的に合ったお店を買って合体作戦もしたので、合体ボーナスが ${yen(synergy)} 出ました！`);
-  if (S.offer > estimate(s)) tips.push(`手紙の値段（${yen(S.offer)}）が目安（${yen(estimate(s))}）より高かったので、元を取るのが大変でした。`);
-  if (hidden.length) tips.push('調べなかったところに、こまったことがかくれていました。<b>どこを調べるか</b>がDDのポイントです。');
-  if (morale <= 1) tips.push('店員さんが不安なまま合体したので、元気をなくしてしまいました。<b>人の気持ち</b>もM&amp;Aではとても大切です。');
-  if (has('sign') && s.pop >= 4) tips.push('人気のお店の名前を変えたら、なじみのお客さんがはなれてしまいました。<b>変えないほうがいいもの</b>もあります。');
+  if (fit === 0) tips.push(L(`${name}は、くまさんの目的「${GOALS[S.goal].name}」とあまり関係がなかったので、合体ボーナスが出ませんでした。<b>目的に合うお店をえらぶ</b>ことが大切です。`,
+    `${name} had little to do with Mr. Kuma's goal ("${GOALS[S.goal].en.name}"), so there was no combo bonus. <b>Choosing a shop that fits the goal</b> matters.`));
+  else if (!has('menu') && !has('plan')) tips.push(L('合体ボーナスは自動では出ません。<b>商品の合体</b>や<b>100日プラン</b>など、買ったあとの作戦が大事です。',
+    'The combo bonus doesn\'t happen by itself. Plans after buying, like <b>combining products</b> or a <b>100-day plan</b>, are what make it happen.'));
+  else if (synergy > 0) tips.push(L(`目的に合ったお店を買って合体作戦もしたので、合体ボーナスが ${money(synergy)} 出ました！`,
+    `You bought a shop that fit the goal and planned the combining well, so you got a ${money(synergy)} combo bonus!`));
+  if (S.offer > estimate(s)) tips.push(L(`手紙の値段（${money(S.offer)}）が目安（${money(estimate(s))}）より高かったので、元を取るのが大変でした。`,
+    `Your letter price (${money(S.offer)}) was higher than the estimate (${money(estimate(s))}), so it was hard to earn it back.`));
+  if (hidden.length) tips.push(L('調べなかったところに、こまったことがかくれていました。<b>どこを調べるか</b>がDDのポイントです。',
+    'Problems were hiding where you didn\'t check. <b>Choosing what to check</b> is the key to DD.'));
+  if (morale <= 1) tips.push(L('店員さんが不安なまま合体したので、元気をなくしてしまいました。<b>人の気持ち</b>もM&amp;Aではとても大切です。',
+    'The staff were still worried when the shops combined, so they lost heart. <b>People\'s feelings</b> matter a lot in M&amp;A.'));
+  if (has('sign') && s.pop >= 4) tips.push(L('人気のお店の名前を変えたら、なじみのお客さんがはなれてしまいました。<b>変えないほうがいいもの</b>もあります。',
+    'Changing a popular shop\'s name drove away its regulars. <b>Some things are better left as they are.</b>'));
 
-  const comment = net >= 200 ? 'お店がぐんと大きくなりました！あなたに相談してよかった！'
-    : net >= 100 ? 'お店を買ってよかった！これからもがんばります。'
-    : net >= 0 ? 'なんとか元は取れたけど、もう少しうまくできたかも…。'
-    : 'うーん、払ったお金のほうが多くなっちゃった…。次はもっとうまくやりたいな。';
+  const comment = net >= 200 ? L('お店がぐんと大きくなりました！あなたに相談してよかった！', 'My bakery grew so much! I\'m glad I asked you!')
+    : net >= 100 ? L('お店を買ってよかった！これからもがんばります。', 'Buying the shop was a good idea! I\'ll keep working hard.')
+    : net >= 0 ? L('なんとか元は取れたけど、もう少しうまくできたかも…。', 'We earned the money back, but maybe we could have done better…')
+    : L('うーん、払ったお金のほうが多くなっちゃった…。次はもっとうまくやりたいな。', 'Hmm, we paid more than we earned… Let\'s do better next time.');
   return { rows, net, hidden, tips, comment };
 }
 
 // ─── actions ───
+// The seller's reply is stored as a key so it follows a language switch.
+function sellerText(k) {
+  return {
+    over: L('えっ、そんなに！？ぜひお願いします！<span class="dim">（…ちょっと払いすぎかも？）</span>', 'Wow, that much!? Yes, please! <span class="dim">(…maybe that\'s paying too much?)</span>'),
+    good: L('いいお話ですね。ぜひ前向きに考えます！', 'That\'s a nice offer. We\'ll think about it seriously!'),
+    ok: L('うーん…ちょっと安いけど、くまさんならいいかな。前向きに考えます。', 'Hmm… it\'s a bit low, but for Mr. Kuma, okay. We\'ll think about it.'),
+    close: L('うーん、おしい！もう少しだけ高くならない？', 'So close! Could you go a little higher?'),
+    low: L('それは安すぎます！お店の価値をちゃんと見てほしいな。', 'That\'s way too low! Please look at what the shop is really worth.'),
+  }[k];
+}
 function sellerReply() {
   const s = T(), o = S.offer;
   S.loiTries++;
   if (o >= s.min) {
-    S.sellerMsg = o >= s.ask ? 'えっ、そんなに！？ぜひお願いします！<span class="dim">（…ちょっと払いすぎかも？）</span>'
-      : o >= s.min + 40 ? 'いいお話ですね。ぜひ前向きに考えます！' : 'うーん…ちょっと安いけど、くまさんならいいかな。前向きに考えます。';
+    S.sellerMsg = o >= s.ask ? 'over' : o >= s.min + 40 ? 'good' : 'ok';
     S.price = o;
     return go('loiOk');
   }
   if (S.loiTries >= 3) {
     S.refused.push(s.id);
     S.sellerMsg = null;
-    alert(`${s.ownerName}「何度もありがとう。でも、その値段ではゆずれません。ごめんなさい。」\n\nほかの本命のお店に声をかけよう。`);
+    alert(L(`${s.ownerName}「何度もありがとう。でも、その値段ではゆずれません。ごめんなさい。」\n\nほかの本命のお店に声をかけよう。`,
+      `${s.en.ownerName}: "Thank you for trying so many times. But we can't sell at that price. Sorry."\n\nLet's try another shop on your short list.`));
     S.target = null;
-    if (S.short.every(id => S.refused.includes(id))) { alert('本命の3つ全部にことわられてしまった…。お店さがしからやり直そう。'); S.short = []; S.refused = []; return go('list'); }
+    if (S.short.every(id => S.refused.includes(id))) {
+      alert(L('本命の3つ全部にことわられてしまった…。お店さがしからやり直そう。', 'All 3 shops on your short list said no… Let\'s start the search again.'));
+      S.short = []; S.refused = []; return go('list');
+    }
     return go('nda');
   }
-  S.sellerMsg = o >= s.min * 0.85 ? 'うーん、おしい！もう少しだけ高くならない？' : 'それは安すぎます！お店の価値をちゃんと見てほしいな。';
+  S.sellerMsg = o >= s.min * 0.85 ? 'close' : 'low';
   render();
 }
 
@@ -707,6 +907,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
   const d = b.dataset;
+  if (d.lang) return setLang(d.lang);
   if (d.goal) { S.goal = d.goal; return render(); }
   if (d.crit) { S.criteria = S.criteria.includes(d.crit) ? S.criteria.filter(k => k !== d.crit) : [...S.criteria, d.crit]; return render(); }
   if (d.short) {
@@ -737,7 +938,8 @@ document.addEventListener('click', e => {
     case 'moreDd': S.extra++; return render();
     case 'toNego': return go('nego');
     case 'walkAway':
-      if (!confirm('このお店を買うのをやめて、ほかの本命のお店に声をかけますか？\n（調査代は返ってきません）')) return;
+      if (!confirm(L('このお店を買うのをやめて、ほかの本命のお店に声をかけますか？\n（調査代は返ってきません）',
+        'Stop buying this shop and try another one on your short list?\n(Money spent on checks won\'t come back.)'))) return;
       S.sunk += S.extra * EXTRA_DD_COST;
       S.refused.push(S.target); S.target = null;
       if (S.short.every(id => S.refused.includes(id))) { S.short = []; S.refused = []; return go('list'); }
@@ -754,7 +956,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   if (e.target.id !== 'offer') return;
   S.offer = +e.target.value;
-  $('offerOut').textContent = yen(S.offer);
+  $('offerOut').textContent = money(S.offer);
   const pct = (S.offer - 100) / (BUDGET - 100) * 100;
   $('offerMark').style.left = `${pct}%`;
 });
