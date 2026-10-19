@@ -94,6 +94,7 @@ button { font-family: inherit; cursor: pointer; border: none; }
 .choice b { display: block; font-size: 16px; }
 .choice.on { border-color: var(--orange); background: #fff3df; box-shadow: 0 0 0 3px #ffd79a; }
 .choice:disabled { opacity: .45; cursor: not-allowed; }
+.choice.on:disabled { opacity: 1; cursor: default; }
 
 /* ─── shop list ─── */
 .shops { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; }
@@ -185,6 +186,23 @@ html[lang=en] .word::before { content: '🎓 In grown-up words…'; }
 html[lang=en] .shop.on::after { content: 'Top pick ✔'; }
 html[lang=en] .shop.out::after { content: 'Said no'; }
 .langbtn { color: var(--ink); }
+
+/* profit outlook knobs */
+.outlook { text-align: center; background: #fffaf0; border: 2px solid var(--line); border-radius: 14px; padding: 8px; margin: 8px 0 12px; }
+.knobs { display: grid; gap: 10px; }
+.knob { border: 2px solid var(--line); border-radius: 14px; padding: 10px 12px; background: var(--paper); }
+.knob.on { border-color: var(--orange); background: #fff3df; box-shadow: 0 0 0 3px #ffd79a; }
+.knob-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.knob-row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.knob-row input { flex: 1; accent-color: var(--orange); height: 30px; min-width: 0; }
+.knob-row .kd { font-weight: 800; flex: 1; }
+.keybtn { flex: 0 0 auto; border: 2px solid var(--orange); background: var(--paper); color: var(--orange-dark); border-radius: 99px; padding: 3px 10px; font-size: 13px; }
+.keybtn.on { background: var(--orange); color: #fff; }
+.keybtn:disabled { opacity: .4; cursor: not-allowed; }
+.bandbar { height: 16px; border-radius: 99px; background: #f3e4c6; overflow: hidden; margin: 4px 0; }
+.bandbar i { display: block; height: 100%; margin: 0 auto; border-radius: 99px; background: linear-gradient(90deg, #ffd79a, var(--orange), #ffd79a); transition: width .3s; }
+.marks { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.mark { font-size: 11px; font-weight: 900; background: #fff; border-radius: 99px; padding: 0 8px; color: var(--orange-dark); }
 
 .fade { animation: fade .3s ease-out; }
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } }
@@ -466,6 +484,104 @@ const PMI_ACTIONS = {
     en: { name: 'Change every sign to "Fuwafuwa"', desc: 'Rename the shop "Fuwafuwa Bakery"' } },
 };
 
+// "Knobs" for the profit outlook (business plan model). Each knob is one
+// number in the plan: [id, 日本語, English, effect on 5-year profit per step (万円), linked DD card].
+// The 3 knobs with an effect of KEY_W or more are the shop's key drivers;
+// the rest barely move the outlook, however carefully you study them.
+const KEY_W = 30;
+const KNOB_STEPS = 2;   // each knob moves -2 … +2 steps
+const KNOBS = {
+  sand: [
+    ['egg', 'たまごサンドが売れる数', 'Egg sandwiches sold', 60, 4],
+    ['rent', '家賃', 'Rent', 45, 1],
+    ['students', '高校生のお客さん', 'Student customers', 30, 3],
+    ['bread', 'パンの仕入れ値', 'Cost of bread', 8],
+    ['power', '電気代', 'Electricity', 5],
+    ['napkin', '紙ナプキン代', 'Paper napkins', 2],
+  ],
+  bento: [
+    ['office', '会社への配達の数', 'Office deliveries', 70, 1],
+    ['rival', 'ライバル店に取られるお客さん', 'Customers lost to rivals', 50, 3],
+    ['rice', 'お米の値段', 'Price of rice', 35],
+    ['gas', 'ガス代', 'Gas bill', 6],
+    ['box', 'おべんとう箱の代金', 'Lunch box containers', 4],
+    ['chopsticks', 'わりばし代', 'Chopsticks', 1],
+  ],
+  coffee: [
+    ['morning', '朝のお客さんの数', 'Morning customers', 70, 3],
+    ['price', 'コーヒー1杯の値段', 'Price per cup', 40],
+    ['staff', 'アルバイトさんの数', 'Number of part-timers', 35, 4],
+    ['beans', '豆の値段', 'Coffee beans', 10],
+    ['cups', '紙コップ代', 'Paper cups', 2],
+    ['sugar', 'さとう・ミルク代', 'Sugar and milk', 1],
+  ],
+  cake: [
+    ['chef', 'パティシエの腕', 'The pastry chef', 80, 4],
+    ['sales', '1日に売れるケーキの数', 'Cakes sold per day', 60, 0],
+    ['sns', 'SNSの人気', 'Social media buzz', 30, 3],
+    ['berry', 'いちごの値段', 'Price of strawberries', 12],
+    ['ribbon', '箱とリボン代', 'Boxes and ribbons', 3],
+    ['candle', 'ろうそく代', 'Candles', 1],
+  ],
+  factory: [
+    ['oven', 'オーブンが動いている時間（稼働率）', 'Oven running time', 75, 5],
+    ['super', 'スーパーからの注文', 'Supermarket orders', 50, 3],
+    ['flour', '小麦粉の値段', 'Price of flour', 30],
+    ['truck', '配達トラックのガソリン代', 'Delivery truck fuel', 6],
+    ['bags', 'パンのふくろ代', 'Bread bags', 3],
+    ['uniform', '作業服のクリーニング代', 'Uniform cleaning', 1],
+  ],
+  flour: [
+    ['wheat', '小麦の値段', 'Price of wheat', 70, 3],
+    ['mill', '機械が動いている時間', 'Mill running time', 40],
+    ['store', '倉庫の状態', 'Storehouse condition', 30, 5],
+    ['power', '電気代', 'Electricity', 8],
+    ['sacks', '袋代', 'Flour sacks', 3],
+    ['tea', '休けい室のお茶代', 'Break-room tea', 1],
+  ],
+  fish: [
+    ['port', '魚の仕入れ値（漁港との約束）', 'Fish cost (port deal)', 60, 1],
+    ['regulars', '常連さんの数', 'Regular customers', 45, 3],
+    ['freezer', '冷凍庫の電気代', 'Freezer electricity', 30, 5],
+    ['ice', '氷代', 'Ice', 4],
+    ['bags', 'ビニール袋代', 'Plastic bags', 1],
+    ['paint', '看板のペンキ代', 'Sign paint', 1],
+  ],
+  toy: [
+    ['stock', '売れのこりの量', 'Unsold stock', 50, 3],
+    ['online', 'ネット通販の売上', 'Online sales', 40, 5],
+    ['kids', '来てくれる子どもの数', 'Kids who visit', 35],
+    ['wrap', 'ラッピング代', 'Gift wrapping', 3],
+    ['battery', '電池代', 'Batteries', 2],
+    ['sticker', 'おまけシール代', 'Free stickers', 1],
+  ],
+};
+const knobsOf = s => KNOBS[s.id].map(([id, ja, en, w, dd]) => ({ id, name: L(ja, en), w, dd, key: w >= KEY_W }));
+const topKnob = s => knobsOf(s).reduce((a, k) => k.w > a.w ? k : a);
+const worstCard = s => s.dd.reduce((a, c, i) => c[3] < s.dd[a][3] ? i : a, 0);
+const outlookBase = s => s.profit * YEARS;
+// How far the outlook could be off: every knob not studied closely can still swing either way.
+const outlookBand = s => knobsOf(s).reduce((a, k) => a + (S.keys.includes(k.id) ? 0 : KNOB_STEPS * k.w), 0);
+const maxBand = s => knobsOf(s).reduce((a, k) => a + KNOB_STEPS * k.w, 0);
+
+// Questions for the owner interview. Only two can be asked.
+const QUESTIONS = ['driver', 'worry', 'supplies', 'name'];
+const ASK_MAX = 2;
+const questionText = q => ({
+  driver: L('このお店のもうけを、いちばん左右するのは何ですか？', 'What changes this shop\'s profit the most?'),
+  worry: L('いま、いちばん心配なことは何ですか？', 'What are you most worried about right now?'),
+  supplies: L('ふくろや紙ナプキンは、どこで買っていますか？', 'Where do you buy bags and napkins?'),
+  name: L('お店の名前の由来は何ですか？', 'How did the shop get its name?'),
+}[q]);
+const answerText = (q, s) => ({
+  driver: L(`やっぱり<b>「${topKnob(s).name}」</b>ですね。ここが少し動くだけで、もうけがガラッと変わります。`,
+    `Definitely <b>"${topKnob(s).name}"</b>. When that moves even a little, our profit changes a lot.`),
+  worry: L(`うーん…<b>${CATS[s.dd[worstCard(s)][0]].name}</b>のことで、ちょっと心配があって…。`,
+    `Hmm… there's something about <b>${CATS[s.dd[worstCard(s)][0]].en.name.toLowerCase()}</b> that worries me a bit…`),
+  supplies: L('となり町のおろし屋さんです。安くていいですよ！', 'From a wholesaler in the next town. Nice and cheap!'),
+  name: L('なんとなく、かわいいからです！', 'Just because it sounded cute!'),
+}[q]);
+
 // ─── state ───
 let S;
 function reset() {
@@ -473,6 +589,7 @@ function reset() {
     screen: 'title', goal: null, criteria: [], short: [], refused: [], target: null,
     offer: 0, loiTries: 0, sellerMsg: null, opened: [], extra: 0,
     nego: {}, price: 0, pmi: [], sunk: 0,
+    asked: [], knob: {}, moved: [], keys: [],
   };
 }
 reset();
@@ -491,6 +608,7 @@ const estimate = s => s.profit * 4 + s.assets;   // desktop valuation: 4 years o
 const ddCost = () => S.extra * EXTRA_DD_COST + S.sunk;   // includes investigations of shops we walked away from
 const usedPatience = () => Object.values(S.nego).filter(v => v !== 'keep').length;
 const priceCuts = () => T().dd.reduce((a, c, i) => a + (S.nego[i] === 'price' ? -c[3] : 0), 0);
+const effectText = (step, w) => step ? signed(step * w) : L('±0（動かしてみて）', '±0 (try moving it)');
 const bakery = () => L('ふわふわベーカリー', 'Fuwafuwa Bakery');
 
 function talk(face, who, html, seller) {
@@ -500,7 +618,7 @@ const kuma = html => talk('🐻', L('ふわふわベーカリーの店長 くま
 const word = html => `<div class="word">${html}</div>`;
 const langBtn = () => `<button class="pill langbtn" data-lang="${L('en', 'ja')}" aria-label="${L('Switch to English', '日本語にする')}">${L('🌐 English', '🌐 日本語')}</button>`;
 
-const PHASE_OF = { goal: 0, list: 0, nda: 1, loi: 1, loiOk: 1, dd: 2, nego: 2, da: 2, closing: 3, pmi: 3, result: 4 };
+const PHASE_OF = { goal: 0, list: 0, nda: 1, loi: 1, loiOk: 1, interview: 2, model: 2, dd: 2, nego: 2, da: 2, closing: 3, pmi: 3, result: 4 };
 const PHASES = () => L(['① 作戦と<br>お店さがし', '② 声かけと<br>値段の手紙', '③ 調査と<br>話し合い', '④ 引きつぎと<br>合体'],
   ['① Plan &amp;<br>search', '② Contact &amp;<br>offer', '③ Check &amp;<br>negotiate', '④ Hand over<br>&amp; combine']);
 
@@ -642,24 +760,79 @@ const SCREENS = {
       ${talk(s.owner, tx(s, 'ownerName'), sellerText(S.sellerMsg), true)}
       <p>${L('手紙の値段：', 'Price in the letter: ')}<b class="big">${money(S.offer)}</b></p>
       ${kuma(L('やったー！これで決まり…じゃないんですよね？', 'Hooray! So it\'s decided… oh wait, not yet?'))}
-      <p>${L('そう、まだです！チラシやノートに書いていない<b>「かくれたこと」</b>がないか、これから<b>お店の健康診断</b>をします。',
-        'Right, not yet! Next we give the shop a <b>health check</b> to find <b>hidden things</b> that weren\'t in the flyer or info book.')}</p>
-      <button class="btn" data-act="toDd">${L('お店の健康診断へ ▶', 'Start the health check ▶')}</button>
+      <p>${L('そう、まだです！まず<b>店長さんに話を聞いて</b>、<b>もうけの見通し</b>を作ります。それから、チラシやノートに書いていない<b>「かくれたこと」</b>がないか<b>お店の健康診断</b>をします。',
+        'Right, not yet! First we <b>interview the owner</b> and build a <b>profit outlook</b>. Then we give the shop a <b>health check</b> to find <b>hidden things</b> that weren\'t in the flyer or info book.')}</p>
+      <button class="btn" data-act="toInterview">${L('店長さんにインタビューへ ▶', 'Go interview the owner ▶')}</button>
+    </div>`;
+  },
+
+  interview: () => {
+    const s = T(), left = ASK_MAX - S.asked.length;
+    return `<div class="card">
+      <h2><span class="no">3</span>${L('店長さんにインタビュー', 'Interview the owner')}</h2>
+      ${kuma(L(`調べる前に、${s.ownerName}に話を聞いてみましょう。でも、いそがしいので<b>質問できるのは${ASK_MAX}つだけ</b>です。どれを聞きますか？`,
+        `Before checking, let's talk to ${s.en.ownerName}. They're busy, so <b>you can only ask ${ASK_MAX} questions</b>. Which ones?`))}
+      <p><span class="pill">🎤 ${L(`のこりの質問 <b>${left}</b>`, `Questions left: <b>${left}</b>`)}</span></p>
+      <div class="choices" style="margin-top:10px">${QUESTIONS.map(q => {
+        const asked = S.asked.includes(q);
+        return `<button class="choice${asked ? ' on' : ''}" data-ask="${q}" ${asked || left <= 0 ? 'disabled' : ''}><span class="ic">${asked ? '💬' : '❓'}</span><span><b>${questionText(q)}</b></span></button>
+          ${asked ? talk(s.owner, tx(s, 'ownerName'), answerText(q, s), true) : ''}`;
+      }).join('')}</div>
+      ${word(L('経営者に直接話を聞くことを <b>「マネジメントインタビュー」</b> といいます。「この事業のもうけを一番左右するのは何ですか？」と、<b>経営者自身の言葉で</b>語ってもらうのが大切です。質問の時間は限られているので、<b>何を聞くか</b>が腕の見せどころです。',
+        'Talking directly with the business owners is a <b>management interview</b>. The key question is "What drives this business\'s profit the most?" — answered <b>in the owner\'s own words</b>. Time is short, so <b>choosing what to ask</b> is the real skill.'))}
+      <button class="btn" data-act="toModel" ${left === 0 ? '' : 'disabled'}>${L('もうけの見通しを作る ▶', 'Build the profit outlook ▶')}</button>
+    </div>`;
+  },
+
+  model: () => {
+    const s = T(), ks = knobsOf(s), base = outlookBase(s), band = outlookBand(s), hint = S.asked.includes('driver') ? topKnob(s).id : null;
+    const val = base + ks.reduce((a, k) => a + (S.knob[k.id] || 0) * k.w, 0);
+    return `<div class="card">
+      <h2><span class="no">3</span>${L('もうけの見通しづくり：つまみをさがせ！', 'Profit outlook: find the knobs!')}</h2>
+      ${kuma(L(`${s.name}の「${YEARS}年でどれくらいもうかるか」の見通しを作りましょう。もうけは、いろいろな<b>つまみ</b>で決まります。<b>つまみを動かして</b>、どれがいちばん効くか試してみて！`,
+        `Let's build an outlook of how much ${s.en.name} will earn in ${YEARS} years. Profit depends on lots of <b>knobs</b>. <b>Turn the knobs</b> and find out which ones matter most!`))}
+      <div class="outlook">
+        <span class="dim">${L(`${YEARS}年分のもうけ（いまのつまみ）`, `${YEARS}-year profit (with these knobs)`)}</span>
+        <div class="offer" id="outlookVal">${money(val)}</div>
+      </div>
+      <div class="knobs">${ks.map(k => {
+        const st = S.knob[k.id] || 0, picked = S.keys.includes(k.id);
+        return `<div class="knob${picked ? ' on' : ''}">
+          <div class="knob-head"><b>${k.name}</b>${hint === k.id ? `<span class="chk ok">💬 ${L('店長さんのヒント', 'Owner\'s hint')}</span>` : ''}</div>
+          <div class="knob-row"><span class="dim">${L('へる', 'Less')}</span><input type="range" min="${-KNOB_STEPS}" max="${KNOB_STEPS}" step="1" value="${st}" data-knob="${k.id}" aria-label="${k.name}"><span class="dim">${L('ふえる', 'More')}</span></div>
+          <div class="knob-row"><span class="dim">${L('もうけへの効き目', 'Effect on profit')}</span><span class="kd" id="kd-${k.id}">${S.moved.includes(k.id) ? effectText(st, k.w) : '？'}</span>
+            <button class="keybtn${picked ? ' on' : ''}" data-key="${k.id}" ${!picked && S.keys.length >= 3 ? 'disabled' : ''}>${picked ? L('🎯 くわしく調べる', '🎯 Study closely') : L('＋ くわしく調べる', '+ Study closely')}</button></div>
+        </div>`;
+      }).join('')}</div>
+      <div class="card" style="margin:12px 0 0;background:#fffaf0">
+        <h3 style="margin-top:0">${L('くまさんと決めよう：どこを<b>くわしく</b>、どこを<b>ざっくり</b>？', 'Agree with Mr. Kuma: what to study <b>closely</b>, what to <b>estimate roughly</b>?')}</h3>
+        <p class="dim">${L('調べる時間は1か月しかありません。くわしく調べられるつまみは<b>3つだけ</b>。のこりは「だいたいこのくらい」とざっくり決めます。', 'There\'s only one month. You can study <b>just 3 knobs</b> closely. The rest get a rough "about this much" guess.')}</p>
+        <p style="margin-top:6px">${L('見通しのはば（どれくらい外れるかもしれないか）', 'Outlook range (how far off it might be)')}</p>
+        <div class="bandbar"><i style="width:${Math.max(3, band / maxBand(s) * 100)}%"></i></div>
+        <p class="center"><b>${money(base - band)} 〜 ${money(base + band)}</b></p>
+      </div>
+      ${word(L('もうけの見通しを数字で作ったものを <b>「事業計画モデル」</b>、もうけを大きく動かす大事なつまみを <b>「キードライバー」</b> といいます。つまみを動かして効き目を調べることは <b>「感応度分析」</b>、細かく調べないで「だいたいこのくらい」と決めることは <b>「グロスで置く」</b> といいます。つまみを全部くわしく調べても、時間が足りないうえに、効かないつまみでは見通しはほとんど良くなりません。<b>どこを調べないかを決める</b>のも、プロの仕事です。',
+        'An outlook of profit built from numbers is a <b>business plan model</b>. The few knobs that move profit a lot are <b>key drivers</b>. Turning knobs to see their effect is <b>sensitivity analysis</b>, and putting in a rough number without breaking it down is <b>keeping it gross</b>. Studying every knob takes too long, and studying weak knobs barely improves the outlook. <b>Deciding what not to study</b> is part of the job too.'))}
+      <button class="btn" data-act="toDd" ${S.keys.length === 3 ? '' : 'disabled'}>${L('この分け方で合意！健康診断へ ▶', 'Agreed! Start the health check ▶')}</button>
     </div>`;
   },
 
   dd: () => {
     const s = T(), left = FREE_DD + S.extra - S.opened.length;
+    const keyCards = knobsOf(s).filter(k => S.keys.includes(k.id) && k.dd !== undefined).map(k => k.dd);
     return `<div class="card">
       <h2><span class="no">3</span>${L('お店の健康診断（たんけん調査）', 'The shop health check')}</h2>
       ${kuma(L('ここには、お店のかくれた「いいこと」や「こまったこと」がかくれています。でも全部調べる時間はない…どこを調べますか？',
         'Good things and problems are hiding under these cards. But there\'s no time to check them all… Which ones will you look at?'))}
+      ${keyCards.length || S.asked.includes('worry') ? `<p class="dim">${L('🎯は「くわしく調べる」と決めたつまみに関係するカード、💬は店長さんの心配ごとに関係するカードだよ。', '🎯 marks cards linked to the knobs you chose to study; 💬 marks the owner\'s worry.')}</p>` : ''}
       <div class="meter"><span class="pill">🔍 ${L(`調べられる回数 あと <b>${left}</b> 回`, `Checks left: <b>${left}</b>`)}</span>
         <button class="btn sub" style="width:auto;margin:0;padding:4px 12px" data-act="moreDd" ${S.extra >= MAX_EXTRA_DD ? 'disabled' : ''}>${L(`＋1回ふやす（${money(EXTRA_DD_COST)}）`, `+1 check (${money(EXTRA_DD_COST)})`)}</button>
         ${ddCost() ? `<span class="dim">${L('調査代', 'Check costs')} ${money(ddCost())}</span>` : ''}</div>
       <div class="dd" style="margin-top:12px">${s.dd.map((_, i) => {
         const c = card(s, i), cat = CATS[c[0]];
-        if (!S.opened.includes(i)) return `<button class="ddc closed" data-dd="${i}" ${left <= 0 ? 'disabled' : ''}><span><span class="cat">${cat.ic}</span>${L(`<b>${cat.name}</b><br><span class="dim">をしらべる</span>`, `<span class="dim">Check</span><br><b>${cat.en.name}</b>`)}</span></button>`;
+        const marks = (keyCards.includes(i) ? `<span class="mark">🎯 ${L('大事なつまみ', 'Key knob')}</span>` : '')
+          + (S.asked.includes('worry') && worstCard(s) === i ? `<span class="mark">💬 ${L('店長さんの心配', 'Owner\'s worry')}</span>` : '');
+        if (!S.opened.includes(i)) return `<button class="ddc closed" data-dd="${i}" ${left <= 0 ? 'disabled' : ''}><span>${marks ? `<span class="marks">${marks}</span>` : ''}<span class="cat">${cat.ic}</span>${L(`<b>${cat.name}</b><br><span class="dim">をしらべる</span>`, `<span class="dim">Check</span><br><b>${cat.en.name}</b>`)}</span></button>`;
         return `<div class="ddc ${c[3] < 0 ? 'bad' : 'good'}${S.justOpened === i ? ' flip' : ''}"><span class="tag">${cat.ic} ${tx(cat, 'name')}</span><span class="ttl">${c[3] < 0 ? '⚠️' : '✅'} ${c[1]}</span>${c[2]}<span class="val">${L('お店の価値', 'Shop value')} ${signed(c[3])}</span></div>`;
       }).join('')}</div>
       ${word(L('お店の健康診断を <b>「デューデリジェンス（DD）」</b> といいます。お金＝<b>財務</b>、約束ごと＝<b>法務</b>、税金＝<b>税務</b>、商売＝<b>ビジネス</b> など、分野ごとに専門家が調べます。調査にはお金と時間がかかるので、<b>どこが大事か考えて</b>調べるのがポイントです。',
@@ -766,6 +939,7 @@ const SCREENS = {
     </div>
     ${r.hidden.length ? `<div class="card"><h3>🔍 ${L('調べなかったところに、こんなことがかくれていた！', 'Hidden in the cards you didn\'t check:')}</h3>
       ${r.hidden.map(c => `<p>${CATS[c[0]].ic} <b>${c[1]}</b>${L('（', ' (')}${signed(c[3])}${L('）', ')')}</p>`).join('')}</div>` : ''}
+    ${outlookCard()}
     <div class="card"><h3>💡 ${L('ふりかえり', 'Looking back')}</h3>${r.tips.map(t => `<p>${L('・', '• ')}${t}</p>`).join('')}</div>
     <div class="card">
       <h3>🎓 ${L('今日やったことは、おとなの世界ではこう言います', 'What you did today, in grown-up words')}</h3>
@@ -782,6 +956,11 @@ const SCREENS = {
         ['クロージング', 'お金を払ってカギを受け取った'],
         ['PMI（買収後の統合）', '2つのお店を1チームにした'],
         ['シナジー', '合体ボーナス（1＋1が3になる）'],
+        ['マネジメントインタビュー', '店長さんに、もうけを左右するものを聞いた'],
+        ['事業計画モデル', 'もうけの見通しを数字で作った'],
+        ['感応度分析', 'つまみを動かして効き目を調べた'],
+        ['キードライバー', 'もうけを大きく動かす大事なつまみ'],
+        ['グロスで置く', '細かく調べず「だいたいこのくらい」と決めた'],
       ], [
         ['Deal rationale &amp; acquisition criteria', 'Decided why to buy and what kind of shop you want'],
         ['Long list / short list', 'Picked your top 3 from all the possible shops'],
@@ -795,11 +974,37 @@ const SCREENS = {
         ['Closing', 'Paid the money and got the keys'],
         ['PMI (Post-Merger Integration)', 'Made two shops into one team'],
         ['Synergy', 'The combo bonus (1 + 1 = 3)'],
+        ['Management interview', 'Asked the owner what drives the profit'],
+        ['Business plan model', 'Built a profit outlook from numbers'],
+        ['Sensitivity analysis', 'Turned the knobs to see their effect'],
+        ['Key drivers', 'The few knobs that move profit the most'],
+        ['Keeping it gross', 'Used a rough number instead of breaking it down'],
       ]).map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('')}</div>
     </div>
     <button class="btn" data-act="again">${L('もう一度あそぶ 🔁', 'Play again 🔁')}</button>`;
   },
 };
+
+// ─── how well the player chose what to study (key drivers) ───
+function outlookEval() {
+  const s = T(), ks = knobsOf(s);
+  const keys = ks.filter(k => k.key), found = keys.filter(k => S.keys.includes(k.id));
+  const wasted = ks.filter(k => !k.key && S.keys.includes(k.id));
+  return { s, keys, found, wasted, band: outlookBand(s), max: maxBand(s) };
+}
+function outlookCard() {
+  const e = outlookEval(), n = e.found.length;
+  const badge = n === e.keys.length ? L('🎯 キードライバー名人！', '🎯 Key Driver Master!')
+    : n === 2 ? L('🎯 おしい！あと1つ', '🎯 So close — one more to go') : L('🔍 つまみ探し、もう一歩', '🔍 Keep hunting for the knobs');
+  return `<div class="card">
+    <h3>🎛️ ${L('見通しづくりの成績', 'Your outlook score')}</h3>
+    <p class="center big">${badge}</p>
+    <p>${L(`大事なつまみ（キードライバー）を <b>${n} / ${e.keys.length}</b> 個見つけた`, `You found <b>${n} of ${e.keys.length}</b> key drivers`)}</p>
+    <p>${L('キードライバー：', 'Key drivers: ')}${e.keys.map(k => `<span class="chk ${S.keys.includes(k.id) ? 'ok' : 'ng'}">${S.keys.includes(k.id) ? '○' : '×'} ${k.name}</span>`).join(' ')}</p>
+    <p style="margin-top:6px">${L('見通しのはば：', 'Outlook range: ')}<b>±${money(e.band)}</b> <span class="dim">${L(`（何も調べないと ±${money(e.max)}）`, `(±${money(e.max)} if you studied nothing)`)}</span></p>
+    <div class="bandbar"><i style="width:${Math.max(3, e.band / e.max * 100)}%"></i></div>
+  </div>`;
+}
 
 // ─── scoring: what the bakery gained over YEARS years ───
 function score() {
@@ -858,6 +1063,11 @@ function score() {
     'Problems were hiding where you didn\'t check. <b>Choosing what to check</b> is the key to DD.'));
   if (morale <= 1) tips.push(L('店員さんが不安なまま合体したので、元気をなくしてしまいました。<b>人の気持ち</b>もM&amp;Aではとても大切です。',
     'The staff were still worried when the shops combined, so they lost heart. <b>People\'s feelings</b> matter a lot in M&amp;A.'));
+  const oe = outlookEval();
+  if (oe.found.length === oe.keys.length) tips.push(L('大事なつまみに時間を集中できたので、見通しのはばがぐっとせまくなりました。',
+    'You spent your time on the knobs that matter, so the outlook range got much narrower.'));
+  oe.wasted.forEach(k => tips.push(L(`「${k.name}」をくわしく調べても、もうけはほとんど変わりませんでした。<b>効かないつまみはざっくりでOK</b>です。`,
+    `Studying "${k.name}" closely barely changed the profit. <b>Weak knobs can be rough guesses.</b>`)));
   if (has('sign') && s.pop >= 4) tips.push(L('人気のお店の名前を変えたら、なじみのお客さんがはなれてしまいました。<b>変えないほうがいいもの</b>もあります。',
     'Changing a popular shop\'s name drove away its regulars. <b>Some things are better left as they are.</b>'));
 
@@ -920,6 +1130,7 @@ document.addEventListener('click', e => {
     S.target = d.target; S.loiTries = 0; S.sellerMsg = null;
     S.offer = Math.min(BUDGET, Math.round(estimate(s) / 10) * 10);
     S.opened = []; S.extra = 0; S.nego = {}; S.daSigned = false;
+    S.asked = []; S.knob = {}; S.moved = []; S.keys = [];
     return go('loi');
   }
   if (d.dd !== undefined) { S.opened.push(+d.dd); S.justOpened = +d.dd; render(); S.justOpened = null; return; }
@@ -927,6 +1138,8 @@ document.addEventListener('click', e => {
     S.nego[d.nego] = d.v;
     return render();
   }
+  if (d.ask) { if (S.asked.length < ASK_MAX) S.asked.push(d.ask); return render(); }
+  if (d.key) { S.keys = S.keys.includes(d.key) ? S.keys.filter(k => k !== d.key) : [...S.keys, d.key]; return render(); }
   if (d.pmi) { S.pmi = S.pmi.includes(d.pmi) ? S.pmi.filter(k => k !== d.pmi) : [...S.pmi, d.pmi]; return render(); }
   switch (d.act) {
     case 'start': return go('goal');
@@ -934,6 +1147,8 @@ document.addEventListener('click', e => {
     case 'toNda': S.ndaSigned = false; S.refused = []; return go('nda');
     case 'signNda': S.ndaSigned = true; return render();
     case 'sendLoi': return sellerReply();
+    case 'toInterview': return go('interview');
+    case 'toModel': return go('model');
     case 'toDd': return go('dd');
     case 'moreDd': S.extra++; return render();
     case 'toNego': return go('nego');
@@ -954,6 +1169,15 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('input', e => {
+  const kid = e.target.dataset.knob;
+  if (kid) {   // knob slider: update numbers in place so the drag isn't interrupted
+    const s = T(), k = knobsOf(s).find(x => x.id === kid);
+    S.knob[kid] = +e.target.value;
+    if (!S.moved.includes(kid)) S.moved.push(kid);
+    $(`kd-${kid}`).innerHTML = effectText(S.knob[kid], k.w);
+    $('outlookVal').textContent = money(outlookBase(s) + knobsOf(s).reduce((a, x) => a + (S.knob[x.id] || 0) * x.w, 0));
+    return;
+  }
   if (e.target.id !== 'offer') return;
   S.offer = +e.target.value;
   $('offerOut').textContent = money(S.offer);
