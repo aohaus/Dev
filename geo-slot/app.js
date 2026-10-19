@@ -2,12 +2,17 @@
  *
  * Three reels: flag, country name, map outline. Each reel shows five rows;
  * five paylines (three across, two diagonals) cross the middle three. Get the
- * same country's flag, name and map on a line for a JACKPOT.
+ * same country's flag, name and map on a line for a JACKPOT; the same
+ * country's flag and name on a line (left two reels) is a PAIR, a small win.
+ * Two of a kind on a line with the last reel still spinning is a REACH: the
+ * line flashes and that reel slows down.
  *
- * Like a Japanese pachislot: PLAY secretly draws whether this spin can win,
+ * Like a Japanese pachislot: PLAY secretly draws whether this spin is a
+ * JACKPOT, a PAIR or a miss,
  * the player stops each reel with its STOP button, and a stopped reel may
  * slide up to 4 cells. On a winning draw it slides onto the win if you
- * pressed close enough (aiming matters); otherwise it never lines up.
+ * pressed close enough (aiming matters — a missed JACKPOT still pays a PAIR
+ * when it can); a PAIR is almost always caught; a miss never lines up.
  *
  * Plain browser JavaScript, no build step. Sections:
  *   1. DATA     — regions and their countries (add new regions here)
@@ -57,11 +62,14 @@ const CONFIG = {
   startMedals: 100,   // only used if the page runs without ../medal-bank.js
   cost: 10,
   jackpot: 100,       // per winning line; all 5 lines are played every spin
-  winChance: 0.07,    // chance a spin is drawn as a win (catch every one → about 70% back) — standard setting
-  // By the admin's difficulty setting 1-5 (3 = standard, uses winChance above).
-  winChanceByLevel: [0.04, 0.055, 0.07, 0.09, 0.12],
-  chanceLamp: 1,      // how often a winning draw lights the CHANCE lamp (1 = every time)
+  pair: 20,           // per line with the same country's flag + name (left two reels)
+  // Chance a spin is drawn as a JACKPOT / a PAIR, by the admin's setting 1-5
+  // (3 = standard). Catching everything returns about 61 / 74 / 85 / 101 / 124%.
+  jackpotChance: [0.025, 0.03, 0.035, 0.045, 0.06],
+  pairChance:    [0.18, 0.22, 0.25, 0.28, 0.32],
+  chanceLamp: 1,      // how often a JACKPOT draw lights the CHANCE lamp (1 = every time)
   speed: 5,           // reel speed, cells per second
+  reachSpeed: 2.5,    // the last reel slows to this during a REACH
   slip: 4,            // how many cells a reel may slide after STOP
   autoStopMs: 30000,  // reels left spinning stop by themselves after this
   saveKey: 'geo-slot-v1',
@@ -133,6 +141,8 @@ const sound = (() => {
     stop() { tone(220, 0.08, { type: 'triangle', vol: 0.12 }); },
     deny() { tone(150, 0.2, { type: 'sawtooth', vol: 0.05 }); },
     chance() { [880, 1175, 880, 1175, 1568].forEach((f, i) => tone(f, 0.09, { vol: 0.06, at: i * 0.08 })); },
+    pair() { [784, 988, 1319].forEach((f, i) => tone(f, 0.1, { vol: 0.07, at: i * 0.07 })); },
+    reach() { [523, 659, 523, 659, 523, 659, 784].forEach((f, i) => tone(f, 0.08, { vol: 0.07, at: i * 0.09 })); },
     lose() { [392, 330, 262].forEach((f, i) => tone(f, 0.18, { type: 'triangle', vol: 0.07, at: i * 0.14 })); },
     jackpot() {
       const notes = [523, 659, 784, 1047, 784, 1047, 1319, 1568];
@@ -171,7 +181,11 @@ function makeStrip(k) {
   const gcd = (a, b) => b ? gcd(b, a % b) : a;
   const strides = [];
   for (let s = 1; s < n * 2 && strides.length < 3; s++) if (gcd(s, n) === 1 && !strides.includes(s % n || n)) strides.push(s % n || n);
-  const stride = strides[k % strides.length] || 1;
+  // The name reel takes the largest stride (7 of 10): with a small one, the five
+  // flag spots that would pair with a name sit side by side, so a miss couldn't
+  // always dodge a PAIR within the 4-cell slip.
+  const pick = [0, strides.length - 1, 1][k];
+  const stride = strides[pick] || 1;
   return Array.from({ length: n }, (_, i) => (i * stride + k * 3) % n);
 }
 
@@ -220,7 +234,7 @@ function frame(now) {
     if (r.mode === 'stopped') continue;
     moving = true;
     const before = Math.floor(r.p);
-    r.p -= CONFIG.speed * dt;
+    r.p -= (state.reach.length ? CONFIG.reachSpeed : CONFIG.speed) * dt;
     if (r.mode === 'stopping' && r.p <= r.target) {
       r.p = r.target; r.pos = mod(r.target, r.order.length); r.mode = 'stopped';
       drawStill(r); sound.stop();
@@ -250,47 +264,71 @@ const LINES = [
 const state = {
   medals: wallet.load(),
   busy: false,      // a spin is in progress
-  prize: null,      // this spin's secret draw: { line, country } or null for a miss
+  prize: null,      // this spin's secret draw: { kind: 'jackpot', line, country }, { kind: 'pair' } or null for a miss
+  reach: [],        // lines in REACH right now
   autoStop: 0,
 };
 
 // ---------- the reel controller ("slip") ----------
-// Pressing STOP lets the reel slide up to CONFIG.slip more cells. If this
-// spin was drawn as a win and the winning spot is within reach, the reel
-// slides onto it; otherwise it picks a spot that can't complete any line.
+// Pressing STOP lets the reel slide up to CONFIG.slip more cells. On a
+// JACKPOT draw with the winning spot in reach, the reel slides onto it.
+// Otherwise it picks the spot that best fits the draw: a PAIR draw makes a
+// flag + name pair (and no JACKPOT); a miss avoids anything that pays.
 const lineCountry = (line, posOf) => line.rows.map((row, k) => at(reels[k], posOf(k) + row - MID));
+// What a finished board pays, given every reel's position.
+function payLines(posOf) {
+  const jackpots = [], pairs = [];
+  for (const line of LINES) {
+    const [a, b, c] = lineCountry(line, posOf);
+    if (a === b && b === c) jackpots.push(line);
+    else if (a === b) pairs.push(line);
+  }
+  return { jackpots, pairs };
+}
+// 0 when a finished board matches the draw; higher is worse.
+function misfit(posOf) {
+  const { jackpots, pairs } = payLines(posOf);
+  if (state.prize) return jackpots.length ? 100 : pairs.length ? 0 : 50;
+  return (jackpots.length + pairs.length) * 100;
+}
+// The spots a reel can come to rest on when STOP is pressed with `first` next to settle.
+const reachable = first => Array.from({ length: CONFIG.slip + 1 }, (_, j) => first - j);
 function choiceFor(r) {
   const n = r.order.length;
-  const first = Math.floor(r.p);   // the next cell to settle (it's rolling downward)
-  const cands = Array.from({ length: CONFIG.slip + 1 }, (_, j) => first - j);
+  const cands = reachable(Math.floor(r.p));   // it's rolling downward
   const stoppedPos = k => reels[k].mode === 'stopped' ? reels[k].pos : null;
-  // 1. A drawn win: slide onto the spot that lines the prize up, if it's in reach.
-  if (state.prize) {
+  // 1. A JACKPOT draw: slide onto the spot that lines the prize up, if it's in reach.
+  if (state.prize && state.prize.kind === 'jackpot') {
     const { line, country } = state.prize;
     const row = line.rows[r.k];
     const want = r.order.indexOf(countries().indexOf(country)) - (row - MID);
     const hit = cands.find(c => mod(c, n) === mod(want, n));
     if (hit !== undefined) return hit;
-    state.prize = null;   // pressed too early or late: the prize is missed
+    state.prize = { kind: 'pair' };   // pressed too early or late: the JACKPOT is missed, try for a PAIR
   }
-  // 2. Otherwise stay clear of a win: for the last reel, no line may complete;
-  //    before that, avoid leaving so many two-in-a-rows that the last reel couldn't dodge them.
-  const others = reels.filter(x => x !== r && x.mode !== 'stopped').length;
-  const score = c => {
-    const posOf = k => k === r.k ? c : stoppedPos(k);
-    let wins = 0, reaches = 0;
-    for (const line of LINES) {
-      const known = [0, 1, 2].filter(k => posOf(k) !== null);
-      const vals = known.map(k => at(reels[k], posOf(k) + line.rows[k] - MID));
-      if (vals.every(v => v === vals[0])) {
-        if (known.length === 3) wins++;
-        else if (known.length === 2) reaches++;
+  // 2. Otherwise score each spot against the draw.
+  const rest = reels.filter(x => x !== r && x.mode !== 'stopped');
+  // Share of the ways the remaining reels could be stopped (any order, any press
+  // timing) that can still end up fitting the draw.
+  const fit = (posOf, rest) => {
+    if (!rest.length) return misfit(posOf) === 0 ? 1 : 0;
+    let sum = 0;
+    for (const o of rest) {
+      const others = rest.filter(x => x !== o);
+      for (let w = 0; w < n; w++) {
+        let best = 0;
+        for (const x of reachable(w)) { best = Math.max(best, fit(k => k === o.k ? x : posOf(k), others)); if (best === 1) break; }
+        sum += best;
       }
     }
-    return others === 0 ? wins * 100 : Math.max(0, reaches - 3) * 10;
+    return sum / (rest.length * n);
+  };
+  const score = c => {
+    const posOf = k => k === r.k ? c : stoppedPos(k);
+    return rest.length ? 1 - fit(posOf, rest) : misfit(posOf);
   };
   let best = cands[0], bestScore = Infinity;
-  for (const c of cands) { const s = score(c); if (s < bestScore) { best = c; bestScore = s; } }
+  for (const c of cands) { const sc = score(c); if (sc < bestScore) { best = c; bestScore = sc; } }
   return best;
 }
 
@@ -311,10 +349,12 @@ function render() {
     $('player').textContent = u ? `👤 ${u.name}` : '👤 Guest';
   }
 }
-function lightLines(wins) {
-  document.querySelectorAll('[data-line]').forEach(el => el.classList.toggle('hit', wins.some(w => w.line.no === +el.dataset.line)));
-  document.querySelectorAll('.reel .cell').forEach(el => el.classList.remove('hit'));
-  for (const w of wins) w.line.rows.forEach((row, k) => reels[k].strip.children[row]?.classList.add('hit'));
+// Light lines and their cells: wins = [{ line, reels? }] (reels: which cells, default all three);
+// cls = 'hit' (a win) or 'reach'.
+function lightLines(wins, cls = 'hit') {
+  document.querySelectorAll('.hit, .reach').forEach(el => { if (el.matches('[data-line], .cell')) el.classList.remove('hit', 'reach'); });
+  document.querySelectorAll('[data-line]').forEach(el => el.classList.toggle(cls, wins.some(w => w.line.no === +el.dataset.line)));
+  for (const w of wins) (w.reels || [0, 1, 2]).forEach(k => reels[k].strip.children[w.line.rows[k]]?.classList.add(cls));
 }
 // Which lines have the same country on all three reels.
 function findWins() {
@@ -324,6 +364,23 @@ function findWins() {
     if (a === b && b === c) wins.push({ line, country: countries()[a] });
   }
   return wins;
+}
+// Which lines have the same country's flag and name, but not the map.
+function findPairs() {
+  const pairs = [];
+  for (const line of LINES) {
+    const [a, b, c] = line.rows.map((row, k) => shown(reels[k], row));
+    if (a === b && b !== c) pairs.push({ line, country: countries()[a], reels: [0, 1] });
+  }
+  return pairs;
+}
+// With one reel left spinning, the lines where the other two already match.
+function findReach() {
+  const spinning = reels.filter(r => r.mode !== 'stopped');
+  if (spinning.length !== 1) return [];
+  const ks = [0, 1, 2].filter(k => k !== spinning[0].k);
+  return LINES.filter(line => shown(reels[ks[0]], line.rows[ks[0]]) === shown(reels[ks[1]], line.rows[ks[1]]))
+    .map(line => ({ line, country: countries()[shown(reels[ks[0]], line.rows[ks[0]])], reels: ks }));
 }
 
 function play() {
@@ -339,11 +396,12 @@ function play() {
   // The secret draw for this spin.
   const list = countries();
   const lv = MB && MB.level ? MB.level('geo') : 3;
-  const chanceNow = lv === 3 ? CONFIG.winChance : CONFIG.winChanceByLevel[lv - 1];
-  state.prize = Math.random() < chanceNow
-    ? { line: LINES[Math.floor(Math.random() * LINES.length)], country: list[Math.floor(Math.random() * list.length)] }
-    : null;
-  const chance = state.prize && Math.random() < CONFIG.chanceLamp;
+  const roll = Math.random(), jp = CONFIG.jackpotChance[lv - 1];
+  state.prize = roll < jp
+    ? { kind: 'jackpot', line: LINES[Math.floor(Math.random() * LINES.length)], country: list[Math.floor(Math.random() * list.length)] }
+    : roll < jp + CONFIG.pairChance[lv - 1] ? { kind: 'pair' } : null;
+  state.reach = [];
+  const chance = state.prize && state.prize.kind === 'jackpot' && Math.random() < CONFIG.chanceLamp;
   $('chance').classList.toggle('on', !!chance);
   if (chance) sound.chance();
   setMessage(chance ? '★ CHANCE! Aim carefully and press STOP!' : 'Press STOP on each reel!', chance ? 'win' : '');
@@ -371,12 +429,26 @@ function autoStop() {
 
 function onReelStopped() {
   render();
-  if (!reels.every(r => r.mode === 'stopped')) return;
+  if (!reels.every(r => r.mode === 'stopped')) {
+    const reach = findReach();
+    if (reach.length && !state.reach.length) {
+      state.reach = reach;
+      lightLines(reach, 'reach');
+      $('machine').classList.add('reaching');
+      sound.reach();
+      const c = reach[0].country, left = ['flag', 'name', 'map'][reels.find(r => r.mode !== 'stopped').k];
+      setMessage(`REACH! ${c.flag} ${c.name} — stop the ${left}!`, 'win');
+    }
+    return;
+  }
   clearTimeout(state.autoStop);
   $('chance').classList.remove('on');
-  const wins = findWins();
-  lightLines(wins);
-  if (wins.length) jackpot(wins);
+  $('machine').classList.remove('reaching');
+  state.reach = [];
+  const wins = findWins(), pairs = findPairs();
+  lightLines([...wins, ...pairs]);
+  if (wins.length) jackpot(wins, pairs);
+  else if (pairs.length) pairWin(pairs);
   else {
     sound.lose();
     setMessage(near(), 'lose');
@@ -398,8 +470,20 @@ function near() {
   return 'No match — try again!';
 }
 
-function jackpot(wins) {
-  const total = CONFIG.jackpot * wins.length;
+// A small win: the same country's flag and name on a line.
+function pairWin(pairs) {
+  const total = CONFIG.pair * pairs.length;
+  state.medals += total;
+  wallet.save(state.medals);
+  sound.pair();
+  const c = pairs[0].country;
+  setMessage(`PAIR! ${c.flag} ${c.name} +${total} medals${pairs.length > 1 ? ` (${pairs.length} lines)` : ''} · its map:`, 'win');
+  // Show the answer, so the next REACH is easier to catch.
+  $('message').insertAdjacentHTML('beforeend', ` <svg class="answer" viewBox="0 0 100 100" role="img" aria-label="${c.name} map" style="--c:${c.color}">${outline(c)}</svg>`);
+}
+
+function jackpot(wins, pairs = []) {
+  const total = CONFIG.jackpot * wins.length + CONFIG.pair * pairs.length;
   state.medals += total;
   wallet.save(state.medals);
   sound.jackpot();
@@ -407,7 +491,8 @@ function jackpot(wins) {
   $('jackpotCountry').innerHTML = wins.map(w => `<div>${w.country.flag} ${w.country.name} <small>· line ${w.line.no}</small></div>`).join('');
   const seen = [...new Map(wins.map(w => [w.country.id, w.country])).values()];
   $('jackpotFact').innerHTML = seen.map(c => `<div>The capital of ${c.name} is ${c.capital}.</div>`).join('');
-  $('jackpotAmount').textContent = wins.length > 1 ? `${wins.length} lines! +${total} medals` : `+${total} medals`;
+  const lines = wins.length + pairs.length;
+  $('jackpotAmount').textContent = lines > 1 ? `${lines} lines! +${total} medals` : `+${total} medals`;
   $('jackpot').hidden = false;
   setMessage(`JACKPOT! ${wins.map(w => w.country.name).join(' & ')}! +${total} medals`, 'win');
 }
@@ -457,9 +542,9 @@ if (MB) MB.onChange(syncWallet);
 addEventListener('pageshow', syncWallet);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) syncWallet(); });
 
-setMessage(`${CONFIG.cost} medals a spin · stop each reel yourself · 5 lines`);
+setMessage(`${CONFIG.cost} medals a spin · flag + name = PAIR +${CONFIG.pair} · all three = JACKPOT!`);
 render();
 
 // For testing in the browser console.
-window.geoSlot = { REGIONS, CONFIG, state, reels, LINES, shown, findWins, choiceFor, stopReel };
+window.geoSlot = { REGIONS, CONFIG, state, reels, LINES, shown, findWins, findPairs, findReach, choiceFor, stopReel };
 })();

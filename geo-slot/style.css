@@ -92,6 +92,7 @@ button:disabled { cursor: default; }
 .nums span:first-child { grid-row: 2; } .nums span:nth-child(2) { grid-row: 3; } .nums span:last-child { grid-row: 4; }
 .nums b { width: 18px; height: 16px; border-radius: 4px; display: grid; place-items: center;
   font: 400 8px/1 var(--pixel); color: #0b0618; background: var(--c); opacity: .55; }
+.nums b.reach { opacity: 1; box-shadow: 0 0 12px var(--c); animation: blink .15s steps(2) infinite; }
 .nums b.hit { opacity: 1; box-shadow: 0 0 10px var(--c); animation: blink .3s steps(2) infinite; }
 .l1 { --c: var(--l1); } .l2 { --c: var(--l2); } .l3 { --c: var(--l3); } .l4 { --c: var(--l4); } .l5 { --c: var(--l5); }
 @keyframes blink { 50% { opacity: .4; } }
@@ -132,10 +133,13 @@ button:disabled { cursor: default; }
 .stop.pressed, .stop:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 0 8px rgba(255,74,74,.7), 0 1px 0 #6d0a0a; }
 .lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .lines polyline { fill: none; stroke: var(--c); stroke-width: 2; vector-effect: non-scaling-stroke; opacity: .4; }
+.lines polyline.reach { opacity: 1; stroke-width: 5; filter: drop-shadow(0 0 6px var(--c)); animation: blink .15s steps(2) infinite; }
+.cell.reach { background: rgba(255,79,216,.35); box-shadow: inset 0 0 0 2px var(--pink); }
 .lines polyline.hit { opacity: 1; stroke-width: 4; filter: drop-shadow(0 0 4px var(--c)); animation: blink .3s steps(2) infinite; }
 
 /* ---------- message ---------- */
 .message { min-height: 1.6em; text-align: center; font-size: 15px; color: var(--dim); }
+.message .answer { width: 2em; height: 2em; vertical-align: middle; fill: var(--c); stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .message.win { color: var(--yellow); text-shadow: 0 0 10px var(--yellow); }
 .message.lose { color: #ffb3d9; }
 .message.warn { color: var(--red); }
@@ -162,6 +166,10 @@ button:disabled { cursor: default; }
   background: linear-gradient(180deg, #9dffb3, var(--green)); box-shadow: 0 0 12px rgba(93,255,138,.6);
 }
 .hint { text-align: center; font-size: 11px; color: #6f6390; }
+
+/* ---------- reach ---------- */
+.machine.reaching .cabinet { animation: reachglow .4s steps(2) infinite; }
+@keyframes reachglow { 50% { box-shadow: 0 0 0 3px var(--pink), 0 0 30px var(--pink); } }
 
 /* ---------- jackpot ---------- */
 .machine.win .cabinet { animation: flash .25s steps(2) infinite; }
@@ -200,7 +208,7 @@ button:disabled { cursor: default; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bulbs, .machine.win .cabinet, .jackpot-box, .jackpot-title { animation: none; }
+  .bulbs, .machine.win .cabinet, .machine.reaching .cabinet, .jackpot-box, .jackpot-title { animation: none; }
   .reel.spinning .strip { filter: none; }
 }
 
