@@ -182,6 +182,26 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .chip.star { color: #3a2600; background: linear-gradient(#ffe36b, #f0b400); border-color: #fff3b0; box-shadow: 0 0 12px #ffb400; }
 .top .sp { flex: 1; }
 .snd.lang { font-size: 13px; font-weight: 900; }
+.snd.dl { position: relative; }
+.snd.dl.ok::after { content: '✓'; position: absolute; right: -3px; bottom: -3px; width: 16px; height: 16px; border-radius: 50%;
+  background: #2fbf5b; color: #fff; font-size: 11px; font-weight: 900; line-height: 16px; }
+
+/* ---------- download for offline ---------- */
+.dlg { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.6); }
+.dlg[hidden] { display: none; }
+.dlg-box { width: min(360px, 100%); padding: 18px 18px 14px; border-radius: 16px; background: #171026; border: 1px solid rgba(255,255,255,.2);
+  box-shadow: 0 10px 40px rgba(0,0,0,.6); font-size: 14px; line-height: 1.6; }
+.dlg-box h2 { margin: 0 0 8px; font-size: 17px; }
+.dlg-box p { margin: 0 0 10px; color: #d6d0e4; }
+.dlg-state { font-weight: 800; color: #fff; }
+.dlg-state.ok { color: #6ee58d; }
+.dlg-bar { height: 10px; border-radius: 99px; background: rgba(255,255,255,.12); overflow: hidden; margin: 0 0 10px; }
+.dlg-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffd21a, #ff4fd8); transition: width .2s; }
+.dlg-btns { display: flex; gap: 8px; }
+.dlg-btns button { flex: 1; padding: 10px; border-radius: 10px; border: 0; font-weight: 900; font-size: 14px; }
+.dlg-btns .go { background: var(--gold); color: #2a1a00; }
+.dlg-btns .go:disabled { opacity: .5; }
+.dlg-btns .close { background: rgba(255,255,255,.14); color: #fff; }
 .snd { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; background: rgba(10,6,20,.7); border: 1px solid rgba(255,255,255,.22); }
 
 /* ---------- front row (the machines you can play) ---------- */
@@ -315,7 +335,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 </style>
-<script src="medal-bank.js?v=13"></script>
+<script src="medal-bank.js?v=14"></script>
 </head>
 <body>
 <div id="app">
@@ -347,11 +367,21 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
     <a class="chip" id="userChip" href="medal-bank.html"></a>
     <span class="chip star" id="starChip" hidden>★ スペシャルデー</span>
     <span class="sp"></span>
+    <button class="snd dl" id="dlBtn" aria-label="Download for offline">📥</button>
     <button class="snd lang" id="langBtn" aria-label="Language">EN</button>
     <button class="snd" id="sndBtn" aria-label="店内の音">🔇</button>
   </header>
 
   <nav class="front" id="front" aria-label="ゲームをえらぶ"></nav>
+  <div class="dlg" id="dlg" hidden role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <div class="dlg-box">
+      <h2 id="dlgTitle"></h2>
+      <p id="dlgText"></p>
+      <p class="dlg-state" id="dlgState"></p>
+      <div class="dlg-bar" id="dlgBar" hidden><i></i></div>
+      <div class="dlg-btns"><button class="go" id="dlgGo"></button><button class="close" id="dlgClose"></button></div>
+    </div>
+  </div>
   <div class="hint" id="hint">← スワイプして台をえらんでね →</div>
 </div>
 
@@ -605,8 +635,58 @@ $('exitBtn').addEventListener('click', () => {
   }
   if (!confirm(T(`手持ち ${cup} 枚を ${u.name} さんのバンクに預けて帰りますか？`, `Deposit your ${cup} medals to ${u.name}'s bank before leaving?`))) return;
   Promise.resolve().then(() => MB.deposit(cup))
-    .then(() => toast(T(`${cup} 枚 預けました。またきてね！👋`, `Deposited ${cup}. See you next time! 👋`)), e => toast(e.message));
+    .then(b => toast(b === null
+      ? T(`オフラインなので ${cup} 枚を預け入れ予約しました。またきてね！👋`, `Offline: ${cup} saved to deposit when online. See you! 👋`)
+      : T(`${cup} 枚 預けました。またきてね！👋`, `Deposited ${cup}. See you next time! 👋`)), e => toast(e.message));
 });
+
+// ---------------- download for offline ----------------
+// Saves every game, the bank and their fonts on this device (see sw.js), so
+// the Game Centre opens on a plane or with no Wi-Fi. ✓ on the button = ready.
+const dl = { busy: false, status: null };
+const fmtDate = ms => new Date(ms).toLocaleString(MB.lang && MB.lang() === 'en' ? 'en-GB' : 'ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+async function dlCheck() {
+  if (!MB.offlineStatus) return;
+  try { dl.status = await MB.offlineStatus(); } catch (e) { dl.status = null; }
+  dlRender();
+}
+function dlRender(msg) {
+  const st = dl.status, ready = !!(st && st.ready && st.at);
+  $('dlBtn').classList.toggle('ok', ready);
+  $('dlgTitle').textContent = T('📥 オフライン用にダウンロード', '📥 Download for offline');
+  $('dlgText').textContent = T('ぜんぶのゲームとメダルバンクをこの端末に保存します。機内やWi-Fiのない所でも遊べるようになります（約5MB）。ゲームを更新したときは、もう一度ダウンロードしてね。',
+    'Saves every game and the MEDAL BANK on this device, so they work on a plane or with no Wi-Fi (about 5 MB). Download again after the games are updated.');
+  $('dlgState').className = 'dlg-state' + (ready && !msg ? ' ok' : '');
+  $('dlgState').textContent = msg || (dl.busy ? '' : ready
+    ? T(`✓ ダウンロード済み（${fmtDate(st.at)}）`, `✓ Downloaded (${fmtDate(st.at)})`)
+    : T('まだダウンロードしていません', 'Not downloaded yet'));
+  $('dlgGo').textContent = dl.busy ? T('ダウンロード中…', 'Downloading…') : ready ? T('もう一度ダウンロード', 'Download again') : T('ダウンロード', 'Download');
+  $('dlgGo').disabled = dl.busy;
+  $('dlgClose').textContent = T('とじる', 'Close');
+}
+async function dlStart() {
+  if (dl.busy) return;
+  dl.busy = true; $('dlgBar').hidden = false; $('dlgBar').firstElementChild.style.width = '0';
+  dlRender(T('ダウンロード中…', 'Downloading…'));
+  try {
+    const r = await MB.downloadOffline(p => {
+      $('dlgBar').firstElementChild.style.width = `${Math.round(p.done / Math.max(1, p.total) * 100)}%`;
+      $('dlgState').textContent = T(`ダウンロード中… ${p.done} / ${p.total}`, `Downloading… ${p.done} / ${p.total}`);
+    });
+    dl.busy = false; $('dlgBar').firstElementChild.style.width = '100%';
+    await dlCheck();
+    dlRender(T(`✓ 完了！オフラインでも遊べます（${r.files} ファイル）`, `✓ Done! Ready to play offline (${r.files} files)`));
+    $('dlgState').classList.add('ok');
+  } catch (e) {
+    dl.busy = false; dlRender('⚠️ ' + e.message);
+  }
+}
+$('dlBtn').addEventListener('click', () => { $('dlg').hidden = false; $('dlgBar').hidden = true; dlRender(); dlCheck(); });
+$('dlgGo').addEventListener('click', dlStart);
+$('dlgClose').addEventListener('click', () => { $('dlg').hidden = true; });
+$('dlg').addEventListener('click', e => { if (e.target === $('dlg')) $('dlg').hidden = true; });
+if (!MB.offlineStatus || !('serviceWorker' in navigator)) $('dlBtn').hidden = true;
+else dlCheck();
 
 $('langBtn').addEventListener('click', () => MB.setLang && MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
 
@@ -616,6 +696,7 @@ buildHall();
 layout();
 refresh();
 MB.onChange(refresh);
+MB.onChange(() => { if (!$('dlg').hidden && !dl.busy) dlRender(); });   // language switch
 if (MB.refresh) MB.refresh();   // pick up the latest bank balance from the server
 // Coming back from a game (including the back/forward cache) shows fresh counts.
 addEventListener('pageshow', refresh);

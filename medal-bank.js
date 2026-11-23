@@ -835,8 +835,31 @@ if (!document.getElementById('mb-style')) {
 }
 
 // Offline support: keep a copy of the Game Centre so it opens with no connection (sw.js).
-if ('serviceWorker' in navigator && BASE && /^https?:/.test(location.protocol)) {
-  navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE }).catch(() => {});
+const swOk = 'serviceWorker' in navigator && BASE && /^https?:/.test(location.protocol);
+if (swOk) navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE }).catch(() => {});
+// Ask the service worker something; progress messages go to onProgress.
+function swAsk(msg, onProgress) {
+  if (!swOk) return Promise.reject(new BankError(t('このブラウザではオフライン用に保存できません', 'This browser can\'t save for offline use')));
+  return new Promise((ok, no) => {
+    const late = setTimeout(() => no(new BankError(t('準備中です。少し待ってからもう一度試してね', 'Still getting ready — try again in a moment'))), 8000);
+    navigator.serviceWorker.ready.then(reg => {
+      clearTimeout(late);
+      const ch = new MessageChannel();
+      ch.port1.onmessage = e => { if (e.data.type === 'progress') { if (onProgress) onProgress(e.data); } else ok(e.data); };
+      (reg.active || reg.waiting || reg.installing).postMessage(msg, [ch.port2]);
+    });
+  });
+}
+// { ready, at, files }: whether every page is saved, and when the last full download was.
+const offlineStatus = () => swAsk({ type: 'status' });
+// Save every page, file and font for offline use. onProgress({ done, total }).
+async function downloadOffline(onProgress) {
+  if (navigator.onLine === false) fail(t('ネットにつながっているときにダウンロードしてね', 'Download while you\'re online'));
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+  const r = await swAsk({ type: 'download' }, onProgress);
+  if (!r.ok) console.warn('Not saved for offline:', r.failedUrls || r.error);
+  if (!r.ok) fail(t(`一部のファイルを保存できませんでした（${r.failed || '?'} 件）。もう一度試してね`, `Some files couldn't be saved (${r.failed || '?'}). Please try again`));
+  return r;
 }
 
 window.MedalBank = {
@@ -844,7 +867,7 @@ window.MedalBank = {
   lang, setLang, t, typeName, gameName, noteText,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
   hand, setHand, SERVICE_MEDALS, online, refresh, pending, loginByName, mountNav,
-  ADMIN_NAME, isAdmin, level, levels, setLevel,
+  ADMIN_NAME, isAdmin, level, levels, setLevel, offlineStatus, downloadOffline,
   deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
   getCards, setCards,
