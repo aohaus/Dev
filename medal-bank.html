@@ -126,6 +126,7 @@ button { cursor: pointer; }
 .cards { display: flex; flex-wrap: wrap; gap: 4px; font-size: 13px; }
 .cards span { background: #fff; border: 1px solid var(--lcd-line); border-radius: 6px; padding: 1px 6px; }
 .cards span.off { opacity: .3; }
+.offline { margin: 8px 0 0; padding: 6px 10px; border-radius: 8px; background: #fff4d6; color: #6b4a00; font-size: 12.5px; line-height: 1.5; }
 .tabs { display: flex; gap: 4px; margin: 12px 0 8px; border-bottom: 2px solid var(--lcd-line); }
 .tabs button { flex: 1 1 0; white-space: nowrap; border: 0; background: none; padding: 6px 2px; font-size: 12.5px; color: var(--lcd-dim); border-bottom: 3px solid transparent; margin-bottom: -2px; }
 .levels { display: flex; gap: 4px; }
@@ -184,7 +185,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=12"></script>
+<script src="medal-bank.js?v=13"></script>
 </head>
 <body>
 <div class="cab">
@@ -305,6 +306,10 @@ function counter(u) {
   let h = `<div class="cup"><div><span>${T('手持ち', 'In hand')}</span><output>${cup.toLocaleString()}</output></div>`;
   if (u) h += `<div><span>${T('預け入れ残高', 'Balance')}</span><output>${u.balance.toLocaleString()}</output></div>`;
   h += `</div>`;
+  const wait = u && MB.pending ? MB.pending() : 0;
+  if (u && MB.online() && !navigator.onLine) h += `<p class="offline">📴 ${T('オフライン中：ゲームは手持ちメダルで遊べます。預け入れは予約しておき、ネットにつながったら自動で預けます。引き出しはつながってから。',
+    'Offline: games play from your medals in hand. Deposits are saved and go through when you\'re back online. Withdrawals need a connection.')}</p>`;
+  if (wait) h += `<p class="offline">⏳ ${T(`預け入れ待ち ${wait.toLocaleString()} 枚（つながったら残高に入ります）`, `${wait.toLocaleString()} waiting to be deposited (added when online)`)}</p>`;
   if (u) h += `
     <div class="row"><input id="depN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Qty')}"><button class="btn sub" data-a="allIn">${T('全部', 'All')}</button><button class="btn" data-a="dep">${T('預ける', 'Deposit')}</button></div>
     <div class="row"><input id="wdN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Qty')}"><button class="btn sub" data-a="allOut">${T('全部', 'All')}</button><button class="btn" data-a="wd">${T('引き出す', 'Withdraw')}</button></div>`;
@@ -473,7 +478,11 @@ function drawQr() {
 const actions = {
   allIn() { $('depN').value = MB.hand(); },
   allOut() { $('wdN').value = MB.current().balance; },
-  async dep() { const n = +val('#depN'); await MB.deposit(n); flash(T(`${n} 枚 預けました`, `Deposited ${n}`), true); },
+  async dep() {
+    const n = +val('#depN');
+    const b = await MB.deposit(n);
+    flash(b === null ? T(`オフラインなので ${n} 枚を預け入れ予約しました`, `Offline: ${n} saved to deposit when online`) : T(`${n} 枚 預けました`, `Deposited ${n}`), true);
+  },
   async wd() { const n = +val('#wdN'); await MB.withdraw(n); flash(T(`${n} 枚 引き出しました`, `Withdrew ${n}`), true); },
   svc() { const n = MB.claimService(); flash(T(`サービスメダル ${n} 枚！手持ちに入りました`, `${n} service medals added to your hand!`), true); },
   lang() { MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'); render(true); },
@@ -567,6 +576,7 @@ MB.onChange(() => { if (!lcd.contains(document.activeElement) || document.active
 render();
 // Another device may have changed the balance since last time.
 if (MB.refresh) { MB.refresh(); addEventListener('pageshow', e => { if (e.persisted) MB.refresh(); }); }
+addEventListener('offline', () => render(true)); addEventListener('online', () => render(true));
 </script>
 </body>
 </html>
