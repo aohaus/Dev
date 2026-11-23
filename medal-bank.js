@@ -466,18 +466,29 @@ const API_MSG = {
   no_entry: () => t('記録が見つかりません', 'Record not found'),
   auth: () => t('もう一度ログインしてください', 'Please log in again'),
 };
+// No connection (or the server didn't answer in time). Marked so a deposit can be saved for later.
+function offline() {
+  const e = new BankError(t('オフラインのため使えません。ネットにつながってから試してね', 'Offline — try again when you\'re connected'));
+  e.offline = true;
+  throw e;
+}
+const API_WAIT_MS = 10000;
 async function api(op, body = {}, token) {
   let res, data;
+  if (navigator.onLine === false) offline();
+  const stop = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = stop && setTimeout(() => stop.abort(), API_WAIT_MS);
   try {
     res = await fetch(server().replace(/\/$/, '') + '/api', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
       body: JSON.stringify({ op, ...body }),
+      signal: stop ? stop.signal : undefined,
     });
     data = await res.json();
   } catch (e) {
-    fail(t('オフラインのため使えません。ネットにつながってから試してね', 'Offline — try again when you\'re connected'));
-  }
+    offline();
+  } finally { clearTimeout(timer); }
   if (res.ok) return data;
   if (data.error === 'auth') tx(db => { const u = activeUser(db); if (u) { delete u.token; db.current = null; } });
   fail((API_MSG[data.error] || (() => t('サーバーでエラーが起きました', 'Server error')))(data));
@@ -538,12 +549,14 @@ async function login(id, pin) {
 }
 async function loginByName(name, pin) {
   const out = await api('login', { name: cleanName(name), pin });
-  return tx(db => {
+  const user = tx(db => {
     const u = localRecord(db, out.user);
     applyServer(db, u, out.user, out.token);
     db.current = u.id; takeGuestCup(db, u);
     return publicUser(u);
   });
+  flushQueue();   // deposits saved offline go through now
+  return user;
 }
 async function logout() {
   const u = activeUser(read());
@@ -551,13 +564,53 @@ async function logout() {
   tx(db => { const x = activeUser(db); if (x && online()) delete x.token; db.current = null; });
 }
 // Fetch the latest balance/history (another device may have changed it). Quiet when offline.
+// Also sends anything saved while offline.
 async function refresh() {
   const u = activeUser(read());
   // A user who hasn't moved up to the server yet (no token) stays logged in on
   // this device; they'll be asked for their password when they next use the bank.
   if (!online() || !u || !u.token) return;
+  if (await flushQueue()) return;
   try { await authed('me'); } catch (e) {}
 }
+
+// ---------------- offline queue ----------------
+// Offline (on a plane, no Wi-Fi), a deposit still takes the medals from the
+// hand and is saved on the user's record; it reaches the server once the
+// device is back online. Each keeps the request id of its first try, so the
+// server never counts it twice. Withdrawals need the server (the balance may
+// have been spent on another device), so they wait for a connection.
+function queueOp(op, body) {
+  tx(db => { const u = activeUser(db); if (u) (u.queue = u.queue || []).push({ op, ...body, t: Date.now() }); });
+}
+function pending() {
+  const u = activeUser(read());
+  return ((u && u.queue) || []).filter(q => q.op === 'deposit').reduce((a, q) => a + q.n, 0);
+}
+let flushing = null;
+// Send the active user's saved operations. Returns true if any were sent.
+function flushQueue() {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    let sent = false;
+    for (;;) {
+      const u = activeUser(read());
+      const q = u && u.token && u.queue && u.queue[0];
+      if (!q) break;
+      try { await authed(q.op, { rid: q.rid, n: q.n, note: q.note }); }
+      catch (e) {
+        if (e.offline || !(e instanceof BankError) || !activeUser(read()) || !activeUser(read()).token) break;   // try again later
+        // Refused by the server: give a deposit's medals back to the hand.
+        if (q.op === 'deposit') tx(db => { const x = db.users[u.id]; if (x) x.hand = (x.hand || 0) + q.n; });
+      }
+      tx(db => { const x = db.users[u.id]; if (x && x.queue) { x.queue = x.queue.filter(y => y.rid !== q.rid); if (!x.queue.length) delete x.queue; } });
+      sent = true;
+    }
+    return sent;
+  })().finally(() => { flushing = null; });
+  return flushing;
+}
+window.addEventListener('online', () => { refresh(); });
 async function renameUser(id, pin, name) {
   if (!online()) return localRenameUser(id, pin, name);
   await authed('rename', { pin, name: cleanName(name) });
@@ -581,7 +634,15 @@ async function deposit(n, note = '') {
   if (!(n > 0)) fail(t('枚数を入れてください', 'Enter a number of medals'));
   const cup = hand();
   if (n > cup) fail(t(`手持ちが足りません（手持ち ${cup} 枚）`, `Not enough in hand (${cup} in hand)`));
-  await authed('deposit', { n, note });
+  const id = rid(10);
+  try { await authed('deposit', { n, note, rid: id }); }
+  catch (e) {
+    if (!e.offline) throw e;
+    // Offline: take the medals now and send the deposit when back online. Returns null.
+    queueOp('deposit', { rid: id, n, note });
+    tx(db => setCupOf(db, Math.max(0, cupOf(db) - n)));
+    return null;
+  }
   tx(db => setCupOf(db, Math.max(0, cupOf(db) - n)));
   return current().balance;
 }
@@ -596,7 +657,10 @@ async function withdraw(n, note = '') {
 function claimService() {
   const n = localClaimService();
   // The history lives on the server; recording the service medals there is best-effort.
-  if (online() && activeUser(read())) authed('service', { n, note: specialDay() ? 'スペシャル' : '手持ちへ' }).catch(() => {});
+  if (online() && activeUser(read())) {
+    const body = { rid: rid(10), n, note: specialDay() ? 'スペシャル' : '手持ちへ' };
+    authed('service', body).catch(e => { if (e.offline) queueOp('service', body); });
+  }
   return n;
 }
 async function editLog(entryId, change = {}) {
@@ -770,11 +834,16 @@ if (!document.getElementById('mb-style')) {
   (document.head || document.documentElement).appendChild(s);
 }
 
+// Offline support: keep a copy of the Game Centre so it opens with no connection (sw.js).
+if ('serviceWorker' in navigator && BASE && /^https?:/.test(location.protocol)) {
+  navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE }).catch(() => {});
+}
+
 window.MedalBank = {
   GAMES, JANKEN_CARDS, TYPE_NAME, EFFECT, BankError,
   lang, setLang, t, typeName, gameName, noteText,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
-  hand, setHand, SERVICE_MEDALS, online, refresh, loginByName, mountNav,
+  hand, setHand, SERVICE_MEDALS, online, refresh, pending, loginByName, mountNav,
   ADMIN_NAME, isAdmin, level, levels, setLevel,
   deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
