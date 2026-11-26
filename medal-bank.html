@@ -185,7 +185,7 @@ textarea { width: 100%; font: 12px/1.4 'Courier New', monospace; resize: vertica
 }
 :root[data-theme="dark"] { --bg-top: #1c2535; --bg-bot: #3a475c; }
 </style>
-<script src="medal-bank.js?v=14"></script>
+<script src="medal-bank.js?v=15"></script>
 </head>
 <body>
 <div class="cab">
@@ -307,9 +307,14 @@ function counter(u) {
   if (u) h += `<div><span>${T('預け入れ残高', 'Balance')}</span><output>${u.balance.toLocaleString()}</output></div>`;
   h += `</div>`;
   const wait = u && MB.pending ? MB.pending() : 0;
-  if (u && MB.online() && !navigator.onLine) h += `<p class="offline">📴 ${T('オフライン中：ゲームは手持ちメダルで遊べます。預け入れは予約しておき、ネットにつながったら自動で預けます。引き出しはつながってから。',
+  const plane = MB.airplaneMode && MB.airplaneMode();
+  if (plane) h += `<p class="offline">✈️ ${T('機内モード中：ゲームは手持ちメダルで遊べます。預け入れは予約しておき、通常モードにもどしたときに預けます。引き出し・ログインは通常モードで。',
+    'Airplane mode: games play from your medals in hand. Deposits are saved and go through when you switch back to normal mode. Withdrawals and logging in need normal mode.')}</p>`;
+  else if (u && MB.online() && !navigator.onLine) h += `<p class="offline">📴 ${T('オフライン中：ゲームは手持ちメダルで遊べます。預け入れは予約しておき、ネットにつながったら自動で預けます。引き出しはつながってから。',
     'Offline: games play from your medals in hand. Deposits are saved and go through when you\'re back online. Withdrawals need a connection.')}</p>`;
-  if (wait) h += `<p class="offline">⏳ ${T(`預け入れ待ち ${wait.toLocaleString()} 枚（つながったら残高に入ります）`, `${wait.toLocaleString()} waiting to be deposited (added when online)`)}</p>`;
+  if (wait) h += `<p class="offline">⏳ ${plane
+    ? T(`預け入れ待ち ${wait.toLocaleString()} 枚（通常モードにもどすと残高に入ります）`, `${wait.toLocaleString()} waiting to be deposited (added in normal mode)`)
+    : T(`預け入れ待ち ${wait.toLocaleString()} 枚（つながったら残高に入ります）`, `${wait.toLocaleString()} waiting to be deposited (added when online)`)}</p>`;
   if (u) h += `
     <div class="row"><input id="depN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Qty')}"><button class="btn sub" data-a="allIn">${T('全部', 'All')}</button><button class="btn" data-a="dep">${T('預ける', 'Deposit')}</button></div>
     <div class="row"><input id="wdN" type="number" min="1" inputmode="numeric" placeholder="${T('枚数', 'Qty')}"><button class="btn sub" data-a="allOut">${T('全部', 'All')}</button><button class="btn" data-a="wd">${T('引き出す', 'Withdraw')}</button></div>`;
@@ -481,7 +486,7 @@ const actions = {
   async dep() {
     const n = +val('#depN');
     const b = await MB.deposit(n);
-    flash(b === null ? T(`オフラインなので ${n} 枚を預け入れ予約しました`, `Offline: ${n} saved to deposit when online`) : T(`${n} 枚 預けました`, `Deposited ${n}`), true);
+    flash(b === null ? T(`${MB.airplaneMode && MB.airplaneMode() ? '機内モード' : 'オフライン'}なので ${n} 枚を預け入れ予約しました`, `Offline: ${n} saved to deposit later`) : T(`${n} 枚 預けました`, `Deposited ${n}`), true);
   },
   async wd() { const n = +val('#wdN'); await MB.withdraw(n); flash(T(`${n} 枚 引き出しました`, `Withdrew ${n}`), true); },
   svc() { const n = MB.claimService(); flash(T(`サービスメダル ${n} 枚！手持ちに入りました`, `${n} service medals added to your hand!`), true); },
