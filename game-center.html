@@ -182,11 +182,9 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .chip.star { color: #3a2600; background: linear-gradient(#ffe36b, #f0b400); border-color: #fff3b0; box-shadow: 0 0 12px #ffb400; }
 .top .sp { flex: 1; }
 .snd.lang { font-size: 13px; font-weight: 900; }
-.snd.dl { position: relative; }
-.snd.dl.ok::after { content: '✓'; position: absolute; right: -3px; bottom: -3px; width: 16px; height: 16px; border-radius: 50%;
-  background: #2fbf5b; color: #fff; font-size: 11px; font-weight: 900; line-height: 16px; }
+.snd.dl.on { background: #2b5bd6; border-color: #9fc0ff; box-shadow: 0 0 12px #4f8bff; }
 
-/* ---------- download for offline ---------- */
+/* ---------- airplane mode panel ---------- */
 .dlg { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.6); }
 .dlg[hidden] { display: none; }
 .dlg-box { width: min(360px, 100%); padding: 18px 18px 14px; border-radius: 16px; background: #171026; border: 1px solid rgba(255,255,255,.2);
@@ -335,7 +333,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 </style>
-<script src="medal-bank.js?v=14"></script>
+<script src="medal-bank.js?v=15"></script>
 </head>
 <body>
 <div id="app">
@@ -367,7 +365,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
     <a class="chip" id="userChip" href="medal-bank.html"></a>
     <span class="chip star" id="starChip" hidden>★ スペシャルデー</span>
     <span class="sp"></span>
-    <button class="snd dl" id="dlBtn" aria-label="Download for offline">📥</button>
+    <button class="snd dl" id="dlBtn" aria-label="Airplane mode">✈️</button>
     <button class="snd lang" id="langBtn" aria-label="Language">EN</button>
     <button class="snd" id="sndBtn" aria-label="店内の音">🔇</button>
   </header>
@@ -640,53 +638,74 @@ $('exitBtn').addEventListener('click', () => {
       : T(`${cup} 枚 預けました。またきてね！👋`, `Deposited ${cup}. See you next time! 👋`)), e => toast(e.message));
 });
 
-// ---------------- download for offline ----------------
-// Saves every game, the bank and their fonts on this device (see sw.js), so
-// the Game Centre opens on a plane or with no Wi-Fi. ✓ on the button = ready.
+// ---------------- airplane mode ----------------
+// One clear switch between normal mode (online, always the newest version)
+// and airplane mode (everything saved on this device first, then no network
+// at all — see sw.js and MB.setAirplaneMode). ✈️ lights up blue while it's on.
 const dl = { busy: false, status: null };
 const fmtDate = ms => new Date(ms).toLocaleString(MB.lang && MB.lang() === 'en' ? 'en-GB' : 'ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const isPlane = () => !!(MB.airplaneMode && MB.airplaneMode());
 async function dlCheck() {
   if (!MB.offlineStatus) return;
   try { dl.status = await MB.offlineStatus(); } catch (e) { dl.status = null; }
-  dlRender();
+  if (!dl.busy) dlRender();
 }
-function dlRender(msg) {
-  const st = dl.status, ready = !!(st && st.ready && st.at);
-  $('dlBtn').classList.toggle('ok', ready);
-  $('dlgTitle').textContent = T('📥 オフライン用にダウンロード', '📥 Download for offline');
-  $('dlgText').textContent = T('ぜんぶのゲームとメダルバンクをこの端末に保存します。機内やWi-Fiのない所でも遊べるようになります（約5MB）。ゲームを更新したときは、もう一度ダウンロードしてね。',
-    'Saves every game and the MEDAL BANK on this device, so they work on a plane or with no Wi-Fi (about 5 MB). Download again after the games are updated.');
-  $('dlgState').className = 'dlg-state' + (ready && !msg ? ' ok' : '');
-  $('dlgState').textContent = msg || (dl.busy ? '' : ready
-    ? T(`✓ ダウンロード済み（${fmtDate(st.at)}）`, `✓ Downloaded (${fmtDate(st.at)})`)
-    : T('まだダウンロードしていません', 'Not downloaded yet'));
-  $('dlgGo').textContent = dl.busy ? T('ダウンロード中…', 'Downloading…') : ready ? T('もう一度ダウンロード', 'Download again') : T('ダウンロード', 'Download');
+function dlRender(msg, ok = false) {
+  // A message stays a few seconds, so redraws (e.g. a deposit going through) don't wipe it.
+  if (msg) dl.note = { msg, ok, until: Date.now() + 5000 };
+  else if (dl.note && dl.note.until > Date.now()) ({ msg, ok } = dl.note);
+  const st = dl.status, plane = isPlane();
+  $('dlBtn').classList.toggle('on', plane);
+  $('dlBtn').setAttribute('aria-label', plane ? T('機内モード中', 'Airplane mode on') : T('機内モード', 'Airplane mode'));
+  $('dlgTitle').textContent = T('✈️ 機内モード（オフライン）', '✈️ Airplane mode (offline)');
+  $('dlgText').textContent = plane
+    ? T('いまは機内モードです。ネットを使わずに、保存したゲームで遊んでいます。預け入れは予約しておき、通常モードにもどしたときに預けます。',
+      'You\'re in airplane mode: the saved games are played with no network. Deposits are saved and go through when you switch back to normal mode.')
+    : T('機内モードにすると、ぜんぶのゲームとメダルバンクをこの端末に保存してから（約5MB）、ネットを使わずに動くようにします。機内で使うメダルは、先にメダルバンクで引き出しておいてね。',
+      'Switching to airplane mode first saves every game and the MEDAL BANK on this device (about 5 MB), then runs with no network. Withdraw the medals you\'ll need at the MEDAL BANK first.');
+  $('dlgState').className = 'dlg-state' + (ok ? ' ok' : '');
+  $('dlgState').textContent = msg || (plane
+    ? T(`いまのモード：✈️ 機内モード${st && st.at ? `（${fmtDate(st.at)} に保存）` : ''}`, `Now: ✈️ Airplane mode${st && st.at ? ` (saved ${fmtDate(st.at)})` : ''}`)
+    : T('いまのモード：🌐 通常モード', 'Now: 🌐 Normal mode'));
+  $('dlgGo').textContent = dl.busy ? T('保存中…', 'Saving…') : plane ? T('🌐 通常モードにもどす', '🌐 Back to normal mode') : T('✈️ 機内モードにする', '✈️ Switch to airplane mode');
   $('dlgGo').disabled = dl.busy;
   $('dlgClose').textContent = T('とじる', 'Close');
 }
-async function dlStart() {
-  if (dl.busy) return;
-  dl.busy = true; $('dlgBar').hidden = false; $('dlgBar').firstElementChild.style.width = '0';
-  dlRender(T('ダウンロード中…', 'Downloading…'));
+const bar = pct => { $('dlgBar').hidden = false; $('dlgBar').firstElementChild.style.width = `${pct}%`; };
+async function toAirplane() {
+  dl.busy = true; bar(0); dlRender(T('ゲームを保存しています…', 'Saving the games…'));
   try {
-    const r = await MB.downloadOffline(p => {
-      $('dlgBar').firstElementChild.style.width = `${Math.round(p.done / Math.max(1, p.total) * 100)}%`;
-      $('dlgState').textContent = T(`ダウンロード中… ${p.done} / ${p.total}`, `Downloading… ${p.done} / ${p.total}`);
-    });
-    dl.busy = false; $('dlgBar').firstElementChild.style.width = '100%';
-    await dlCheck();
-    dlRender(T(`✓ 完了！オフラインでも遊べます（${r.files} ファイル）`, `✓ Done! Ready to play offline (${r.files} files)`));
-    $('dlgState').classList.add('ok');
-  } catch (e) {
-    dl.busy = false; dlRender('⚠️ ' + e.message);
-  }
+    if (navigator.onLine !== false) {
+      try {
+        await MB.downloadOffline(p => {
+          bar(Math.round(p.done / Math.max(1, p.total) * 100));
+          $('dlgState').textContent = T(`ゲームを保存しています… ${p.done} / ${p.total}`, `Saving the games… ${p.done} / ${p.total}`);
+        });
+      } catch (e) {
+        // Couldn't fetch the latest: an earlier complete download still works.
+        const st = await MB.offlineStatus().catch(() => null);
+        if (!(st && st.ready && st.at) || !confirm(T(`最新版を保存できませんでした。${fmtDate(st.at)} に保存した版で機内モードにしますか？`, `Couldn't save the latest version. Use the copy saved ${fmtDate(st.at)}?`))) throw e;
+      }
+    }
+    await MB.setAirplaneMode(true);   // refuses if nothing has been saved
+    bar(100); dl.busy = false; await dlCheck();
+    dlRender(T('✓ 機内モードにしました。ネットなしで遊べます！', '✓ Airplane mode on. Ready to play with no network!'), true);
+  } catch (e) { dl.busy = false; dlRender('⚠️ ' + e.message); }
 }
-$('dlBtn').addEventListener('click', () => { $('dlg').hidden = false; $('dlgBar').hidden = true; dlRender(); dlCheck(); });
-$('dlgGo').addEventListener('click', dlStart);
+async function toNormal() {
+  const wait = MB.pending ? MB.pending() : 0;
+  await MB.setAirplaneMode(false);
+  $('dlgBar').hidden = true; await dlCheck();
+  dlRender(wait ? T(`🌐 通常モードにもどしました。予約していた ${wait} 枚を預けています。`, `🌐 Back to normal mode. Depositing the ${wait} saved medals.`)
+    : T('🌐 通常モードにもどしました。', '🌐 Back to normal mode.'), true);
+}
+const openDlg = () => { $('dlg').hidden = false; $('dlgBar').hidden = true; dlRender(); dlCheck(); };
+$('dlBtn').addEventListener('click', openDlg);
+$('dlgGo').addEventListener('click', () => { if (!dl.busy) (isPlane() ? toNormal() : toAirplane()); });
 $('dlgClose').addEventListener('click', () => { $('dlg').hidden = true; });
 $('dlg').addEventListener('click', e => { if (e.target === $('dlg')) $('dlg').hidden = true; });
 if (!MB.offlineStatus || !('serviceWorker' in navigator)) $('dlBtn').hidden = true;
-else dlCheck();
+else { dlRender(); dlCheck(); if (location.hash === '#airplane') openDlg(); }
 
 $('langBtn').addEventListener('click', () => MB.setLang && MB.setLang(MB.lang() === 'en' ? 'ja' : 'en'));
 
@@ -696,7 +715,8 @@ buildHall();
 layout();
 refresh();
 MB.onChange(refresh);
-MB.onChange(() => { if (!$('dlg').hidden && !dl.busy) dlRender(); });   // language switch
+// Language switch, or airplane mode changed in another tab.
+MB.onChange(() => { $('dlBtn').classList.toggle('on', isPlane()); if (!$('dlg').hidden && !dl.busy) dlRender(); });
 if (MB.refresh) MB.refresh();   // pick up the latest bank balance from the server
 // Coming back from a game (including the back/forward cache) shows fresh counts.
 addEventListener('pageshow', refresh);

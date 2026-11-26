@@ -9,8 +9,11 @@
  * - Their scripts, styles and icons: saved whenever a page is saved, found by
  *   reading the page (so new ?v= versions are picked up by themselves).
  * - Google Fonts: saved the first time they're used.
- * - "Download for offline" (the 📥 button in the Game Centre) saves all of it
- *   at once, every font included, and reports progress (see the message handler).
+ * - "Download for offline" saves all of it at once, every font included, and
+ *   reports progress (see the message handler).
+ * - Airplane mode (switched on in the Game Centre's ✈️ panel, which downloads
+ *   first): saved pages are served straight away and the network is never
+ *   tried, so a plane's Wi-Fi login page can't hang a game or replace it.
  * Registered from medal-bank.js, which every Game Centre page loads.
  */
 const CACHE = 'game-centre-v1';
@@ -22,10 +25,23 @@ const PAGES = [
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 const NET_WAIT_MS = 4000;   // a slow network falls back to the saved page after this
 const INFO = 'offline-info';  // cache entry recording the last full download
+const MODE = 'offline-mode';  // cache entry: '1' while airplane mode is on
 
 const ROOT = new URL('./', self.location).href;
 const PAGE_URLS = PAGES.map(p => new URL(p, ROOT).href);
 const INFO_URL = new URL(INFO, ROOT).href;
+const MODE_URL = new URL(MODE, ROOT).href;
+// Airplane mode, as the pages last told us (kept in the cache so it survives the worker restarting).
+let airplane = null;
+async function isAirplane() {
+  if (airplane === null) airplane = await caches.open(CACHE).then(c => c.match(MODE_URL)).then(r => !!r).catch(() => false);
+  return airplane;
+}
+async function setAirplane(on) {
+  airplane = !!on;
+  const cache = await caches.open(CACHE);
+  if (on) await cache.put(MODE_URL, new Response('1')); else await cache.delete(MODE_URL);
+}
 // The cache key for a page: no query, and a folder means its index.html.
 const pageKey = url => { const u = url.origin + url.pathname; return u.endsWith('/') ? u + 'index.html' : u; };
 const isPage = url => PAGE_URLS.includes(pageKey(url));
@@ -108,11 +124,12 @@ async function status() {
   const cache = await caches.open(CACHE);
   const missing = (await Promise.all(PAGE_URLS.map(async u => (await cache.match(u)) ? null : u))).filter(Boolean);
   const info = await cache.match(INFO_URL).then(r => r && r.json()).catch(() => null);
-  return { type: 'status', ready: !missing.length, missing: missing.length, at: info && info.at, files: (await cache.keys()).length };
+  return { type: 'status', ready: !missing.length, missing: missing.length, at: info && info.at, files: (await cache.keys()).length, airplane: await isAirplane() };
 }
 
 self.addEventListener('message', e => {
   const port = e.ports && e.ports[0];
+  if (e.data && e.data.type === 'mode') e.waitUntil(setAirplane(e.data.airplane).then(() => port && port.postMessage({ type: 'mode', airplane })));
   if (!port || !e.data) return;
   if (e.data.type === 'status') e.waitUntil(status().then(r => port.postMessage(r)));
   if (e.data.type === 'download') {
@@ -134,9 +151,23 @@ self.addEventListener('activate', e => {
 // Shown instead of the browser's "You're offline" when a page was never saved.
 const NOT_SAVED = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Game Centre</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#07050d;color:#fff;font:16px/1.7 system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box">
-<div><div style="font-size:48px">📴</div><p><b>このページはまだダウンロードされていません。</b><br>ネットにつながったら、ゲームセンターの 📥 ボタンで<br>「オフライン用にダウンロード」してください。</p>
-<p style="color:#aab">This page hasn't been downloaded yet.<br>When you're online, tap 📥 in the Game Centre to download for offline.</p>
+<div><div style="font-size:48px">📴</div><p><b>このページはまだダウンロードされていません。</b><br>ネットにつながったら、ゲームセンターの ✈️ ボタンで<br>「機内モードにする」と、ぜんぶ保存されます。</p>
+<p style="color:#aab">This page hasn't been downloaded yet.<br>When you're online, tap ✈️ in the Game Centre and<br>switch to airplane mode — everything is saved first.</p>
 <p><a href="${new URL('game-center.html', ROOT).href}" style="color:#ffd23f">Game Centre</a></p></div>`;
+
+async function page(e, req, key) {
+  const saved = await caches.match(key);
+  const notSaved = () => new Response(NOT_SAVED, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  if (await isAirplane()) return saved || notSaved();   // airplane mode: never touch the network
+  const net = fetch(req);
+  // Save the fresh page (and its files) in the background, without holding up the page.
+  e.waitUntil(net.then(res => res.ok && savePage(key, res.clone())).catch(() => {}));
+  if (!saved) return net.catch(notSaved);
+  return Promise.race([
+    net.catch(() => saved),
+    new Promise(ok => setTimeout(() => ok(saved), NET_WAIT_MS)),
+  ]);
+}
 
 self.addEventListener('fetch', e => {
   const req = e.request;
@@ -150,21 +181,7 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (url.origin !== self.location.origin) return;
-  if (isPage(url)) {
-    const key = pageKey(url);
-    const net = fetch(req);
-    // Save the fresh page (and its files) in the background, without holding up the page.
-    e.waitUntil(net.then(res => res.ok && savePage(key, res.clone())).catch(() => {}));
-    const offline = () => new Response(NOT_SAVED, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-    e.respondWith(caches.match(key).then(saved => {
-      if (!saved) return net.catch(offline);
-      return Promise.race([
-        net.catch(() => saved),
-        new Promise(ok => setTimeout(() => ok(saved), NET_WAIT_MS)),
-      ]);
-    }));
-    return;
-  }
+  if (isPage(url)) { e.respondWith(page(e, req, pageKey(url))); return; }
   // Anything else on this site: the saved copy if there is one, else the network.
   e.respondWith(caches.match(req).then(hit => hit || fetch(req)));
 });

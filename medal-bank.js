@@ -468,14 +468,16 @@ const API_MSG = {
 };
 // No connection (or the server didn't answer in time). Marked so a deposit can be saved for later.
 function offline() {
-  const e = new BankError(t('オフラインのため使えません。ネットにつながってから試してね', 'Offline — try again when you\'re connected'));
+  const e = new BankError(airplaneMode()
+    ? t('機内モード中は使えません。ゲームセンターの ✈️ で通常モードにもどしてね', 'Not available in airplane mode — switch back to normal mode with ✈️ in the Game Centre')
+    : t('オフラインのため使えません。ネットにつながってから試してね', 'Offline — try again when you\'re connected'));
   e.offline = true;
   throw e;
 }
 const API_WAIT_MS = 10000;
 async function api(op, body = {}, token) {
   let res, data;
-  if (navigator.onLine === false) offline();
+  if (airplaneMode() || navigator.onLine === false) offline();   // airplane mode never calls the server
   const stop = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = stop && setTimeout(() => stop.abort(), API_WAIT_MS);
   try {
@@ -569,7 +571,7 @@ async function refresh() {
   const u = activeUser(read());
   // A user who hasn't moved up to the server yet (no token) stays logged in on
   // this device; they'll be asked for their password when they next use the bank.
-  if (!online() || !u || !u.token) return;
+  if (!online() || airplaneMode() || !u || !u.token) return;
   if (await flushQueue()) return;
   try { await authed('me'); } catch (e) {}
 }
@@ -723,6 +725,7 @@ function mountNav(currentGame) {
     nav.innerHTML = `<a class="gc-home" href="${BASE}game-center.html" aria-label="Game Centre">🏠 <span>Game Centre</span></a>
       <span class="gc-games">${NAV_GAMES.map(([id, icon, url, ja, en]) =>
         `<a href="${BASE}${url}" class="${id === currentGame ? 'on' : ''}" title="${t(ja, en)}" aria-label="${t(ja, en)}"${id === currentGame ? ' aria-current="page"' : ''}>${icon}<small>${t(ja, en)}</small></a>`).join('')}</span>
+      ${airplaneMode() ? `<a class="gc-plane" href="${BASE}game-center.html#airplane" title="${t('機内モード中', 'Airplane mode')}" aria-label="${t('機内モード中', 'Airplane mode')}">✈️<small>${t('機内', 'Offline')}</small></a>` : ''}
       <a class="gc-bank" href="${BASE}medal-bank.html" title="MEDAL BANK" aria-label="MEDAL BANK">🏦<small>${u ? esc(u.name) : t('バンク', 'Bank')}</small></a>`;
   };
   draw();
@@ -786,6 +789,7 @@ const css = `
 .gc-games a, .gc-bank { flex-direction: column; gap: 1px; min-width: 40px; padding: 0 6px; font-size: 18px; }
 .gc-nav small { font-size: 9px; font-weight: 800; opacity: .85; max-width: 56px; overflow: hidden; text-overflow: ellipsis; }
 .gc-games a.on { background: rgba(255,79,163,.25); box-shadow: inset 0 0 0 1px #ff4fa3; }
+.gc-plane { flex: 0 0 auto; flex-direction: column; gap: 1px; padding: 0 6px; font-size: 16px; background: rgba(79,139,255,.25); box-shadow: inset 0 0 0 1px #4f8bff; }
 .gc-bank { flex: 0 0 auto; background: rgba(255,177,59,.15); box-shadow: inset 0 0 0 1px rgba(255,177,59,.6); }
 @media (max-width: 380px) { .gc-home span { display: none; } .gc-games a { padding: 0 3px; min-width: 36px; } }
 .mb-badge { display: inline-block; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -854,7 +858,7 @@ function swAsk(msg, onProgress) {
 const offlineStatus = () => swAsk({ type: 'status' });
 // Save every page, file and font for offline use. onProgress({ done, total }).
 async function downloadOffline(onProgress) {
-  if (navigator.onLine === false) fail(t('ネットにつながっているときにダウンロードしてね', 'Download while you\'re online'));
+  if (airplaneMode() || navigator.onLine === false) fail(t('ネットにつながっているときにダウンロードしてね', 'Download while you\'re online'));
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
   const r = await swAsk({ type: 'download' }, onProgress);
   if (!r.ok) console.warn('Not saved for offline:', r.failedUrls || r.error);
@@ -862,12 +866,39 @@ async function downloadOffline(onProgress) {
   return r;
 }
 
+// ---------------- airplane mode ----------------
+// An explicit switch (✈️ in the Game Centre) instead of guessing from the
+// connection: in airplane mode every page comes from the saved copy, nothing
+// is sent to the MEDAL BANK server, deposits are saved to send later, and
+// withdrawals / logging in wait for normal mode. Back in normal mode, the
+// saved deposits go through and the balance is refreshed.
+const MODE_KEY = 'gc-mode';
+function airplaneMode() { try { return localStorage.getItem(MODE_KEY) === 'airplane'; } catch (e) { return false; } }
+// Tell the service worker, which can't read localStorage.
+function tellSw() {
+  if (!swOk) return Promise.resolve();
+  return swAsk({ type: 'mode', airplane: airplaneMode() }).catch(() => {});
+}
+async function setAirplaneMode(on) {
+  if (on) {
+    let st = null;
+    try { st = await offlineStatus(); } catch (e) {}
+    if (!st || !st.ready || !st.at) fail(t('先にダウンロードが必要です。ネットにつながっているときにもう一度試してね', 'Download first — try again while you\'re online'));
+  }
+  try { localStorage.setItem(MODE_KEY, on ? 'airplane' : 'normal'); } catch (e) {}
+  await tellSw();
+  emit();
+  if (!on) refresh();   // send deposits saved in airplane mode
+}
+window.addEventListener('storage', e => { if (e.key === MODE_KEY) emit(); });
+if (swOk) navigator.serviceWorker.ready.then(tellSw);   // keep the worker in step with this device's setting
+
 window.MedalBank = {
   GAMES, JANKEN_CARDS, TYPE_NAME, EFFECT, BankError,
   lang, setLang, t, typeName, gameName, noteText,
   current, users, createUser, login, logout, checkPin, renameUser, changePin, deleteUser,
   hand, setHand, SERVICE_MEDALS, online, refresh, pending, loginByName, mountNav,
-  ADMIN_NAME, isAdmin, level, levels, setLevel, offlineStatus, downloadOffline,
+  ADMIN_NAME, isAdmin, level, levels, setLevel, offlineStatus, downloadOffline, airplaneMode, setAirplaneMode,
   deposit, withdraw, serviceAvailable, claimService, specialDay, useSpecialCode, endSpecial,
   log, editLog, deleteLog, addAdjust,
   getCards, setCards,
